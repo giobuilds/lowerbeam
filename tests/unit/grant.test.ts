@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Grant } from '../../src/agent/grant.js'
-import { runAgentTool } from '../../src/agent/tools.js'
+import { runAgentTool, readBudgetBytes } from '../../src/agent/tools.js'
 
 let n = 0; const ok = (m: string) => { n++; console.log('  ok', m) }
 
@@ -85,6 +85,29 @@ console.log('\nreads are bounded')
   assert.ok(first.content.includes('read from 201')); ok('and says where to continue')
   const later = await runAgentTool(grant, 'read', { path: 'src/long.txt', start: 480 })
   assert.ok(later.ok && later.content.includes('500| line 500')); ok('a start line reads further in')
+}
+
+console.log('\na read takes at most a third of the window')
+{
+  assert.equal(readBudgetBytes(16384), 16 * 1024); ok('at the full window, the 16 KB it has always been')
+  assert.equal(readBudgetBytes(null), 16 * 1024); ok('and when the window is unknown, the same')
+  assert.equal(readBudgetBytes(6144), 6144); ok('a 6k window gives a 6 KB read')
+  assert.equal(readBudgetBytes(1024), 4 * 1024); ok('with a floor, since a read too small is not worth making')
+  assert.equal(readBudgetBytes(65536), 16 * 1024); ok('and a ceiling, since a huge window is not a reason to return a whole file')
+
+  // Dense lines, so the byte cap binds before the 200-line one.
+  const dense = Array.from({ length: 400 }, (_, i) => `const value${i} = ${'x'.repeat(60)}`).join('\n')
+  await writeFile(join(project, 'src', 'dense.ts'), dense)
+  const full = await runAgentTool(grant, 'read', { path: 'src/dense.ts' })
+  const small = await runAgentTool(grant, 'read', { path: 'src/dense.ts' }, { contextLimit: 6144 })
+  const lines = (r: { content: string }): number => r.content.split('\n').filter((l) => /^\s*\d+\|/.test(l)).length
+  assert.ok(lines(full) > lines(small)); ok(`a smaller window returns fewer lines (${lines(full)} against ${lines(small)})`)
+  assert.ok(small.content.includes('not shown; read from')); ok('and still says where to read on from')
+  // The line cap is independent of the window, which is what keeps the
+  // planted READ_MAX_LINES bug detectable in a small window too.
+  const short = await runAgentTool(grant, 'read', { path: 'src/long.txt' }, { contextLimit: 6144 })
+  assert.ok(short.content.includes('200| line 200')); assert.ok(!short.content.includes('201| line 201'))
+  ok('short lines still come 200 at a time, whatever the window')
 }
 
 console.log('\nsearch takes a file as well as a directory')

@@ -325,7 +325,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
       const result =
         call.name === 'run_command' && canRun
           ? await runCommand(req.execute!, args, deadline, emit)
-          : await runAgentTool(req.grant, call.name, args)
+          : await runAgentTool(req.grant, call.name, args, { contextLimit: req.contextLimit })
       req.observe?.(call.name, args, result.content)
       if (result.denied) denials += 1
       emit({

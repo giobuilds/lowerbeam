@@ -25,6 +25,34 @@ const SEARCH_EXCERPT_CHARS = 200
 const READ_MAX_LINES = 200
 const READ_MAX_BYTES = 16 * 1024
 
+/**
+ * The most of a run's window one `read` may take.
+ *
+ * A fixed 16 KB is a quarter of a 16,384-token window and most of a 6,144
+ * one: measured in the crossover family, a small window could not hold two
+ * reads at once, so compaction fired every two or three rounds and the run
+ * spent itself re-reading. The cap follows the window instead. At a third of
+ * the window — with code running about three characters to the token — the
+ * budget at 16,384 tokens is exactly the 16 KB it has always been, so a run
+ * with a full window reads precisely as before.
+ */
+const READ_SHARE = 1 / 3
+const BYTES_PER_TOKEN = 3
+/** Below this a read is too small to be worth making. */
+const READ_MIN_BYTES = 4 * 1024
+
+export function readBudgetBytes(contextLimit: number | null | undefined): number {
+  if (!contextLimit) return READ_MAX_BYTES
+  const share = Math.round(contextLimit * READ_SHARE * BYTES_PER_TOKEN)
+  return Math.max(READ_MIN_BYTES, Math.min(READ_MAX_BYTES, share))
+}
+
+/** What a tool needs to know about the run it is serving. */
+export interface ToolContext {
+  /** The window the run has, when it knows it; the read budget follows it. */
+  contextLimit?: number | null
+}
+
 export const AGENT_TOOLS: ToolDefinition[] = [
   {
     name: 'list_files',
@@ -122,7 +150,8 @@ export const WRITE_TOOLS: ToolDefinition[] = [
 export async function runAgentTool(
   grant: Grant,
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  context: ToolContext = {}
 ): Promise<AgentToolResult> {
   switch (name) {
     case 'list_files':
@@ -130,7 +159,7 @@ export async function runAgentTool(
     case 'search':
       return search(grant, str(args.query), str(args.path) || '.')
     case 'read':
-      return read(grant, str(args.path), int(args.start), int(args.end))
+      return read(grant, str(args.path), int(args.start), int(args.end), readBudgetBytes(context.contextLimit))
     case 'edit_file':
       return editFile(grant, str(args.path), str(args.find), str(args.replace))
     case 'write_file':
@@ -226,7 +255,8 @@ async function read(
   grant: Grant,
   path: string,
   start: number | null,
-  end: number | null
+  end: number | null,
+  maxBytes: number
 ): Promise<AgentToolResult> {
   if (!path) return { ok: false, content: 'Give a path to read.' }
   const resolved = await grant.resolve(path)
@@ -249,7 +279,7 @@ async function read(
   for (let i = first - 1; i < last; i++) {
     const line = `${String(i + 1).padStart(width)}| ${lines[i]}`
     bytes += line.length + 1
-    if (bytes > READ_MAX_BYTES) break
+    if (bytes > maxBytes) break
     out.push(line)
     shown = i + 1
   }
