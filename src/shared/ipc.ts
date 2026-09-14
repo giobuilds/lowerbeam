@@ -49,6 +49,8 @@ export const IPC = {
   codingDiscard: 'coding:discard',
   codingSandbox: 'coding:sandbox',
   codingCapability: 'coding:capability',
+  codingEvidence: 'coding:evidence',
+  codingCheckBaseline: 'coding:check-baseline',
   codingEvent: 'coding:event',
   codingRunsChanged: 'coding:runs-changed',
   readerOpen: 'reader:open',

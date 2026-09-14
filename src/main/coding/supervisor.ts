@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { CodingRunSummary, CodingStartRequest, JournalEvent } from '@shared/coding.js'
 import { Grant } from '../../agent/grant.js'
@@ -11,6 +11,8 @@ import { Workspace } from './workspace.js'
 import { probeSandbox, runInSandbox } from './sandbox.js'
 import { ModelIdentifier } from './capability.js'
 import { verdictFor, type CapabilityStatus } from '@shared/capability.js'
+import { evidenceFrom, withRerun, type Evidence } from '@shared/evidence.js'
+import { hashFile } from './workspace.js'
 import { writeFile } from 'node:fs/promises'
 import type { ApplyResult, ChangeSet } from '@shared/coding.js'
 
@@ -147,6 +149,10 @@ export class CodingSupervisor extends EventEmitter<{
     contextLimit: number | null,
     mode: CodingRunSummary['mode']
   ): Promise<void> {
+    // Each command's full output is kept beside the journal, numbered in the
+    // order the journal has them, so the evidence can find the output of the
+    // k-th command from the k-th command.finished event.
+    let commands = 0
     try {
       const result = await runTask({
         baseUrl,
@@ -176,7 +182,8 @@ export class CodingSupervisor extends EventEmitter<{
                 // Full output beside the journal: the model sees a tail, a
                 // person can see all of it.
                 const output = r.stdout + (r.stderr ? (r.stdout ? '\n' : '') + r.stderr : '')
-                await writeFile(join(this.dir, `${id}.cmd-${Date.now()}.txt`), `$ ${command}\n${output}`)
+                commands += 1
+                await writeFile(join(this.dir, `${id}.cmd-${commands}.txt`), `$ ${command}\n${output}`)
                 return {
                   exitCode: r.exitCode,
                   output,
@@ -221,6 +228,64 @@ export class CodingSupervisor extends EventEmitter<{
   capability(): Promise<CapabilityStatus> {
     const status = this.inference()?.status
     return this.identifier.status(status?.phase === 'ready' ? status.config?.modelPath : null)
+  }
+
+  /**
+   * What the run's commands show: the verification after its last edit, the
+   * same command before any edit, and the failure lines of each compared.
+   * From the record, plus a baseline rerun if one was asked for.
+   */
+  async evidence(id: string): Promise<Evidence | null> {
+    if (!this.runs.has(id)) return null
+    const events = await this.events(id)
+    const changes = await this.changes(id)
+    const outputs: Record<number, string | null> = {}
+    const count = events.filter((e) => e.type === 'command.finished').length
+    for (let k = 1; k <= count; k++) {
+      try {
+        // The first line is the command echoed; the output follows.
+        outputs[k] = (await readFile(join(this.dir, `${id}.cmd-${k}.txt`), 'utf8')).replace(/^[^\n]*\n?/, '')
+      } catch {
+        outputs[k] = null
+      }
+    }
+    const evidence = evidenceFrom(events, outputs, changes?.files.map((f) => f.path) ?? [])
+    try {
+      const rerun = JSON.parse(await readFile(join(this.dir, `${id}.baseline.json`), 'utf8')) as Rerun
+      return withRerun(evidence, rerun)
+    } catch {
+      return evidence
+    }
+  }
+
+  /**
+   * Run the verification command once on the project as it was: a fresh copy,
+   * checked file by file against the run's baseline manifest — anything the
+   * project has changed since is named, since the rerun is then against the
+   * project as it is now. The copy is removed afterwards; the output is kept.
+   */
+  async checkBaseline(id: string): Promise<Evidence | null> {
+    const ws = await this.workspace(id)
+    const evidence = await this.evidence(id)
+    if (!ws || !evidence) throw new Error('This run has no workspace to check against.')
+    if (!evidence.verification) throw new Error('The run ran nothing after its last edit, so there is nothing to compare.')
+    if (this.live.has(id)) throw new Error('Wait for the run to finish, or stop it, before checking.')
+    const dir = join(this.dir, 'workspaces', `${id}-baseline`)
+    await rm(dir, { recursive: true, force: true })
+    const copy = await Workspace.create(ws.manifest.projectRoot, dir)
+    try {
+      const drifted: string[] = []
+      for (const [path, hash] of Object.entries(ws.manifest.files)) if (copy.manifest.files[path] !== hash) drifted.push(path)
+      for (const path of Object.keys(copy.manifest.files)) if (!(path in ws.manifest.files)) drifted.push(path)
+      const command = evidence.verification.command
+      const r = await runInSandbox({ workspace: copy.root, projectRoot: ws.manifest.projectRoot, command, timeoutMs: 120_000, maxOutputBytes: 512 * 1024 })
+      const output = r.stdout + (r.stderr ? (r.stdout ? '\n' : '') + r.stderr : '')
+      const rerun: Rerun = { command, exitCode: r.exitCode, timedOut: r.timedOut, output, drifted: drifted.sort(), at: Date.now() }
+      await writeFile(join(this.dir, `${id}.baseline.json`), JSON.stringify(rerun))
+      return withRerun(evidence, rerun)
+    } finally {
+      await copy.discard()
+    }
   }
 
   /** The run's changes against the baseline its workspace was taken from. */
@@ -284,6 +349,15 @@ export class CodingSupervisor extends EventEmitter<{
     if (!/^[a-f0-9-]{36}$/i.test(id)) throw new Error('invalid run id')
     return join(this.dir, `${id}.jsonl`)
   }
+}
+
+interface Rerun {
+  command: string
+  exitCode: number | null
+  timedOut: boolean
+  output: string
+  drifted: string[]
+  at: number
 }
 
 function describe(mode: CodingStartRequest['mode']): string {

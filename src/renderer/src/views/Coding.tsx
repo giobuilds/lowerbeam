@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ChangeSet, CodingRunSummary, JournalEvent } from '@shared/coding.js'
 import { useCodingStore } from '../state/codingStore.js'
 import { verdictFor, type CapabilityStatus } from '@shared/capability.js'
+import { isTestPath, type CommandEvidence } from '@shared/evidence.js'
 import { useServerStore } from '../state/serverStore.js'
 import { renderMarkdown } from '../api/markdown.js'
 
@@ -304,6 +305,7 @@ function Run({ run }: { run: CodingRunSummary }): React.JSX.Element {
         </div>
       )}
 
+      {run.mode === 'run' && run.outcome !== 'running' && <EvidencePanel run={run} />}
       {run.mode !== 'inspect' && run.outcome !== 'running' && <Changes run={run} />}
     </div>
   )
@@ -377,14 +379,111 @@ function Changes({ run }: { run: CodingRunSummary }): React.JSX.Element {
   )
 }
 
+/**
+ * What the run's commands show, read against the record: the command after
+ * its last edit, the same command before any edit, and their failure lines
+ * compared. A test file among the changes is named here too, because a
+ * pass that came from editing the tests is not a pass.
+ */
+function EvidencePanel({ run }: { run: CodingRunSummary }): React.JSX.Element {
+  const evidence = useCodingStore((s) => s.evidence[run.id])
+  const busy = useCodingStore((s) => Boolean(s.busy[run.id]))
+  const loadEvidence = useCodingStore((s) => s.loadEvidence)
+  const checkBaseline = useCodingStore((s) => s.checkBaseline)
+
+  useEffect(() => {
+    if (!evidence) void loadEvidence(run.id)
+  }, [evidence, loadEvidence, run.id])
+
+  if (!evidence) return <p className="mt-4 text-[11px] text-muted">Reading the run's commands…</p>
+  const v = evidence.verification
+  const b = evidence.baseline
+  const passed = v !== null && v.exitCode === 0 && !v.timedOut
+  return (
+    <div className="mt-4">
+      <div className="mb-1 flex items-baseline gap-3">
+        <p className="text-[11px] font-medium text-muted">Evidence</p>
+        {v && (
+          <button type="button" disabled={busy} onClick={() => void checkBaseline(run.id)} className="ml-auto rounded border border-edge px-2 py-0.5 text-[11px] text-muted hover:text-slate-200 disabled:opacity-50" title="Run the same command once on a fresh copy of the project as it was when the run began.">
+            {busy ? 'Running on the baseline…' : b?.source === 'rerun' ? 'Run on the baseline again' : 'Run on the baseline'}
+          </button>
+        )}
+      </div>
+      <div className="space-y-1 rounded border border-edge bg-panel p-3 text-[11px]">
+        {!v ? (
+          <p className="text-amber-200">Nothing was run after the last edit, so the change is unverified.</p>
+        ) : (
+          <>
+            <CommandLine label="after the edit" c={v} />
+            {b ? (
+              <CommandLine label={b.source === 'record' ? 'before any edit, from the run' : 'on the baseline, rerun'} c={b} />
+            ) : (
+              <p className="text-muted">The run did not make this command before editing, so the record has no baseline for it.</p>
+            )}
+            {b && v.outputAvailable && b.outputAvailable && (
+              <div className="pt-1">
+                {evidence.newFailures.length > 0 && <FailureList label="new since the change" lines={evidence.newFailures} colour="text-rose-300" />}
+                {evidence.preexisting.length > 0 && <FailureList label="already failing before the run" lines={evidence.preexisting} colour="text-amber-200" />}
+                {evidence.fixed.length > 0 && <FailureList label="failing before, not now" lines={evidence.fixed} colour="text-emerald-300" />}
+                {evidence.newFailures.length === 0 && evidence.preexisting.length === 0 && evidence.fixed.length === 0 && (
+                  <p className="text-muted">{passed ? 'No failure lines either side.' : 'No failure lines recognised either side; the exit codes are what there is.'}</p>
+                )}
+              </div>
+            )}
+            {(!v.outputAvailable || (b && !b.outputAvailable)) && <p className="text-muted">Output was not kept for this run, so only the exit codes can be compared.</p>}
+            {evidence.drifted.length > 0 && (
+              <p className="text-amber-200">
+                The project has changed since the run's baseline in {evidence.drifted.length} file{evidence.drifted.length === 1 ? '' : 's'} ({evidence.drifted.slice(0, 3).join(', ')}
+                {evidence.drifted.length > 3 ? ', …' : ''}), so the rerun was against the project as it is now.
+              </p>
+            )}
+          </>
+        )}
+        {evidence.testFilesChanged.length > 0 && (
+          <p className="text-amber-200">
+            The run changed {evidence.testFilesChanged.length} test file{evidence.testFilesChanged.length === 1 ? '' : 's'} ({evidence.testFilesChanged.join(', ')}). {passed ? 'The pass is not proof the change is right: read those diffs first.' : 'Those are changes to review, not proof of anything.'}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CommandLine({ label, c }: { label: string; c: CommandEvidence }): React.JSX.Element {
+  const state = c.timedOut ? 'timed out' : c.exitCode === 0 ? 'exit 0' : `exit ${c.exitCode ?? '?'}`
+  return (
+    <p className={c.timedOut ? 'text-amber-300' : c.exitCode === 0 ? 'text-slate-300' : 'text-rose-300'}>
+      <span className="text-muted">{label} · </span>
+      <span className="font-mono">$ {c.command}</span> → {state}
+      {c.outputAvailable && c.failures.length > 0 && <span className="text-muted"> · {c.failures.length} failure line{c.failures.length === 1 ? '' : 's'}</span>}
+    </p>
+  )
+}
+
+function FailureList({ label, lines, colour }: { label: string; lines: string[]; colour: string }): React.JSX.Element {
+  return (
+    <div>
+      <p className={colour}>{label}</p>
+      <ul className="pl-3 font-mono text-muted">
+        {lines.slice(0, 12).map((l) => (
+          <li key={l} className="truncate">{l}</li>
+        ))}
+        {lines.length > 12 && <li>… {lines.length - 12} more</li>}
+      </ul>
+    </div>
+  )
+}
+
 function FileDiff({ change }: { change: ChangeSet['files'][number] }): React.JSX.Element {
   const [open, setOpen] = useState(true)
   const colour = change.kind === 'created' ? 'text-emerald-300' : change.kind === 'deleted' ? 'text-rose-300' : 'text-amber-200'
+  const test = isTestPath(change.path)
   return (
     <li className="rounded border border-edge bg-panel">
       <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs">
         <span className={`w-16 shrink-0 text-[11px] ${colour}`}>{change.kind}</span>
         <span className="truncate font-mono text-slate-200">{change.path}</span>
+        {test && <span className="shrink-0 rounded bg-ink px-1.5 text-[10px] text-amber-200" title="A test file: a change here is a change to review, not proof the code is right.">test</span>}
         <span className="ml-auto text-[11px] text-muted">{open ? '▾' : '▸'}</span>
       </button>
       {open && change.diff && (
