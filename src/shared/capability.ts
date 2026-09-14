@@ -59,7 +59,15 @@ export interface ModelCapability {
 /** What the coding tab is told about the model that is loaded. */
 export type CapabilityStatus =
   | { state: 'none' }
-  | { state: 'measured'; path: string; bytes: number; sha256: string; record: ModelCapability }
+  | {
+      state: 'measured'
+      path: string
+      bytes: number
+      sha256: string
+      record: ModelCapability
+      /** The context each slot of the running server has, so a launch the record never measured can be said so. */
+      contextPerSlot?: number | null
+    }
   | { state: 'unmeasured'; path: string; bytes: number; sha256: string }
 
 const RESULTS = 'docs/stage0-results.md'

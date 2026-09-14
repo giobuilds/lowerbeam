@@ -238,10 +238,11 @@ export class CodingSupervisor extends EventEmitter<{
     return probeSandbox()
   }
 
-  /** What the capability record says about the model that is loaded now. */
-  capability(): Promise<CapabilityStatus> {
+  /** What the capability record says about the model that is loaded now, and the context it is running with. */
+  async capability(): Promise<CapabilityStatus> {
     const status = this.inference()?.status
-    return this.identifier.status(status?.phase === 'ready' ? status.config?.modelPath : null)
+    const found = await this.identifier.status(status?.phase === 'ready' ? status.config?.modelPath : null)
+    return found.state === 'measured' ? { ...found, contextPerSlot: status?.contextPerSlot ?? null } : found
   }
 
   /**
