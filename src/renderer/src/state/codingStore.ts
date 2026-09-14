@@ -98,7 +98,9 @@ export const useCodingStore = create<CodingState>((set, get) => ({
   async addReadRoot() {
     const dir = await window.llama.coding.pickReadRoot()
     if (!dir) return
-    const { terms } = get()
+    const { terms, project } = get()
+    // The project is granted already; a folder inside it adds nothing.
+    if (project && (dir === project || dir.startsWith(project + '/'))) return
     if (!terms.alsoRead.includes(dir)) set({ terms: { ...terms, alsoRead: [...terms.alsoRead, dir] } })
   },
 
