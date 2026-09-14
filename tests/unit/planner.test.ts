@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import type { GgufMetadata } from '../../src/main/gguf.js'
-import { planVram, kvCacheBytes, computeBufferBytes, weightBytesOnGpu } from '../../src/main/planner.js'
+import { planVram, kvCacheBytes, computeBufferBytes, weightBytesOnGpu, attentionLayers } from '../../src/main/planner.js'
 
 // Recorded from qwen2.5-0.5b-instruct-q4_k_m.gguf, whose allocations llama.cpp
 // reported directly and which the assertions below are calibrated against. Kept
@@ -11,6 +11,7 @@ const meta: GgufMetadata = {
   fileSize: 491400032,
   architecture: 'qwen2',
   name: 'qwen2.5-0.5b-instruct',
+  fullAttentionInterval: null, nextnLayers: null,
   blockCount: 24, contextLength: 32768, embeddingLength: 896,
   headCount: 14, headCountKv: 2, quant: 'Q4_K_M', parameterCount: 630000000,
   hasChatTemplate: true, vocabSize: 151936, isProjector: false,
@@ -82,5 +83,18 @@ assert.ok(partial.weightsMiB>0 && partial.weightsMiB < weightBytesOnGpu(meta,999
 assert.ok(partial.kvCacheMiB < 48); ok('partial offload scales weights and KV together')
 const noGpu = planVram({ meta, gpuLayers:999, contextSize:4096, cacheTypeK:'f16', cacheTypeV:'f16', hasGpuBackend:false }, null)
 assert.equal(noGpu.backendOverheadMiB,0); ok('no backend reserve counted on a CPU-only build')
+
+console.log('\nhybrid attention — only the blocks with a cache count')
+{
+  // Ornith 1.5 9B as its file states it: 33 blocks, one of them the
+  // next-token head, one in four with a KV cache, 4 KV heads of 256.
+  const hybrid: GgufMetadata = { ...meta, architecture: 'qwen35', blockCount: 33, nextnLayers: 1, fullAttentionInterval: 4, embeddingLength: 4096, headCount: 16, headCountKv: 4, keyLength: 256, valueLength: 256, contextLength: 262144 }
+  assert.equal(attentionLayers(hybrid), 8); ok('33 blocks, one nextn, one in four cached: 8 layers hold a cache')
+  assert.equal(kvCacheBytes(hybrid, 16384, 'f16', 'f16'), 8 * 2 * 16384 * 1024 * 2); ok('32 KB a token: 512 MiB at 16,384, not the 2.1 GiB that 33 layers would give')
+  const trained = planVram({ meta: hybrid, gpuLayers: 999, contextSize: 0, cacheTypeK: 'f16', cacheTypeV: 'f16' }, 8142)
+  assert.equal(Math.round(trained.kvCacheMiB), 8192); ok('a context of 0 is the trained length: 262,144 tokens, an 8 GiB cache')
+  assert.ok(trained.notes.some((l) => l.includes('trained length'))); ok('and the notes say so')
+  assert.ok(!trained.fits); ok('which does not fit an 8 GB card')
+}
 
 console.log(`\n${n} assertions passed`)

@@ -189,6 +189,8 @@ async function describe(path: string): Promise<ModelEntry> {
       expertCount: null,
       expertUsedCount: null,
       expertFeedForwardLength: null,
+      fullAttentionInterval: null,
+      nextnLayers: null,
       mtimeMs,
       error: err instanceof Error ? err.message : String(err)
     }

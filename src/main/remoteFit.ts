@@ -70,7 +70,9 @@ async function fetchHeader(repo: string, file: string): Promise<Partial<GgufMeta
       valueLength: num(kv.get(`${arch}.attention.value_length`)),
       expertCount: num(kv.get(`${arch}.expert_count`)),
       expertUsedCount: num(kv.get(`${arch}.expert_used_count`)),
-      expertFeedForwardLength: num(kv.get(`${arch}.expert_feed_forward_length`))
+      expertFeedForwardLength: num(kv.get(`${arch}.expert_feed_forward_length`)),
+      fullAttentionInterval: num(kv.get(`${arch}.full_attention_interval`)),
+      nextnLayers: num(kv.get(`${arch}.nextn_predict_layers`))
     }
   } catch {
     return null

@@ -74,9 +74,24 @@ export interface VramPlan {
 }
 
 /**
+ * The blocks that hold a KV cache. Every block on an ordinary transformer;
+ * on a hybrid, every Nth — the others keep a fixed state that does not
+ * grow with context — and never the next-token-prediction blocks, which
+ * the server loads and does not run. Ornith 1.5 9B: 33 blocks, one of
+ * them nextn, one in four with a cache, so 8. Estimating with 33 was
+ * four times the truth.
+ */
+export function attentionLayers(meta: GgufMetadata): number {
+  const blocks = Math.max(0, (meta.blockCount ?? 0) - (meta.nextnLayers ?? 0))
+  const interval = meta.fullAttentionInterval ?? 1
+  return interval > 1 ? Math.floor(blocks / interval) : blocks
+}
+
+/**
  * KV cache size. This is exact: llama.cpp allocates
  *   2 (K and V) x n_layer x n_ctx x n_embd_gqa x bytes_per_element
- * where n_embd_gqa = (n_embd / n_head) * n_head_kv.
+ * where n_embd_gqa = head_dim x n_head_kv and n_layer counts the blocks
+ * that hold a cache.
  */
 export function kvCacheBytes(
   meta: GgufMetadata,
@@ -87,9 +102,11 @@ export function kvCacheBytes(
 ): number | null {
   const { embeddingLength, headCount, headCountKv, blockCount } = meta
   if (!embeddingLength || !headCount || !headCountKv || !blockCount) return null
-  const headDim = embeddingLength / headCount
+  // Explicit head dimensions win where the file sets them: Qwen 3 uses 128
+  // where the division implies 64.
+  const headDim = meta.keyLength ?? embeddingLength / headCount
   const embdGqa = headDim * headCountKv
-  const n = layers ?? blockCount
+  const n = layers ?? attentionLayers(meta)
   const cells = contextSize * embdGqa * n
   return cells * KV_BYTES_PER_ELEMENT[cacheTypeK] + cells * KV_BYTES_PER_ELEMENT[cacheTypeV]
 }
@@ -162,7 +179,11 @@ export function weightBytesOnGpu(meta: GgufMetadata, gpuLayers: number): number 
 }
 
 export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
-  const { meta, contextSize, cacheTypeK, cacheTypeV } = input
+  const { meta, cacheTypeK, cacheTypeV } = input
+  // A context of 0 is not no context: llama.cpp takes the model's trained
+  // length, 262,144 tokens for the 9B, which on an 8 GB card is the whole
+  // card. The estimate has to say so rather than show an empty cache.
+  const contextSize = input.contextSize > 0 ? input.contextSize : (meta.contextLength ?? 0)
   const ubatch = input.ubatch ?? 512
   const parallel = input.parallel ?? 1
   const totalLayers = (meta.blockCount ?? 0) + 1
@@ -172,7 +193,9 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
   const weights = weightBytesOnGpu(meta, input.gpuLayers)
   // KV lives with the layers it belongs to, so a partial offload only puts a
   // proportional slice of the cache in VRAM.
-  const kvLayers = Math.min(offloadedLayers, meta.blockCount ?? 0)
+  // Only the blocks that hold a cache count, and only the offloaded share of them.
+  const cached = attentionLayers(meta)
+  const kvLayers = Math.min(Math.round((cached * offloadedLayers) / Math.max(1, meta.blockCount ?? 1)), cached)
   // -c is the TOTAL context, which llama.cpp divides across slots: `-c 16384
   // --parallel 4` gives each slot 4096 and allocates one 16384-cell cache, not
   // four. Multiplying here would overstate the KV cache by the slot count.
@@ -190,10 +213,11 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
 
   const notes: string[] = []
   notes.push(`weights: ${fmt(meta.fileSize / MiB)} MiB x ${offloadedLayers}/${totalLayers} layers`)
+  if (input.contextSize <= 0 && contextSize > 0) notes.push(`context 0 means the model's trained length: ${contextSize} tokens`)
   if (kv > 0 && meta.embeddingLength && meta.headCount && meta.headCountKv) {
-    const headDim = meta.embeddingLength / meta.headCount
+    const headDim = meta.keyLength ?? meta.embeddingLength / meta.headCount
     notes.push(
-      `KV: 2 x ${kvLayers} layers x ${contextSize} ctx x ` +
+      `KV: 2 x ${kvLayers} layers${(meta.fullAttentionInterval ?? 1) > 1 ? ` (one in ${meta.fullAttentionInterval} holds a cache)` : ''} x ${contextSize} ctx x ` +
         `${headDim * meta.headCountKv} embd_gqa (${cacheTypeK}/${cacheTypeV})`
     )
     if (parallel > 1) {

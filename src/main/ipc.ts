@@ -491,6 +491,7 @@ export function registerIpc(
   handle<ChangeSet | null>(IPC.codingChanges, (id) => coding.changes(String(id ?? '')))
   handle<SandboxProbe>(IPC.codingSandbox, () => coding.sandbox())
   handle<CapabilityStatus>(IPC.codingCapability, () => coding.capability())
+  handle<CapabilityStatus>(IPC.codingCapabilityOf, (path) => coding.capabilityOf(String(path ?? '')))
   handle<Evidence | null>(IPC.codingEvidence, (id) => coding.evidence(String(id ?? '')))
   handle<Evidence | null>(IPC.codingCheckBaseline, (id) => coding.checkBaseline(String(id ?? '')))
   handle<ApplyResult>(IPC.codingApply, (id) => coding.apply(String(id ?? '')))

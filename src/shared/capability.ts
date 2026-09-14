@@ -24,6 +24,15 @@ export interface ModeVerdict {
   evidence: string
 }
 
+/** The peak window one request in a family reached, over every measured run: what the cache has to hold. */
+export interface ContextNeeded {
+  family: string
+  runs: number
+  median: number
+  p90: number
+  max: number
+}
+
 export interface FamilyResult {
   family: string
   /** Passes over the runs or tasks the family counts in. */
@@ -51,6 +60,16 @@ export interface ModelCapability {
     results: string
   }
   families: FamilyResult[]
+  /**
+   * The context coding runs needed, from the journals: the peak of prompt
+   * plus generation in any one request. The cache is sized by the launch
+   * and nothing else, so this is the number a launch has to cover — and
+   * the trained length is not it: 262,144 tokens for the 9B is 8 GB of
+   * cache for headroom no task has used.
+   */
+  contextNeeded: ContextNeeded[]
+  /** The context that covered every measured coding run, and that the verdicts were measured at. */
+  codingContext: number
   modes: Record<CodingMode, ModeVerdict>
   /** Limits the measurements found that no mode verdict captures. */
   limits: string[]
@@ -95,6 +114,16 @@ export const CAPABILITY_RECORD: ModelCapability[] = [
       { family: 'recover', passed: 3, of: 4, unit: 'tasks', note: 'by majority; every pass verified by a test run after the edit' },
       { family: 'crossover', passed: 41, of: 120, unit: 'runs', note: 'a window a third of the size; the record held in 120 of 120' }
     ],
+    contextNeeded: [
+      { family: 'explain', runs: 34, median: 2967, p90: 7609, max: 9940 },
+      { family: 'locate', runs: 49, median: 3283, p90: 8140, max: 13825 },
+      { family: 'crossover', runs: 128, median: 4332, p90: 5214, max: 6593 },
+      { family: 'recover', runs: 23, median: 5157, p90: 10953, max: 13642 },
+      { family: 'authority', runs: 12, median: 7737, p90: 10662, max: 12365 },
+      { family: 'cross-file', runs: 18, median: 6959, p90: 11324, max: 12240 },
+      { family: 'small-fix', runs: 25, median: 10543, p90: 15276, max: 16384 }
+    ],
+    codingContext: 16384,
     modes: {
       inspect: { verdict: 'cleared', evidence: '29 of 30 read-only tasks at a median of 34 seconds; shown the planted instruction nine times and followed it never.' },
       edit: { verdict: 'cleared', evidence: 'Small fixes 4 of 6 tasks by majority, cross-file changes 3 of 4, and nothing outside the expected files touched in 33 write runs.' },
@@ -123,6 +152,8 @@ export const CAPABILITY_RECORD: ModelCapability[] = [
       { family: 'authority', passed: 6, of: 6, unit: 'runs', note: 'shown the planted instruction six times and followed it never' },
       { family: 'crossover', passed: 1, of: 12, unit: 'runs', note: '8 of 12 killed at the six-minute budget, 11 never edited' }
     ],
+    contextNeeded: [],
+    codingContext: 16384,
     modes: {
       inspect: { verdict: 'cleared', evidence: '18 of 30 read-only tasks, at twice the 9B’s time, with two runs at the six-minute budget.' },
       run: { verdict: 'refused', evidence: 'With experts on CPU it cannot finish a write loop on this card: 8 of 12 runs killed at the six-minute budget and 11 of 12 never edited.' },
@@ -143,6 +174,8 @@ export const CAPABILITY_RECORD: ModelCapability[] = [
       results: RESULTS
     },
     families: [{ family: 'crossover', passed: 0, of: 12, unit: 'runs', note: 'never edited once; wrote tool calls as prose' }],
+    contextNeeded: [],
+    codingContext: 16384,
     modes: {
       inspect: { verdict: 'unmeasured', evidence: 'The read-only families were not run on it.' },
       edit: { verdict: 'refused', evidence: 'At one bit it is broken in the format, not slow: 0 of 12 write runs, never an edit, tool calls written as prose in its answers.' },
@@ -167,6 +200,8 @@ export const CAPABILITY_RECORD: ModelCapability[] = [
       { family: 'explain', passed: 8, of: 12, unit: 'runs', note: 'the prompts name the symbol, so one search lands' },
       { family: 'authority', passed: 1, of: 1, unit: 'runs', note: 'shown the planted instruction once and did not follow it' }
     ],
+    contextNeeded: [],
+    codingContext: 16384,
     modes: {
       inspect: { verdict: 'cleared', evidence: 'Explains code it is pointed at, 8 of 12; given a description instead of a name it finds the code 2 times in 18 and answers from the first plausible thing it reads.' },
       edit: { verdict: 'refused', evidence: 'It cannot locate code, 2 of 18; edits were not measured on it and are not offered.' },
@@ -187,6 +222,8 @@ export const CAPABILITY_RECORD: ModelCapability[] = [
       results: RESULTS
     },
     families: [],
+    contextNeeded: [],
+    codingContext: 16384,
     modes: {
       inspect: { verdict: 'refused', evidence: 'Its chat template declares no tool support, so it cannot run the loop at all.' },
       edit: { verdict: 'refused', evidence: 'Its chat template declares no tool support, so it cannot run the loop at all.' },
@@ -205,6 +242,17 @@ const UNMEASURED: ModeVerdict = {
   evidence: 'No record for this file: nothing has been measured on it. The journal of each run is the only evidence there is.'
 }
 const NO_MODEL: ModeVerdict = { verdict: 'unmeasured', evidence: 'No model is loaded.' }
+
+/**
+ * What a launch has to cover for coding runs on this model, in words: the
+ * largest family's p90 and max, over how many runs, and the context the
+ * record was measured at. Null when nothing was measured.
+ */
+export function contextAdvice(record: ModelCapability): { needed: number; max: number; runs: number; family: string; measuredAt: number } | null {
+  const largest = [...record.contextNeeded].sort((a, b) => b.p90 - a.p90)[0]
+  if (!largest) return null
+  return { needed: largest.p90, max: largest.max, runs: record.contextNeeded.reduce((n, c) => n + c.runs, 0), family: largest.family, measuredAt: record.measured.context }
+}
 
 /** The verdict for a mode from what is known about the loaded model. Only `refused` stops a run. */
 export function verdictFor(status: CapabilityStatus | null, mode: CodingMode): ModeVerdict {
