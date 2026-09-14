@@ -322,7 +322,7 @@ compacted tested nothing), every claim in every checkpoint supported by
 the journal, and the last checkpoint's changed files present in the
 workspace diff.
 
-Six matrices of twelve runs, each changing one thing, reported together
+Eight matrices of twelve runs, each changing one thing, reported together
 because the spread between them is the finding.
 
 | matrix | change | passes | by majority | compacted | record held |
@@ -334,25 +334,26 @@ because the spread between them is the finding.
 | 5 | folding keeps the newest two rounds whole, not one | 6/12 | 2 of 4 | 12/12 | 12/12 |
 | 6 | the notes carry what the model last said it was doing | 2/12 | 0 of 4 | 12/12 | 12/12 |
 | 7 | that statement expires if it is two rounds old | 4/12 | 1 of 4 | 12/12 | 12/12 |
+| 8 | a read takes at most a third of the window | 6/12 | 3 of 4 | 12/12 | 12/12 |
 
-Per task over matrices 2–7, eighteen runs each, beside the same task at
+Per task over matrices 2–8, twenty-one runs each, beside the same task at
 the full window in its own family:
 
 | task | window | crossover passes | at 16k | verified when passed |
 |---|---|---|---|---|
-| crossover-slug | 4,096 | 7/18 | 5/6 | 7/7 |
-| crossover-read-window | 6,144 | 0/18 | 2/3 | — |
-| crossover-rename-summarise | 6,144 | 12/18 | 3/3 | 12/12 |
-| crossover-new-ipc-channel | 6,144 | 8/18 | 1/3 | 8/8 |
+| crossover-slug | 4,096 | 9/21 | 5/6 | 9/9 |
+| crossover-read-window | 6,144 | 0/21 | 2/3 | — |
+| crossover-rename-summarise | 6,144 | 14/21 | 3/3 | 14/14 |
+| crossover-new-ipc-channel | 6,144 | 10/21 | 1/3 | 10/10 |
 
 **Stage 3 crossover gate: not met on task completion; met on the record.**
-The record's part held in every one of 84 runs: compaction fired in 78,
+The record's part held in every one of 96 runs: compaction fired in 90,
 every claim in every checkpoint was supported by the journal up to its
 sequence, the changed-files slot matched the workspace diff at the end
 each time, and nothing unwanted was touched. Task completion in a window
 a third of the size ranged from 0 to 6 of 12 across matrices of the same
-code, and pooled over 72 runs one task of four passes by majority —
-rename, 12 of 18. The spread between matrices 2 and 3 — six passes to
+code, and pooled over 84 runs one task of four passes by majority —
+rename, 14 of 21. The spread between matrices 2 and 3 — six passes to
 none, the search fix the only change between them — is larger than any
 single change made here and is the 9B's own: the failing runs reason two
 to three times as long per round and read the same short file repeatedly
@@ -393,9 +394,10 @@ tokens of TypeScript. Two of them is a 6,144-token window. So a small
 window does not hold two files at once whatever the policy, and
 compaction fires every two or three rounds no matter how folding is
 tuned. The lever that would change that is the read itself — scaling the
-returned window to the context the run has — and it cannot be tried
+returned window to the context the run has — and it looked untriable
 against these tasks, because `READ_MAX_LINES = 200` is the planted bug
-in three of them.
+in one of them. It was not: the line cap and the byte cap are separate
+things, and only the byte cap has to follow the window. Matrix 8, below.
 
 ### The notes carry what the model last said, and it has to expire
 
@@ -424,19 +426,49 @@ and scored 4 of 12, which is again inside the spread. The rule is kept
 because it is what the slot's own definition says, not because the
 number moved.
 
+### The read follows the window
+
+A `read` was capped at 200 lines and at 16 KB, whichever came first. The
+line cap is what the `read-window` task plants its bug in; the byte cap
+is the one that matters in a small window, since 16 KB is a quarter of
+16,384 tokens and most of 6,144. Matrix 8 makes the byte cap a third of
+the window the run has — at 16,384 tokens, with code running about three
+characters to the token, that is exactly the 16 KB it always was, so a
+run with a full window reads as before — and leaves the line cap alone,
+which is why the planted bug stays detectable: a search for the constant
+still returns it, and the first sixty lines of the file still show it.
+
+It scored **6 of 12, three tasks of four by majority** — the first matrix
+to reach three — and the runs that never edited were 3 of 12, the fewest
+since matrix 2. The cap binds: the largest read in a 6,144 task fell from
+8.2–9.2 KB in matrix 7 to 6.2 KB, and in `slug` at 4,096 from 4.1–5.0 KB
+to 2.6–4.2 KB, and the largest prompt in a run fell with it (the IPC task
+3,477 tokens to 2,792, the rename 3,881 to 3,064). What did not move is
+the number the change was aimed at. Matrix 7 compacted 32 times across
+158 rounds and matrix 8 33 times across 174: once every five rounds
+either way. The model reads less per call and about as often, so the
+window fills at the same rate. `read-window` failed 0 of 3 again, 0 of
+21 now, and in the same way as before: two of the three runs were shown
+`const READ_MAX_LINES = 100` by a search, one of them read lines 1–60 of
+the file as well, and none of the three edited anything.
+
+By the family's own standard, set out in the next section, one matrix at the
+top of the spread credits nothing. The change is kept because its
+arithmetic holds and it costs nothing at the full window.
+
 ### What the family can and cannot resolve
 
-Seven matrices, 84 runs, and the same 0-to-6-of-12 spread throughout.
+Eight matrices, 96 runs, and the same 0-to-6-of-12 spread throughout.
 Splitting the runs by how far they got says why, and it is the most
 useful thing the family has produced:
 
-| how far the run got | matrices 2–7 |
+| how far the run got | matrices 2–8 |
 |---|---|
-| never called an edit tool | 31/72 |
-| edited, did not fix it | 13/72 |
-| fixed it, never ran the check | 6/72 |
-| touched the wrong file | 1/72 |
-| pass | 21/72 |
+| never called an edit tool | 34/84 |
+| edited, did not fix it | 16/84 |
+| fixed it, never ran the check | 6/84 |
+| touched the wrong file | 1/84 |
+| pass | 27/84 |
 
 Two numbers are stable across every matrix: the record holds, and about
 four runs in ten never edit anything at all. That second one is the
@@ -445,8 +477,8 @@ the context engine has ever moved it — nor should one be expected to.
 
 What is left after that tax is seven or eight informative runs per
 matrix, and *that* is where the whole 0-to-6 spread lives: the share of
-editing runs that ended correct and verified was 6/7, 0/5, 6/7, 6/8, 2/7
-and 4/7 across matrices 2 to 7. A twelve-run matrix cannot resolve a
+editing runs that ended correct and verified was 6/7, 0/5, 6/7, 6/8, 2/7,
+4/7 and 6/9 across matrices 2 to 8. A twelve-run matrix cannot resolve a
 change worth one or two runs, and every change tried here is that size.
 The family is sound as a *regression* check — it has caught four real
 defects — and too small as an *experiment*. Any further tuning of the
