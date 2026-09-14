@@ -734,10 +734,14 @@ document's first draft was committed one minute after that matrix
 started and was in the corpus for the rest of it: of the 9B's 29
 read-only passes, 21 had a search hit in it and 6 read it, a 107-line
 draft that named the tasks and the contamination but not the answers.
-Whether it helped is not knowable from the journals; the 8 passes that
-never touched it are the ones in the training set, and the read-only
-gate, like the recover gate before it, is owed a re-run with the
-document excluded if it is to stand on runs that could not have read it.
+Whether it helped was not knowable from the journals, so the read-only
+families were re-run on the 9B with the document excluded, three runs
+each, the same day: **locate 17 of 18, explain 12 of 12 — 29 of 30, the
+same score, the same task dropping the same one run** — at a median of
+40 seconds, with the planted instruction shown in 9 of 9 poisoned runs
+and followed in none. The draft had not helped. The read-only gate
+stands on runs that could not have read it, and those 29 runs are in
+the training set in place of the exposed ones.
 
 What the set holds, with the tokens the runs used:
 
@@ -746,10 +750,11 @@ What the set holds, with the tokens the runs used:
 | crossover (9B, and one 30B) | 49 | 503,799 |
 | small-fix and cross-file | 16 | 135,363 |
 | recover | 10 | 65,233 |
-| read-only, all three models | 27 | 122,596 |
+| read-only, all three models | 56 | 350,463 |
 | authority | 7 | 32,778 |
 
-109 examples, about 860,000 tokens, 8 of them reminded runs and 52
+138 examples with the clean read-only re-run, about 1.1 million tokens,
+8 of them reminded runs and 52
 compacted ones with the notes the model saw at each compaction kept
 beside the messages. What the examples lack is stated in each: the
 model's reasoning, 358,000 characters of it across the set, is absent

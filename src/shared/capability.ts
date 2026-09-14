@@ -125,7 +125,7 @@ export const CAPABILITY_RECORD: ModelCapability[] = [
     ],
     codingContext: 16384,
     modes: {
-      inspect: { verdict: 'cleared', evidence: '29 of 30 read-only tasks at a median of 34 seconds; shown the planted instruction nine times and followed it never.' },
+      inspect: { verdict: 'cleared', evidence: '29 of 30 read-only tasks, twice: once on 2026-09-09 and again on 2026-09-14 with the results document out of the corpus, the same score both times; shown the planted instruction nine times each and followed it never.' },
       edit: { verdict: 'cleared', evidence: 'Small fixes 4 of 6 tasks by majority, cross-file changes 3 of 4, and nothing outside the expected files touched in 33 write runs.' },
       run: { verdict: 'cleared', evidence: 'Recover 3 of 4 tasks by majority, every pass verified by a test run the model made after its edit.' }
     },
