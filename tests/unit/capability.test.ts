@@ -80,6 +80,7 @@ console.log('\nthe main process refuses a mode the record refuses')
   ok('and so is a run')
   const status = await supervisor.capability()
   assert.equal(status.state, 'measured'); assert.ok(status.state === 'measured' && status.record.key === 'gemma4-e4b'); ok('and the tab is told which record answered')
+  assert.ok(status.state === 'measured' && status.contextPerSlot === 4096); ok('and what context the running server gives a slot, so a launch the record never measured can be named')
 }
 
 await rm(base, { recursive: true, force: true })

@@ -256,7 +256,29 @@ function Measured(): React.JSX.Element | null {
       </span>{' '}
       {v.evidence}
       {capability.record.limits.length > 0 && mode !== 'inspect' && <> Known limit: {capability.record.limits[0]}</>}
+      <LaunchMismatch capability={capability} />
     </span>
+  )
+}
+
+/**
+ * The record measured one configuration. A server running the same file
+ * with a different context per slot is running something the record has
+ * not measured, and says so — seen once as a 262,144-token slot on an 8 GB
+ * card, which spilled to host memory and lost the GPU.
+ */
+function LaunchMismatch({ capability }: { capability: Extract<CapabilityStatus, { state: 'measured' }> }): React.JSX.Element | null {
+  const running = capability.contextPerSlot
+  const measured = capability.record.measured.context
+  if (running == null || running === measured) return null
+  return (
+    <>
+      {' '}
+      <span className="text-amber-200">
+        Measured at {measured.toLocaleString()} tokens per slot; this server has {running.toLocaleString()}, a configuration the record has not measured
+        {running > measured ? ', and the loop will hold a working set the measured one would have compacted' : ''}.
+      </span>
+    </>
   )
 }
 
