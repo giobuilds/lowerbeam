@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process'
 import { DEFAULT_TERMS, type GrantTerms } from '@shared/coding.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { realpath, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 const run = promisify(execFile)
@@ -156,8 +157,11 @@ export async function runInSandbox(cmd: SandboxCommand): Promise<SandboxResult> 
  * read-write, the project's node_modules read only at the workspace path.
  * Nothing else exists inside — unless the grant's terms say so: an extra
  * root is bound read only, the network is shared back in, and with install
- * the project's node_modules is not lent at all, so the copy's own, which
- * starts empty, is what an install writes. The project's is never written.
+ * the project's node_modules becomes the read-only lower layer of an
+ * overlay whose writes land in the copy, so an install adds to what the
+ * project has and the project's tree is never written. Where the kernel
+ * will not mount an overlay unprivileged, the project's tree is not lent
+ * and the copy's own, which starts empty, is what an install writes.
  */
 export async function bwrapArgs(workspace: string, projectRoot: string, terms: GrantTerms = DEFAULT_TERMS): Promise<string[]> {
   const args = [
@@ -192,10 +196,51 @@ export async function bwrapArgs(workspace: string, projectRoot: string, terms: G
 
   args.push('--bind', workspace, workspace)
   const deps = join(projectRoot, 'node_modules')
-  if (!terms.install && (await exists(deps))) args.push('--ro-bind', deps, join(workspace, 'node_modules'))
+  if (await exists(deps)) {
+    if (!terms.install) args.push('--ro-bind', deps, join(workspace, 'node_modules'))
+    else if (await overlaySupported()) {
+      // Writes go beside the copy's files, not among them, so a change
+      // listing never walks an installed tree.
+      const upper = join(workspace, DEPS_DIR, 'upper')
+      const work = join(workspace, DEPS_DIR, 'work')
+      await mkdir(upper, { recursive: true })
+      await mkdir(work, { recursive: true })
+      args.push('--overlay-src', deps, '--overlay', upper, work, join(workspace, 'node_modules'))
+    }
+  }
   for (const dir of terms.alsoRead) if (await exists(dir)) args.push('--ro-bind', dir, dir)
   args.push('--chdir', workspace)
   return args
+}
+
+/** Where an install's writes are kept, beside the copy's own files. Never a change. */
+export const DEPS_DIR = '.lowerbeam-deps'
+
+/**
+ * Whether this kernel mounts an overlay for an unprivileged user inside
+ * bubblewrap — Linux 5.11 and later do, and bubblewrap has had the option
+ * since 0.10. Tried once, on a throwaway directory, and remembered.
+ */
+let overlayProbe: Promise<boolean> | null = null
+export function overlaySupported(): Promise<boolean> {
+  overlayProbe ??= (async () => {
+    const base = await mkdtemp(join(tmpdir(), 'lowerbeam-overlay-'))
+    try {
+      const lower = join(base, 'lower')
+      for (const d of ['lower', 'upper', 'work', 'dest']) await mkdir(join(base, d))
+      await writeFile(join(lower, 'probe'), '')
+      const args = ['--ro-bind', '/usr', '/usr', '--dev', '/dev', '--proc', '/proc', '--unshare-all', '--die-with-parent']
+      for (const dir of ['/lib64', '/lib', '/bin']) if (await exists(dir)) args.push('--ro-bind', dir, dir)
+      args.push('--overlay-src', lower, '--overlay', join(base, 'upper'), join(base, 'work'), join(base, 'dest'))
+      await run('bwrap', [...args, '--', 'sh', '-c', `test -f ${join(base, 'dest', 'probe')} && touch ${join(base, 'dest', 'written')}`], { timeout: 10_000 })
+      return await exists(join(base, 'upper', 'written'))
+    } catch {
+      return false
+    } finally {
+      await rm(base, { recursive: true, force: true }).catch(() => undefined)
+    }
+  })()
+  return overlayProbe
 }
 
 /** The node the user's shell would run, not necessarily the one Electron embeds. */

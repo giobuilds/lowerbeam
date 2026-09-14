@@ -341,8 +341,13 @@ told to the model in one sentence appended to its instructions; and
 enforced where it is checked — the grant resolves an extra root like the
 project root, with the same exclusions and no writes, and the sandbox
 binds it read only, shares the network back in only when granted, and
-with install lends nothing, so the copy's own empty `node_modules` is what
-an install writes and the project's is never touched. The main process
+with install mounts the project's `node_modules` as the read-only lower
+layer of an overlay whose writes land beside the copy, so an install adds
+to what the project has and the project's tree is never written; where
+the kernel will not mount an overlay unprivileged, the copy's own empty
+`node_modules` is what an install writes instead. Seen in the app before
+the overlay: a model granted install found the copy's tree empty, ran the
+suite in a tenth of a second, and gave up. The main process
 checks the terms whatever the interface offered: a real folder, not the
 filesystem or the home directory, never the app's own state; network and
 install dropped outside run mode so the record never claims them. What a
