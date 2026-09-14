@@ -39,6 +39,7 @@ export const IPC = {
   profileForget: 'profiles:forget',
   appAbout: 'app:about',
   codingPickProject: 'coding:pick-project',
+  codingPickReadRoot: 'coding:pick-read-root',
   codingStart: 'coding:start',
   codingCancel: 'coding:cancel',
   codingList: 'coding:list',

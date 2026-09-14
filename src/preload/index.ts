@@ -134,6 +134,7 @@ const api = {
   },
   coding: {
     pickProject: () => invoke<string | null>(IPC.codingPickProject),
+    pickReadRoot: () => invoke<string | null>(IPC.codingPickReadRoot),
     start: (req: CodingStartRequest) => invoke<CodingRunSummary>(IPC.codingStart, req),
     cancel: (runId: string) => invoke<null>(IPC.codingCancel, runId),
     list: () => invoke<{ runs: CodingRunSummary[]; lastProject: string | null }>(IPC.codingList),

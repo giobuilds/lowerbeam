@@ -34,6 +34,8 @@ export type JournalEvent =
       model: string
       grantRoot: string
       mode?: CodingMode
+      /** What the run may reach beyond the project, when anything. Absent means the defaults. */
+      grant?: GrantTerms
     })
   | (Base & {
       type: 'model.request'
@@ -148,6 +150,45 @@ export type RunOutcome =
  */
 export type CodingMode = 'inspect' | 'edit' | 'run'
 
+/**
+ * The terms of a run's grant beyond the mode: what else it may reach.
+ *
+ * Additional access is a visible change to the run's grant, set before the
+ * run starts, recorded in its journal and enforced by the grant and the
+ * sandbox — never an approval button that turns a scoped job into host
+ * execution. Each term is off unless the person turns it on for a run, and
+ * a term the machine cannot honour stays unavailable.
+ */
+export interface GrantTerms {
+  /** Directories outside the project the run may read, never write. Resolved and checked like the root. */
+  alsoRead: string[]
+  /** Commands in the sandbox may reach the network. */
+  network: boolean
+  /**
+   * Commands may install dependencies: the copy gets a dependency tree of its
+   * own to write, instead of the project's lent read-only. An install usually
+   * needs the network as well.
+   */
+  install: boolean
+}
+
+export const DEFAULT_TERMS: GrantTerms = { alsoRead: [], network: false, install: false }
+
+export function sameTerms(a: GrantTerms, b: GrantTerms): boolean {
+  return a.network === b.network && a.install === b.install && a.alsoRead.length === b.alsoRead.length && a.alsoRead.every((d, i) => d === b.alsoRead[i])
+}
+
+/** The terms as a sentence or two, for the run's header and the model's instructions. Empty when nothing beyond the mode is granted. */
+export function describeTerms(terms: GrantTerms, mode: CodingMode): string {
+  const parts: string[] = []
+  if (terms.alsoRead.length) parts.push(`You may also read, but not change, ${terms.alsoRead.map((d) => `\`${d}\``).join(' and ')}; refer to files there by their full path.`)
+  if (mode === 'run') {
+    if (terms.network) parts.push('Commands may use the network.')
+    if (terms.install) parts.push('Commands may install dependencies into the copy; it has its own node_modules, which starts empty.')
+  }
+  return parts.join(' ')
+}
+
 export type ChangeKind = 'created' | 'modified' | 'deleted'
 
 export interface FileChange {
@@ -184,12 +225,15 @@ export interface CodingRunSummary {
   answer: string
   rounds: number
   denials: number
+  /** The terms the run had beyond its mode. */
+  grant: GrantTerms
 }
 
 export interface CodingStartRequest {
   projectRoot: string
   task: string
   mode: CodingMode
+  grant?: GrantTerms
 }
 
 /** What a tool hands back to the loop. Text is what the model sees; the rest is for the journal. */

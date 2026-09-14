@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { DEFAULT_TERMS, type GrantTerms } from '@shared/coding.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { realpath, stat } from 'node:fs/promises'
@@ -75,6 +76,8 @@ export interface SandboxCommand {
   /** Kept per stream; anything past it is dropped, and the drop is reported. */
   maxOutputBytes: number
   signal?: AbortSignal
+  /** What the box may reach beyond the copy and the lent toolchain. Default: nothing. */
+  terms?: GrantTerms
 }
 
 export interface SandboxResult {
@@ -92,7 +95,7 @@ export async function runInSandbox(cmd: SandboxCommand): Promise<SandboxResult> 
   const probe = await probeSandbox()
   if (!probe.ok) throw new Error(probe.reason ?? 'no sandbox')
 
-  const args = await bwrapArgs(cmd.workspace, cmd.projectRoot)
+  const args = await bwrapArgs(cmd.workspace, cmd.projectRoot, cmd.terms)
   const started = Date.now()
   // pipefail, where the shell has it: `node tests/run.mjs x | head -50` is
   // how a model keeps output short, and without it the exit code is head's —
@@ -151,15 +154,19 @@ export async function runInSandbox(cmd: SandboxCommand): Promise<SandboxResult> 
  * toolchain the current process runs on (so a node installed under the home
  * directory is there without the home directory being there), the workspace
  * read-write, the project's node_modules read only at the workspace path.
- * Nothing else exists inside.
+ * Nothing else exists inside — unless the grant's terms say so: an extra
+ * root is bound read only, the network is shared back in, and with install
+ * the project's node_modules is not lent at all, so the copy's own, which
+ * starts empty, is what an install writes. The project's is never written.
  */
-export async function bwrapArgs(workspace: string, projectRoot: string): Promise<string[]> {
+export async function bwrapArgs(workspace: string, projectRoot: string, terms: GrantTerms = DEFAULT_TERMS): Promise<string[]> {
   const args = [
     '--ro-bind', '/usr', '/usr',
     '--dev', '/dev',
     '--proc', '/proc',
     '--tmpfs', '/tmp',
     '--unshare-all',
+    ...(terms.network ? ['--share-net'] : []),
     '--die-with-parent',
     '--new-session',
     '--clearenv',
@@ -185,7 +192,8 @@ export async function bwrapArgs(workspace: string, projectRoot: string): Promise
 
   args.push('--bind', workspace, workspace)
   const deps = join(projectRoot, 'node_modules')
-  if (await exists(deps)) args.push('--ro-bind', deps, join(workspace, 'node_modules'))
+  if (!terms.install && (await exists(deps))) args.push('--ro-bind', deps, join(workspace, 'node_modules'))
+  for (const dir of terms.alsoRead) if (await exists(dir)) args.push('--ro-bind', dir, dir)
   args.push('--chdir', workspace)
   return args
 }

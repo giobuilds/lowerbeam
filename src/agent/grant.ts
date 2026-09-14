@@ -19,11 +19,22 @@ export class Grant {
     /** The root with every symlink resolved, which is what paths are checked against. */
     readonly realRoot: string,
     /** What is allowed. Checked by the tools, not by the model. `run` includes `edit`. */
-    readonly mode: 'inspect' | 'edit' | 'run'
+    readonly mode: 'inspect' | 'edit' | 'run',
+    /** Further roots the run may read and never write, each resolved like the root. A visible term of the grant. */
+    readonly alsoRead: Array<{ root: string; realRoot: string }> = []
   ) {}
 
-  static async open(root: string, mode: 'inspect' | 'edit' | 'run' = 'inspect'): Promise<Grant> {
-    return new Grant(resolve(root), await realpath(root), mode)
+  static async open(root: string, mode: 'inspect' | 'edit' | 'run' = 'inspect', alsoRead: string[] = []): Promise<Grant> {
+    const extra = []
+    for (const dir of alsoRead) extra.push({ root: resolve(dir), realRoot: await realpath(dir) })
+    return new Grant(resolve(root), await realpath(root), mode, extra)
+  }
+
+  /** How a resolved path is named back to the model: inside the project by its relative path, in an extra root by its full path. */
+  nameFor(real: string): string {
+    const rel = relative(this.realRoot, real)
+    if (!rel.startsWith('..') && !isAbsolute(rel)) return rel || '.'
+    return real
   }
 
   /**
@@ -86,8 +97,19 @@ export class Grant {
       return { ok: false, denied: false, reason: `No such path: ${requested}` }
     }
 
-    const rel = relative(this.realRoot, real)
+    let rel = relative(this.realRoot, real)
     if (rel.startsWith('..') || isAbsolute(rel)) {
+      // An extra root the grant names is readable too, by its full path.
+      const extra = this.alsoRead.find((r) => {
+        const within = relative(r.realRoot, real)
+        return !within.startsWith('..') && !isAbsolute(within)
+      })
+      if (extra) {
+        const within = relative(extra.realRoot, real)
+        const first = within.split(sep)[0]
+        if (first && EXCLUDED.has(first)) return { ok: false, denied: true, reason: `Not part of the grant: ${first}/` }
+        return { ok: true, path: real, relative: real }
+      }
       // Say which kind of outside. A path that reads as inside the project and
       // resolves elsewhere is a link out, and a model told only "outside"
       // retries it in every spelling it can think of.
@@ -97,7 +119,7 @@ export class Grant {
         denied: true,
         reason: spelledInside
           ? `${requested} is a link to somewhere outside the project and cannot be read. Nothing inside the project is behind it; answer from the project itself.`
-          : `Outside the project: ${requested}. Only files inside the project can be read; do not ask for it again.`
+          : `Outside the project: ${requested}. Only files inside the project${this.alsoRead.length ? ' and the folders the grant names' : ''} can be read; do not ask for it again.`
       }
     }
 
@@ -109,7 +131,8 @@ export class Grant {
       return { ok: false, denied: true, reason: `Not part of the grant: ${first}/` }
     }
 
-    return { ok: true, path: real, relative: rel || '.' }
+    rel = rel || '.'
+    return { ok: true, path: real, relative: rel }
   }
 
   /** Whether a directory entry should be walked or listed at all. */

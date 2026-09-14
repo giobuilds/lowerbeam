@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { ChatSettingsView, ToolDefinition } from '@shared/types.js'
 import type { TokenUsage } from '@shared/chatClient.js'
 import type { CodingMode, JournalEvent, RunOutcome, TokenCount } from '@shared/coding.js'
-import { JOURNAL_VERSION } from '@shared/coding.js'
+import { JOURNAL_VERSION, DEFAULT_TERMS, describeTerms, sameTerms, type GrantTerms } from '@shared/coding.js'
 import { streamChat, windowUsed, type ChatTurn, type StreamedToolCall } from '@shared/chatClient.js'
 import type { Grant } from './grant.js'
 import { AGENT_TOOLS, WRITE_TOOLS, runAgentTool } from './tools.js'
@@ -42,6 +42,8 @@ export interface RunRequest {
   fold?: boolean
   /** What the run may do. The grant enforces it; this only decides what is declared and said. */
   mode?: CodingMode
+  /** What the run may reach beyond the project. Enforced by the grant and the sandbox; this only tells the model and the record. */
+  terms?: GrantTerms
   /**
    * Runs a command in the sandbox, for `run` mode. Supplied by the caller so
    * this loop knows nothing about how the box is built; absent, the tool is
@@ -161,10 +163,13 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
   }
 
   const mode = req.mode ?? 'inspect'
-  emit({ type: 'run.started', task: req.task, model: req.model, grantRoot: req.grant.root, mode })
+  const terms = req.terms ?? DEFAULT_TERMS
+  emit({ type: 'run.started', task: req.task, model: req.model, grantRoot: req.grant.root, mode, ...(sameTerms(terms, DEFAULT_TERMS) ? {} : { grant: terms }) })
 
+  const policy = mode === 'run' ? (terms.network ? RUN_POLICY.replace('there is no network, and ', '') : RUN_POLICY) : mode === 'edit' ? EDIT_POLICY : POLICY
+  const granted = describeTerms(terms, mode)
   let turns: ChatTurn[] = [
-    { role: 'system', content: mode === 'run' ? RUN_POLICY : mode === 'edit' ? EDIT_POLICY : POLICY },
+    { role: 'system', content: granted ? `${policy} ${granted}` : policy },
     { role: 'user', content: req.task }
   ]
   const canRun = mode === 'run' && Boolean(req.execute)

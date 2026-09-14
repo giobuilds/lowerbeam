@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ApplyResult, ChangeSet, CodingMode, CodingRunSummary, JournalEvent } from '@shared/coding.js'
+import { DEFAULT_TERMS, type ApplyResult, type ChangeSet, type CodingMode, type CodingRunSummary, type GrantTerms, type JournalEvent } from '@shared/coding.js'
 import type { CapabilityStatus } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
 
@@ -19,6 +19,8 @@ interface CodingState {
   events: Record<string, JournalEvent[]>
   task: string
   mode: CodingMode
+  /** The terms the next run will have beyond its mode: a visible change to the grant, made before the run. */
+  terms: GrantTerms
   /** Whether "edit and run" can be offered, and why not when it cannot. */
   sandbox: { ok: boolean; reason: string | null } | null
   /** What the capability record says about the loaded model; null while it is being identified. */
@@ -33,6 +35,9 @@ interface CodingState {
 
   init: () => Promise<void>
   setMode: (mode: CodingMode) => void
+  setTerms: (patch: Partial<GrantTerms>) => void
+  addReadRoot: () => Promise<void>
+  removeReadRoot: (dir: string) => void
   loadCapability: () => Promise<void>
   loadChanges: (runId: string) => Promise<void>
   loadEvidence: (runId: string) => Promise<void>
@@ -55,6 +60,7 @@ export const useCodingStore = create<CodingState>((set, get) => ({
   events: {},
   task: '',
   mode: 'inspect',
+  terms: DEFAULT_TERMS,
   sandbox: null,
   capability: null,
   changes: {},
@@ -83,6 +89,22 @@ export const useCodingStore = create<CodingState>((set, get) => ({
 
   setMode(mode) {
     set({ mode })
+  },
+
+  setTerms(patch) {
+    set({ terms: { ...get().terms, ...patch } })
+  },
+
+  async addReadRoot() {
+    const dir = await window.llama.coding.pickReadRoot()
+    if (!dir) return
+    const { terms } = get()
+    if (!terms.alsoRead.includes(dir)) set({ terms: { ...terms, alsoRead: [...terms.alsoRead, dir] } })
+  },
+
+  removeReadRoot(dir) {
+    const { terms } = get()
+    set({ terms: { ...terms, alsoRead: terms.alsoRead.filter((d) => d !== dir) } })
   },
 
   async loadCapability() {
@@ -160,7 +182,7 @@ export const useCodingStore = create<CodingState>((set, get) => ({
     const { project, task } = get()
     if (!project || !task.trim()) return
     try {
-      const run = await window.llama.coding.start({ projectRoot: project, task: task.trim(), mode: get().mode })
+      const run = await window.llama.coding.start({ projectRoot: project, task: task.trim(), mode: get().mode, grant: get().terms })
       set({
         runs: [...get().runs, run],
         activeRunId: run.id,

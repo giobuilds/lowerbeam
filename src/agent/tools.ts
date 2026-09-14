@@ -229,7 +229,7 @@ async function search(grant: Grant, query: string, dir: string): Promise<AgentTo
     for (let i = 0; i < lines.length && hits.length < SEARCH_MAX_HITS; i++) {
       const line = lines[i]!
       if (!line.toLowerCase().includes(needle)) continue
-      const rel = relative(grant.realRoot, abs).split(sep).join('/')
+      const rel = grant.nameFor(abs).split(sep).join('/')
       hits.push(`${rel}:${i + 1}: ${excerpt(line)}`)
     }
   }

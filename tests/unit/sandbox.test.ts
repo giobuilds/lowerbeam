@@ -91,6 +91,25 @@ console.log('\nnothing outlives the run')
   assert.equal(await settled(() => boxed('sleep 47')), 0); ok('background children started by the command are gone once it ends')
 }
 
+console.log('\nthe box\u2019s shape follows the terms of the grant')
+{
+  const plain = await bwrapArgs(workspace, project)
+  assert.ok(plain.includes('--unshare-all') && !plain.includes('--share-net')); ok('by default the network is not there')
+  assert.ok(plain.some((a, k) => a === '--ro-bind' && plain[k + 2] === join(workspace, 'node_modules'))); ok('and the project\u2019s node_modules is lent read only')
+  const net = await bwrapArgs(workspace, project, { alsoRead: [], network: true, install: false })
+  assert.ok(net.includes('--share-net') && net.indexOf('--share-net') > net.indexOf('--unshare-all')); ok('network: shared back in after everything else is unshared')
+  const inst = await bwrapArgs(workspace, project, { alsoRead: [], network: false, install: true })
+  assert.ok(!inst.some((a, k) => a === '--ro-bind' && inst[k + 2] === join(workspace, 'node_modules'))); ok('install: the project\u2019s node_modules is not lent, so the copy\u2019s own is what an install writes')
+  const r = await runInSandbox({ ...opts, command: 'ls node_modules', terms: { alsoRead: [], network: false, install: true } })
+  assert.equal(r.exitCode, 0); assert.ok(!r.stdout.includes('dep')); ok('and inside the box the copy\u2019s node_modules starts empty')
+  const also = await bwrapArgs(workspace, project, { alsoRead: [project], network: false, install: false })
+  assert.ok(also.some((a, k) => a === '--ro-bind' && also[k + 1] === project && also[k + 2] === project)); ok('an extra root is bound read only at its own path')
+  const seen = await runInSandbox({ ...opts, command: `cat ${join(project, 'node_modules', 'dep', 'index.js')}`, terms: { alsoRead: [project], network: false, install: false } })
+  assert.equal(seen.exitCode, 0); assert.ok(seen.stdout.includes('dep')); ok('and a command can read it')
+  const wr = await runInSandbox({ ...opts, command: `touch ${join(project, 'marker')}`, terms: { alsoRead: [project], network: false, install: false } })
+  assert.notEqual(wr.exitCode, 0); ok('and cannot write it')
+}
+
 await rm(base, { recursive: true, force: true })
 console.log(`\n${n} assertions passed`)
 

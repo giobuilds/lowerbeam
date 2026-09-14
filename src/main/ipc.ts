@@ -466,6 +466,13 @@ export function registerIpc(
     if (dir) await settings.patch({ lastProject: dir })
     return dir
   })
+  handle<string | null>(IPC.codingPickReadRoot, async () => {
+    const r = await dialog.showOpenDialog({
+      title: 'Choose a folder the run may also read',
+      properties: ['openDirectory']
+    })
+    return r.canceled ? null : (r.filePaths[0] ?? null)
+  })
   handle<CodingRunSummary>(IPC.codingStart, async (raw) => {
     const req = codingStartSchema.parse(raw)
     const run = await coding.start(req)
