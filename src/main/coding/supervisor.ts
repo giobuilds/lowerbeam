@@ -1,8 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
-import type { CodingRunSummary, CodingStartRequest, JournalEvent } from '@shared/coding.js'
+import { dirname, join, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { stat } from 'node:fs/promises'
+import { DEFAULT_TERMS, type CodingRunSummary, type CodingStartRequest, type GrantTerms, type JournalEvent } from '@shared/coding.js'
 import { Grant } from '../../agent/grant.js'
 import { runTask } from '../../agent/loop.js'
 import type { ServerSupervisor } from '../supervisor.js'
@@ -86,6 +88,10 @@ export class CodingSupervisor extends EventEmitter<{
     // offered every mode; the record says so and the journal is the evidence.
     const verdict = verdictFor(await this.identifier.status(status.config?.modelPath), req.mode)
     if (verdict.verdict === 'refused') throw new Error(`This model is not cleared to ${describe(req.mode)}: ${verdict.evidence}`)
+    // The terms are checked here, where they are enforced, whatever the
+    // interface offered: an extra root must be a real directory, narrow
+    // enough to mean something, and never this app's own state.
+    const terms = await this.checkTerms(req.grant ?? DEFAULT_TERMS, req.mode)
     if (req.mode === 'run') {
       // No box, no run mode: it is refused here, with the reason, rather than
       // running anything unsandboxed and calling that a sandbox.
@@ -95,9 +101,9 @@ export class CodingSupervisor extends EventEmitter<{
     if (req.mode === 'edit' || req.mode === 'run') {
       workspace = await Workspace.create((await Grant.open(req.projectRoot)).root, this.workspaceDir(id))
       this.workspaces.set(id, workspace)
-      grant = await Grant.open(workspace.root, req.mode)
+      grant = await Grant.open(workspace.root, req.mode, terms.alsoRead)
     } else {
-      grant = await Grant.open(req.projectRoot)
+      grant = await Grant.open(req.projectRoot, 'inspect', terms.alsoRead)
     }
     const model = status.config?.modelPath?.split('/').pop() ?? 'unknown model'
     const journal = new Journal(this.file(id))
@@ -116,14 +122,19 @@ export class CodingSupervisor extends EventEmitter<{
       outcome: 'running',
       answer: '',
       rounds: 0,
-      denials: 0
+      denials: 0,
+      grant: terms
     }
     this.runs.set(id, summary)
     this.emit('runs', this.list())
 
     // Not awaited: the caller gets the summary at once and follows events.
-    void this.drive(id, summary, grant, journal, abort, `http://127.0.0.1:${status.port}`, req.task, status.contextPerSlot, req.mode)
+    void this.drive(id, summary, grant, journal, abort, `http://127.0.0.1:${status.port}`, req.task, status.contextPerSlot, req.mode, terms)
     return summary
+  }
+
+  private checkTerms(terms: GrantTerms, mode: CodingStartRequest['mode']): Promise<GrantTerms> {
+    return checkTerms(terms, mode, dirname(this.dir))
   }
 
   cancel(id: string): boolean {
@@ -147,7 +158,8 @@ export class CodingSupervisor extends EventEmitter<{
     baseUrl: string,
     task: string,
     contextLimit: number | null,
-    mode: CodingRunSummary['mode']
+    mode: CodingRunSummary['mode'],
+    terms: GrantTerms
   ): Promise<void> {
     // Each command's full output is kept beside the journal, numbered in the
     // order the journal has them, so the evidence can find the output of the
@@ -166,6 +178,7 @@ export class CodingSupervisor extends EventEmitter<{
         runId: id,
         contextLimit,
         mode,
+        terms,
         execute:
           mode === 'run'
             ? async (command, signal) => {
@@ -177,7 +190,8 @@ export class CodingSupervisor extends EventEmitter<{
                   command,
                   timeoutMs: 120_000,
                   maxOutputBytes: 512 * 1024,
-                  signal
+                  signal,
+                  terms
                 })
                 // Full output beside the journal: the model sees a tail, a
                 // person can see all of it.
@@ -278,7 +292,8 @@ export class CodingSupervisor extends EventEmitter<{
       for (const [path, hash] of Object.entries(ws.manifest.files)) if (copy.manifest.files[path] !== hash) drifted.push(path)
       for (const path of Object.keys(copy.manifest.files)) if (!(path in ws.manifest.files)) drifted.push(path)
       const command = evidence.verification.command
-      const r = await runInSandbox({ workspace: copy.root, projectRoot: ws.manifest.projectRoot, command, timeoutMs: 120_000, maxOutputBytes: 512 * 1024 })
+      // Under the same terms the run had: a baseline that could not reach what the run could would not be the same test.
+      const r = await runInSandbox({ workspace: copy.root, projectRoot: ws.manifest.projectRoot, command, timeoutMs: 120_000, maxOutputBytes: 512 * 1024, terms: this.runs.get(id)?.grant ?? DEFAULT_TERMS })
       const output = r.stdout + (r.stderr ? (r.stdout ? '\n' : '') + r.stderr : '')
       const rerun: Rerun = { command, exitCode: r.exitCode, timedOut: r.timedOut, output, drifted: drifted.sort(), at: Date.now() }
       await writeFile(join(this.dir, `${id}.baseline.json`), JSON.stringify(rerun))
@@ -351,6 +366,32 @@ export class CodingSupervisor extends EventEmitter<{
   }
 }
 
+/**
+ * The terms as they will be enforced. An extra root must be a real
+ * directory, narrow enough to mean something — not the filesystem, not the
+ * home directory — and never this app's own state. Network and install mean
+ * nothing outside run mode and are dropped there, so the record never
+ * claims a term the run could not have used.
+ */
+export async function checkTerms(terms: GrantTerms, mode: CodingStartRequest['mode'], own: string): Promise<GrantTerms> {
+  const home = homedir()
+  const alsoRead: string[] = []
+  for (const dir of terms.alsoRead) {
+    const abs = resolve(dir)
+    let info
+    try {
+      info = await stat(abs)
+    } catch {
+      throw new Error(`The grant names a folder that does not exist: ${dir}`)
+    }
+    if (!info.isDirectory()) throw new Error(`The grant names something that is not a folder: ${dir}`)
+    if (abs === '/' || abs === home) throw new Error(`The grant cannot name ${abs === '/' ? 'the whole filesystem' : 'the whole home directory'}; choose the folder the task needs.`)
+    if (abs === own || own.startsWith(abs + '/')) throw new Error(`The grant cannot name ${dir}: Lowerbeam\u2019s own state lives there.`)
+    if (!alsoRead.includes(abs)) alsoRead.push(abs)
+  }
+  return { alsoRead, network: mode === 'run' && terms.network, install: mode === 'run' && terms.install }
+}
+
 interface Rerun {
   command: string
   exitCode: number | null
@@ -388,7 +429,8 @@ export function summarise(events: JournalEvent[]): CodingRunSummary | null {
       outcome: finished.outcome,
       answer: finished.answer,
       rounds: finished.rounds,
-      denials
+      denials,
+      grant: started.grant ?? DEFAULT_TERMS
     }
   }
   const rounds = events.filter((e) => e.type === 'model.request').length
@@ -413,6 +455,7 @@ export function summarise(events: JournalEvent[]): CodingRunSummary | null {
         ? `The app closed while this run was in progress, with a command started and not finished: \`${command}\`. Whether it ran to completion is unknown, and it was not run again. What it had read is in the journal; it produced no answer.`
         : 'The app closed while this run was in progress. What it had read is in the journal; it produced no answer.',
     rounds,
-    denials
+    denials,
+    grant: started.grant ?? DEFAULT_TERMS
   }
 }

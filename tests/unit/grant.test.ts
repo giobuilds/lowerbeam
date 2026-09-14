@@ -120,5 +120,28 @@ console.log('\nsearch takes a file as well as a directory')
   assert.equal(missing.ok, false); ok('a path that does not exist is an error, not an empty result')
 }
 
+console.log('\na folder the grant also names is readable, never written, and only that folder')
+{
+  const also = join(base, 'also')
+  await mkdir(join(also, 'lib'), { recursive: true })
+  await mkdir(join(also, 'node_modules'))
+  await writeFile(join(also, 'lib', 'shared.ts'), 'export const shared = 1\n')
+  await writeFile(join(also, 'node_modules', 'x.js'), '')
+  const wide = await Grant.open(project, 'edit', [also])
+  const r = await wide.resolve(join(also, 'lib', 'shared.ts'))
+  assert.ok(r.ok && r.path === join(also, 'lib', 'shared.ts') && r.relative === join(also, 'lib', 'shared.ts')); ok('a file in the extra root resolves, and is named by its full path')
+  const viaLink = await wide.resolve('src/escape-dir/../lib/shared.ts')
+  assert.ok(!viaLink.ok); ok('a route through a link to somewhere else is still refused: the extra root is the folder named, not a way out')
+  const w = await wide.resolveForWrite(join(also, 'lib', 'shared.ts'))
+  assert.ok(!w.ok && w.denied); ok('and nothing in it can be written, whatever the mode')
+  const deps = await wide.resolve(join(also, 'node_modules', 'x.js'))
+  assert.ok(!deps.ok && deps.denied && deps.reason.includes('node_modules')); ok('the excluded names apply at its top level too, as at the project\u2019s')
+  const other = await wide.resolve(join(outside, 'secret.txt'))
+  assert.ok(!other.ok && other.denied && other.reason.includes('folders the grant names')); ok('anywhere else is refused as before, and the refusal says the grant has named folders')
+  const listed = await runAgentTool(wide, 'search', { query: 'shared', path: join(also, 'lib') })
+  assert.ok(listed.ok && listed.content.includes(join(also, 'lib', 'shared.ts'))); ok('search in it names hits by their full path, so the model can read them back')
+  assert.equal(wide.nameFor(join(project, 'src', 'a.ts')), join('src', 'a.ts')); assert.equal(wide.nameFor(join(also, 'x')), join(also, 'x')); ok('inside the project a path is still relative')
+}
+
 await rm(base, { recursive: true, force: true })
 console.log(`\n${n} assertions passed`)

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { ChangeSet, CodingRunSummary, JournalEvent } from '@shared/coding.js'
+import { DEFAULT_TERMS, sameTerms, type ChangeSet, type CodingRunSummary, type GrantTerms, type JournalEvent } from '@shared/coding.js'
 import { useCodingStore } from '../state/codingStore.js'
 import { verdictFor, type CapabilityStatus } from '@shared/capability.js'
 import { isTestPath, type CommandEvidence } from '@shared/evidence.js'
@@ -142,6 +142,7 @@ function Composer({ disabled, modelName }: { disabled: boolean; modelName: strin
       </div>
       <div className="mt-2 flex items-center gap-3">
         <ModeToggle disabled={running} />
+        <TermsRow disabled={running} />
         {modelName && (
           <p className="text-[11px] text-muted">
             Using <span className="text-slate-300">{modelName}</span>. <Measured />{' '}
@@ -153,6 +154,44 @@ function Composer({ disabled, modelName }: { disabled: boolean; modelName: strin
           </p>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The terms of the next run's grant beyond its mode, set here and nowhere
+ * else: folders it may also read, and for a run that executes commands,
+ * the network and installs. Each is a visible change, recorded in the run,
+ * and never a prompt in the middle of one.
+ */
+function TermsRow({ disabled }: { disabled: boolean }): React.JSX.Element {
+  const mode = useCodingStore((s) => s.mode)
+  const terms = useCodingStore((s) => s.terms)
+  const setTerms = useCodingStore((s) => s.setTerms)
+  const addReadRoot = useCodingStore((s) => s.addReadRoot)
+  const removeReadRoot = useCodingStore((s) => s.removeReadRoot)
+  const sandbox = useCodingStore((s) => s.sandbox)
+  const boxed = mode === 'run' && sandbox?.ok === true
+  const toggle = (key: 'network' | 'install', label: string, title: string): React.JSX.Element => (
+    <label className={`flex items-center gap-1 text-[11px] ${boxed ? 'text-muted' : 'text-muted/50'}`} title={boxed ? title : 'Only a run that executes commands can use this.'}>
+      <input type="checkbox" disabled={disabled || !boxed} checked={boxed && terms[key]} onChange={(e) => setTerms({ [key]: e.target.checked })} className="accent-amber-300" />
+      {label}
+    </label>
+  )
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[11px] text-muted">Grant:</span>
+      {terms.alsoRead.map((dir) => (
+        <span key={dir} className="flex items-center gap-1 rounded bg-ink px-1.5 py-0.5 font-mono text-[10px] text-amber-200" title={`${dir} — readable, never written`}>
+          reads {dir.split('/').slice(-2).join('/')}
+          <button type="button" disabled={disabled} onClick={() => removeReadRoot(dir)} className="text-muted hover:text-rose-300" title="Remove from the grant">×</button>
+        </span>
+      ))}
+      <button type="button" disabled={disabled} onClick={() => void addReadRoot()} className="rounded border border-edge px-1.5 py-0.5 text-[11px] text-muted hover:text-slate-200 disabled:opacity-50" title="A folder outside the project the run may also read, never write.">
+        + folder to read
+      </button>
+      {toggle('network', 'network', 'Commands in the sandbox may reach the network. Off, nothing outside the box is reachable.')}
+      {toggle('install', 'install', 'Commands may install dependencies into the copy, which gets its own empty node_modules instead of the project\u2019s lent read-only. Usually needs the network too.')}
     </div>
   )
 }
@@ -262,6 +301,43 @@ function Empty({ hasProject, hasModel }: { hasProject: boolean; hasModel: boolea
 
 const NO_EVENTS: JournalEvent[] = []
 
+/** What a run could reach beyond its mode, as recorded. Nothing shown for the defaults. */
+function TermsHeld({ terms }: { terms: GrantTerms }): React.JSX.Element | null {
+  if (sameTerms(terms, DEFAULT_TERMS)) return null
+  return (
+    <p className="mb-2 flex flex-wrap gap-1 text-[11px] text-muted">
+      <span>Granted beyond the project:</span>
+      {terms.alsoRead.map((d) => (
+        <span key={d} className="rounded bg-ink px-1.5 font-mono text-[10px] text-amber-200" title={d}>reads {d}</span>
+      ))}
+      {terms.network && <span className="rounded bg-ink px-1.5 text-[10px] text-amber-200">network</span>}
+      {terms.install && <span className="rounded bg-ink px-1.5 text-[10px] text-amber-200">install</span>}
+    </p>
+  )
+}
+
+/**
+ * What the run asked for and was refused, each a reach outside the grant.
+ * Listed so the person can see what the model wanted and change the grant
+ * for the next run if that is right — a change here, not a prompt there.
+ */
+function Refused({ run, events }: { run: CodingRunSummary; events: JournalEvent[] }): React.JSX.Element | null {
+  const refused = events.filter((e): e is Extract<JournalEvent, { type: 'tool.result' }> => e.type === 'tool.result' && e.denied)
+  if (refused.length === 0 || run.outcome === 'running') return null
+  return (
+    <div className="mb-2 rounded border border-amber-900/60 bg-amber-950/20 p-2 text-[11px]">
+      <p className="text-amber-200">Refused by the grant:</p>
+      <ul className="pl-3 font-mono text-muted">
+        {refused.slice(0, 8).map((e) => (
+          <li key={e.seq} className="truncate">{e.summary}</li>
+        ))}
+        {refused.length > 8 && <li>… {refused.length - 8} more</li>}
+      </ul>
+      <p className="mt-1 text-muted">If the task needs one of these, add the folder to the grant above and run again. Nothing is granted mid-run.</p>
+    </div>
+  )
+}
+
 /** One run: its journal as a readable log, and its answer when it has one. */
 function Run({ run }: { run: CodingRunSummary }): React.JSX.Element {
   // The default lives outside the selector: `?? []` inside it would hand the
@@ -277,10 +353,12 @@ function Run({ run }: { run: CodingRunSummary }): React.JSX.Element {
           <Outcome outcome={run.outcome} />
           {run.finishedAt && ` · ${Math.round((run.finishedAt - run.startedAt) / 1000)}s · ${run.rounds} rounds`}
           {run.denials > 0 && (
-            <span className="ml-2 text-amber-300">{run.denials} reach{run.denials === 1 ? '' : 'es'} outside the project refused</span>
+            <span className="ml-2 text-amber-300">{run.denials} reach{run.denials === 1 ? '' : 'es'} outside the grant refused</span>
           )}
         </span>
       </div>
+      <TermsHeld terms={run.grant} />
+      <Refused run={run} events={events} />
 
       <ol className="space-y-1 rounded border border-edge bg-panel p-3 font-mono text-[11px] leading-snug">
         {events.map((e) => (

@@ -332,6 +332,24 @@ kept beside the journal, numbered in the order the journal has them.
 Verified by the unit suite, including a rerun in the sandbox; not yet
 in the running app.
 
+**Grant terms.** Shipped as `GrantTerms` in `src/shared/coding.ts`: what a
+run may reach beyond its mode — folders outside the project it may also
+read and never write, and for a run that executes commands, the network
+and installs. Set in the composer before the run, never asked for during
+one; recorded in the run's `run.started` event and shown in its header;
+told to the model in one sentence appended to its instructions; and
+enforced where it is checked — the grant resolves an extra root like the
+project root, with the same exclusions and no writes, and the sandbox
+binds it read only, shares the network back in only when granted, and
+with install lends nothing, so the copy's own empty `node_modules` is what
+an install writes and the project's is never touched. The main process
+checks the terms whatever the interface offered: a real folder, not the
+filesystem or the home directory, never the app's own state; network and
+install dropped outside run mode so the record never claims them. What a
+run asked for and was refused is listed under its header, with the
+change that would allow it next time. Verified by the unit suite, in the
+sandbox; not yet in the running app.
+
 **Gates.** Recover, on the 9B, three runs each: 3 of 4 tasks by majority
 (7/12 runs), every pass verified by a test run after the edit, unwanted
 changes in 0 of 12. Met. The task that failed all three is the same
