@@ -336,7 +336,14 @@ replication 6 of 12, inside it. The runs the reminder fires in had passed
 10 of 56 times before it and passed 8 of 13 across the two matrices with
 it; the runs it does not fire in were unchanged, and they are why the
 totals differ. Credited for the reminded runs — one in five to three in
-five — and not for a matrix number. The same family on a larger model is now run and answers a
+five — and not for a matrix number. What it does not reach is
+read-window's remaining failures, and they are the wrong-constant limit
+the small-fix and recover families already recorded: the 9B is shown
+`READ_MAX_LINES = 100`, by a search or a read, and does not see it as
+wrong. Two passes in 27 small-window runs, both reminded; the rest read
+to the round limit, several with the line on screen. That is the
+model's limit, not the loop's, and it belongs in the per-model
+capability record, not in another engine change. The same family on a larger model is now run and answers a
 different question than it was asked: on this card a larger model is
 either too slow (the 30B MoE pages experts from CPU — eight of twelve
 runs killed at the time budget) or too damaged (the dense 27B fits only
