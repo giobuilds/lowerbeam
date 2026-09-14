@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { mkdtemp, mkdir, readFile, writeFile, rm, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Workspace } from '../../src/main/coding/workspace.js'
@@ -77,4 +78,27 @@ console.log('\napply of a created file the project now has is a conflict')
 }
 
 await rm(base, { recursive: true, force: true })
+console.log('\nwhat git lists and what a walk lists is not a change')
+{
+  // A repository: git names tracked files under a fixture's node_modules and
+  // symlinks, which the walk that lists a copy does not. Seen in the app as
+  // thirteen deletions in a run that edited nothing.
+  const repo = join(base, 'repo')
+  await mkdir(join(repo, 'spec', 'fixtures', 'pkg', 'node_modules', 'native'), { recursive: true })
+  await mkdir(join(repo, 'docs'))
+  await writeFile(join(repo, 'README.md'), '# r\n')
+  await writeFile(join(repo, 'spec', 'fixtures', 'pkg', 'node_modules', 'native', 'main.js'), 'native\n')
+  await symlink('../README.md', join(repo, 'docs', 'contributing.md'))
+  const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { stdio: 'ignore' })
+  git('init', '-q'); git('add', '-A')
+  const ws4 = await Workspace.create(repo, join(base, 'ws4'))
+  assert.ok('spec/fixtures/pkg/node_modules/native/main.js' in ws4.manifest.files && 'docs/contributing.md' in ws4.manifest.files); ok('git lists a tracked fixture under node_modules and a symlink, so the baseline holds both')
+  assert.deepEqual((await ws4.changes()).files, []); ok('and neither is a change until something changes')
+  await rm(join(ws4.root, 'spec', 'fixtures', 'pkg', 'node_modules', 'native', 'main.js'))
+  await writeFile(join(ws4.root, 'README.md'), '# changed\n')
+  const kinds = Object.fromEntries((await ws4.changes()).files.map((f) => [f.path, f.kind]))
+  assert.deepEqual(kinds, { 'README.md': 'modified', 'spec/fixtures/pkg/node_modules/native/main.js': 'deleted' })
+  ok('a fixture file the run removes is a deletion, and the symlink whose target changed is not reported twice')
+}
+
 console.log(`\n${n} assertions passed`)

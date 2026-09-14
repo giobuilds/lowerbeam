@@ -28,6 +28,8 @@ export interface CommandEvidence {
 }
 
 export interface Evidence {
+  /** Whether the run changed any file at all; without that there is nothing to verify. */
+  edited: boolean
   /** The last command run after the last edit; null when nothing was run after a change, or nothing changed. */
   verification: CommandEvidence | null
   /** The same command before any edit — from the record, or from a rerun on the baseline. */
@@ -139,7 +141,8 @@ export function evidenceFrom(events: JournalEvent[], outputs: Record<number, str
   }
   const testFilesChanged = changed.filter(isTestPath)
   const after = lastEdit < 0 ? null : (commands.filter((c) => c.seq > lastEdit).at(-1) ?? null)
-  if (!after) return { verification: null, baseline: null, newFailures: [], preexisting: [], fixed: [], testFilesChanged, drifted: [] }
+  const edited = lastEdit >= 0
+  if (!after) return { edited, verification: null, baseline: null, newFailures: [], preexisting: [], fixed: [], testFilesChanged, drifted: [] }
   const verification = evidenceOf(after)
   const before = commands.filter((c) => c.seq < firstEdit && sameCommand(c.command, after.command)).at(-1) ?? null
   const baseline = before ? { ...evidenceOf(before), source: 'record' as const } : null
@@ -147,7 +150,7 @@ export function evidenceFrom(events: JournalEvent[], outputs: Record<number, str
     baseline && baseline.outputAvailable && verification.outputAvailable
       ? classifyFailures(baseline.failures, verification.failures)
       : { newFailures: [], preexisting: [], fixed: [] }
-  return { verification, baseline, ...classes, testFilesChanged, drifted: [] }
+  return { edited, verification, baseline, ...classes, testFilesChanged, drifted: [] }
 }
 
 /** The evidence with a baseline rerun in place of whatever the record had. */

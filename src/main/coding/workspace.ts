@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { cp, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import { createTwoFilesPatch } from 'diff'
 import type { ApplyResult, ChangeSet, FileChange } from '@shared/coding.js'
@@ -62,23 +62,32 @@ export class Workspace {
     return new Workspace(dir, manifest)
   }
 
-  /** What the run changed: every file that differs from the baseline, with a diff. */
+  /**
+   * What the run changed: every file that differs from the baseline, with a
+   * diff. The baseline is walked first, file by file where each was copied
+   * to — not re-listed, since git lists a project (tracked files under a
+   * fixture's node_modules, symlinks) differently from the walk that lists
+   * a copy, and the difference is not a change the run made. Then the copy
+   * is walked for what the baseline does not name.
+   */
   async changes(): Promise<ChangeSet> {
     const files: FileChange[] = []
-    const now = new Set(await listProjectFiles(this.root))
-    now.delete('.lowerbeam-baseline.json')
-
-    for (const rel of [...now].sort()) {
-      const before = this.manifest.files[rel]
-      const afterHash = await hashFile(join(this.root, rel))
-      if (before === undefined) {
-        files.push({ path: rel, kind: 'created', diff: await this.diffFor(rel, null) })
-      } else if (before !== afterHash) {
+    for (const rel of Object.keys(this.manifest.files).sort()) {
+      const before = this.manifest.files[rel]!
+      const path = join(this.root, rel)
+      const after = await hashFileOrNull(path)
+      if (after === null) {
+        // Gone, or a link whose target cannot be read from here: only the
+        // first is a deletion.
+        if (await linkExists(path)) continue
+        files.push({ path: rel, kind: 'deleted', diff: '' })
+      } else if (after !== before) {
         files.push({ path: rel, kind: 'modified', diff: await this.diffFor(rel, rel) })
       }
     }
-    for (const rel of Object.keys(this.manifest.files).sort()) {
-      if (!now.has(rel)) files.push({ path: rel, kind: 'deleted', diff: '' })
+    for (const rel of (await listProjectFiles(this.root)).sort()) {
+      if (rel in this.manifest.files || rel.startsWith('.lowerbeam-')) continue
+      files.push({ path: rel, kind: 'created', diff: await this.diffFor(rel, null) })
     }
     return { files, baselineAt: this.manifest.createdAt }
   }
@@ -219,6 +228,15 @@ async function walk(root: string, dir: string): Promise<string[]> {
 
 export async function hashFile(path: string): Promise<string> {
   return createHash('sha256').update(await readFile(path)).digest('hex')
+}
+
+async function linkExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path)
+    return true
+  } catch {
+    return false
+  }
 }
 
 async function hashFileOrNull(path: string): Promise<string | null> {
