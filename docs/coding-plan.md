@@ -308,10 +308,10 @@ tree, restart mid-execution, model disconnect — measured against the real
 app: no orphan in any case, and a run cut off with a command in flight is
 reported as exactly that, the command named and its outcome unknown. Met.
 The crossover family — the write tasks in a window a third of the size,
-continued from notes projected out of the journal — over nine matrices:
-the record held in 108 of 108 runs (every checkpoint claim supported, every
+continued from notes projected out of the journal — over ten matrices:
+the record held in 120 of 120 runs (every checkpoint claim supported, every
 changed-files slot matching the diff), and task completion ranged from 0
-to 6 of 12 for eight of them and reached 8 of 12 in the ninth, one task
+to 6 of 12 for nine of them and reached 8 of 12 in the ninth, two tasks
 of four by majority over the pooled runs. **Met on
 the record, not on completion.**
 
@@ -331,10 +331,12 @@ the context engine needs many more runs per matrix, or tasks that do not
 fail for reasons the engine cannot reach. The one change that reached the
 tax is not to the context engine: a write run that has spent half its
 rounds without changing a file is told so once, from the record, and the
-matrix with that scored 8 of 12, the first outside the spread. The runs
-the reminder fires in had passed 10 of 56 times before it and passed 5 of
-7 with it; the runs it does not fire in were unchanged. One matrix, and
-by the family's own verdict a second is owed before it is credited. The same family on a larger model is now run and answers a
+matrix with that scored 8 of 12, the first outside the spread, and its
+replication 6 of 12, inside it. The runs the reminder fires in had passed
+10 of 56 times before it and passed 8 of 13 across the two matrices with
+it; the runs it does not fire in were unchanged, and they are why the
+totals differ. Credited for the reminded runs — one in five to three in
+five — and not for a matrix number. The same family on a larger model is now run and answers a
 different question than it was asked: on this card a larger model is
 either too slow (the 30B MoE pages experts from CPU — eight of twelve
 runs killed at the time budget) or too damaged (the dense 27B fits only
