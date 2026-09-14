@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { checkpointFrom, renderCheckpoint, verifyCheckpoint, compactWorkingSet } from '@context/checkpoint.js'
+import { checkpointFrom, renderCheckpoint, renderReminder, verifyCheckpoint, compactWorkingSet } from '@context/checkpoint.js'
 import type { JournalEvent } from '@shared/coding.js'
 import type { ChatTurn } from '@shared/chatClient.js'
 
@@ -118,6 +118,22 @@ console.log('\nthe working set after compaction')
   assert.equal(again[4]!.content, 'b.ts (2 lines)\n(result folded — ask again to see it in full)'); assert.equal(again[5]!.content, 'No lines contain "q".')
   ok('with the newest round folded when asked, one-line results left as they are')
   assert.deepEqual(compactWorkingSet(turns.slice(0, 2), 'N', false).map((t) => t.role), ['system', 'user', 'system']); ok('and nothing breaks before the first round')
+}
+
+console.log('\nthe reminder a write run gets when it has changed nothing')
+{
+  // The record after the reads and the search, before anything was edited.
+  const before = checkpointFrom(events, events[8]!.seq)
+  const text = renderReminder(before, 6)
+  assert.ok(text.startsWith('You have used 2 rounds and changed nothing yet; 6 remain.')); ok('it says how many rounds are spent and how many are left')
+  assert.ok(text.includes('Files read: src/shared/url.ts (all 40 lines); tests/unit/url.test.ts (lines 30–60 of 312).')); ok('and what the record shows was read, with ranges')
+  assert.ok(text.includes('Searches: "isHttpUrl" → src/shared/url.ts:12: export function isHttpUrl.')); ok('and what was searched')
+  assert.ok(!text.includes('Commands run')); ok('nothing about commands when none were run')
+  assert.ok(text.includes('change it now with edit_file')); assert.ok(text.endsWith('it is not done until a file has changed.')); ok('and asks for the edit')
+  const one = renderReminder({ ...before, rounds: 1 }, 1)
+  assert.ok(one.startsWith('You have used 1 round and changed nothing yet; 1 remains.')); ok('singulars')
+  const late = renderReminder(checkpointFrom(events), 3)
+  assert.ok(late.includes('Commands run: `node tests/run.mjs url` → exit 1.')); assert.ok(late.includes('Unresolved: edit_file: Not found')); ok('later, the commands and the unresolved refusals are in it too')
 }
 
 console.log(`\n${n} assertions passed`)

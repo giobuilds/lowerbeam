@@ -7,7 +7,7 @@ import { streamChat, windowUsed, type ChatTurn, type StreamedToolCall } from '@s
 import type { Grant } from './grant.js'
 import { AGENT_TOOLS, WRITE_TOOLS, runAgentTool } from './tools.js'
 import { foldToolTurns, nextFoldIndex } from '@context/fold.js'
-import { checkpointFrom, renderCheckpoint, compactWorkingSet } from '@context/checkpoint.js'
+import { checkpointFrom, renderCheckpoint, renderReminder, compactWorkingSet } from '@context/checkpoint.js'
 import { COMPACT_AT } from '@context/compact.js'
 
 /**
@@ -126,6 +126,14 @@ const RUN_POLICY =
     'You can run commands in the copy with run_command — there is no network, and each command has a time limit. Use it to run the tests on your change; read the output, fix what it shows, and answer only once they pass or you know why they cannot. '
   )
 
+/**
+ * The share of a write run's rounds it may spend without changing a file
+ * before it is reminded, once, that the task is a change. Half: late enough
+ * that a run which reads three files and then edits is never interrupted,
+ * early enough that the rounds left can still carry an edit and a test run.
+ */
+const REMIND_AFTER = 1 / 2
+
 const POLICY =
   'You are inspecting one software project to answer a question about it. ' +
   'Use the tools to find the relevant code: search first, then read only what ' +
@@ -187,6 +195,8 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
   // one. Measured before this existed: runs that had made the whole change
   // hit the round limit before verifying it.
   let roundBudget = maxRounds
+  let edited = false
+  let reminded = false
 
   /**
    * Replace everything before the newest round with notes projected from the
@@ -228,6 +238,17 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
     if (req.fold !== false && occupancy !== null && req.contextLimit) {
       const projected = occupancy + roughTokens(appendedChars)
       if (projected > req.contextLimit * COMPACT_AT) compact('window', false)
+    }
+    // A write run that has spent half its rounds without changing anything
+    // is told so, once, from the record. After compaction, so it stays in
+    // the newest round rather than being replaced by the notes it repeats.
+    if (mode !== 'inspect' && !edited && !reminded && rounds > maxRounds * REMIND_AFTER) {
+      reminded = true
+      const record = checkpointFrom(events)
+      const text = renderReminder(record, roundBudget - rounds + 1)
+      turns.push({ role: 'user', content: text })
+      appendedChars += text.length
+      emit({ type: 'reminder', round: rounds, throughSeq: record.throughSeq, record, chars: text.length })
     }
     const { turns: sent, folded } = req.fold === false ? { turns, folded: 0 } : foldToolTurns(turns, foldBefore)
     emit({ type: 'model.request', round: rounds, turns: sent.length, tools: tools.map((t) => t.name), folded })
@@ -328,6 +349,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
           : await runAgentTool(req.grant, call.name, args, { contextLimit: req.contextLimit })
       req.observe?.(call.name, args, result.content)
       if (result.denied) denials += 1
+      if ((call.name === 'edit_file' || call.name === 'write_file') && result.ok) edited = true
       emit({
         type: 'tool.result',
         callId: call.id,
