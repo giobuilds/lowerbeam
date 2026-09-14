@@ -108,7 +108,7 @@ function roughTokens(chars: number): number {
   return Math.ceil(chars / 3)
 }
 
-const EDIT_POLICY =
+export const EDIT_POLICY =
   'You are making a change to one software project, in a copy of it that a ' +
   'person will review before anything reaches the real project. Read before ' +
   'you edit: search for the relevant code, read the file, then change it with ' +
@@ -122,7 +122,7 @@ const EDIT_POLICY =
   'code is. When you know the cause, make the change, then answer with what ' +
   'you changed and why, citing the files, and stop.'
 
-const RUN_POLICY =
+export const RUN_POLICY =
   EDIT_POLICY.replace(
     'You cannot run the code or the tests here, and adding logging or other instrumentation to check your work only leaves changes behind that were not asked for — a person will run the tests on what you did. ',
     'You can run commands in the copy with run_command — there is no network, and each command has a time limit. Use it to run the tests on your change; read the output, fix what it shows, and answer only once they pass or you know why they cannot. '
@@ -136,7 +136,7 @@ const RUN_POLICY =
  */
 const REMIND_AFTER = 1 / 2
 
-const POLICY =
+export const POLICY =
   'You are inspecting one software project to answer a question about it. ' +
   'Use the tools to find the relevant code: search first, then read only what ' +
   'you need. When you answer, cite file paths and the names of the functions, ' +
@@ -372,7 +372,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
   return finish()
 }
 
-const RUN_COMMAND_TOOL: ToolDefinition = {
+export const RUN_COMMAND_TOOL: ToolDefinition = {
   name: 'run_command',
   label: 'Run a command',
   description:
@@ -389,7 +389,7 @@ const RUN_COMMAND_TOOL: ToolDefinition = {
 }
 
 /** The tail of the output is what the model gets; the whole of it is an artifact. */
-const COMMAND_OUTPUT_CHARS = 6000
+export const COMMAND_OUTPUT_CHARS = 6000
 
 async function runCommand(
   execute: NonNullable<RunRequest['execute']>,
