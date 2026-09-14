@@ -178,6 +178,23 @@ mid-run and rebuilt nine journal lines from disk then kept receiving live
 events to twenty-six, the answer rendered and named the right function, a
 second run cancelled with `cancelled` in its journal, and a clean quit.
 
+**Capability record.** Shipped as `src/shared/capability.ts`: one entry
+per measured model, keyed by the file's SHA-256 — a model is its file,
+and a different quantisation is a different entry — with the launch,
+llama.cpp build and context it was measured under, the family numbers,
+and a verdict per mode (inspect, edit, run) that cites its measurement.
+The main process hashes the loaded file once, remembers the hash against
+the file's size and modification time, and refuses a mode the record
+refuses, whatever the interface offered; the Coding tab shows the
+measurement behind the selected mode. Per model, as Stage 0 asked: the
+floor may inspect and not edit; the 30B with experts on CPU may inspect
+and not edit, since it cannot finish a write loop on this card; the
+one-bit 27B and the 3B whose template declares no tools are refused
+outright. A file the record does not hold is *unmeasured*, not refused:
+every mode is offered, labelled as such, with the journal as the only
+evidence — refusing everything unmeasured would make the tab useless for
+any model but five.
+
 **Context engine.** Shipped as `src/context/` — `project.ts` (what a
 conversation looks like to the model), `compact.ts` (moved from the
 renderer unchanged), and `fold.ts` (bounding an agent loop's working set).

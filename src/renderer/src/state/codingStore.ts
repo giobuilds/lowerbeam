@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { ApplyResult, ChangeSet, CodingMode, CodingRunSummary, JournalEvent } from '@shared/coding.js'
+import type { CapabilityStatus } from '@shared/capability.js'
 
 /**
  * A projection of the coding supervisor's state — never a second engine.
@@ -19,6 +20,8 @@ interface CodingState {
   mode: CodingMode
   /** Whether "edit and run" can be offered, and why not when it cannot. */
   sandbox: { ok: boolean; reason: string | null } | null
+  /** What the capability record says about the loaded model; null while it is being identified. */
+  capability: CapabilityStatus | null
   /** An edit run's changes, once fetched; the last apply or undo result beside them. */
   changes: Record<string, ChangeSet>
   applyResults: Record<string, ApplyResult>
@@ -27,6 +30,7 @@ interface CodingState {
 
   init: () => Promise<void>
   setMode: (mode: CodingMode) => void
+  loadCapability: () => Promise<void>
   loadChanges: (runId: string) => Promise<void>
   apply: (runId: string) => Promise<void>
   undo: (runId: string) => Promise<void>
@@ -47,6 +51,7 @@ export const useCodingStore = create<CodingState>((set, get) => ({
   task: '',
   mode: 'inspect',
   sandbox: null,
+  capability: null,
   changes: {},
   applyResults: {},
   busy: {},
@@ -72,6 +77,21 @@ export const useCodingStore = create<CodingState>((set, get) => ({
 
   setMode(mode) {
     set({ mode })
+  },
+
+  async loadCapability() {
+    // Identifying a model hashes its file the first time, which takes a
+    // while; the tab says so until this lands.
+    set({ capability: null })
+    try {
+      const capability = await window.llama.coding.capability()
+      set({ capability })
+      // A mode the record refuses is not left selected.
+      const { mode } = get()
+      if (capability.state === 'measured' && capability.record.modes[mode].verdict === 'refused') set({ mode: 'inspect' })
+    } catch (err) {
+      set({ capability: { state: 'none' }, error: (err as Error).message })
+    }
   },
 
   async loadChanges(runId) {

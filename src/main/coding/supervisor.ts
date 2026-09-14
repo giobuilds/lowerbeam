@@ -9,6 +9,8 @@ import type { ServerSupervisor } from '../supervisor.js'
 import { Journal } from './journal.js'
 import { Workspace } from './workspace.js'
 import { probeSandbox, runInSandbox } from './sandbox.js'
+import { ModelIdentifier } from './capability.js'
+import { verdictFor, type CapabilityStatus } from '@shared/capability.js'
 import { writeFile } from 'node:fs/promises'
 import type { ApplyResult, ChangeSet } from '@shared/coding.js'
 
@@ -34,12 +36,14 @@ export class CodingSupervisor extends EventEmitter<{
   private readonly runs = new Map<string, CodingRunSummary>()
   private readonly live = new Map<string, { abort: AbortController; journal: Journal }>()
   private readonly workspaces = new Map<string, Workspace>()
+  private readonly identifier: ModelIdentifier
 
   constructor(
     private readonly dir: string,
     private readonly inference: () => ServerSupervisor | null
   ) {
     super()
+    this.identifier = new ModelIdentifier(join(dir, 'model-hashes.json'))
   }
 
   /** Rebuild the list from what is on disk, oldest first. */
@@ -75,6 +79,11 @@ export class CodingSupervisor extends EventEmitter<{
     // grant is on a copy of the project, never the project.
     let grant: Grant
     let workspace: Workspace | null = null
+    // A mode the record refuses for this model is refused here, with the
+    // measurement, whatever the interface offered. An unmeasured model is
+    // offered every mode; the record says so and the journal is the evidence.
+    const verdict = verdictFor(await this.identifier.status(status.config?.modelPath), req.mode)
+    if (verdict.verdict === 'refused') throw new Error(`This model is not cleared to ${describe(req.mode)}: ${verdict.evidence}`)
     if (req.mode === 'run') {
       // No box, no run mode: it is refused here, with the reason, rather than
       // running anything unsandboxed and calling that a sandbox.
@@ -208,6 +217,12 @@ export class CodingSupervisor extends EventEmitter<{
     return probeSandbox()
   }
 
+  /** What the capability record says about the model that is loaded now. */
+  capability(): Promise<CapabilityStatus> {
+    const status = this.inference()?.status
+    return this.identifier.status(status?.phase === 'ready' ? status.config?.modelPath : null)
+  }
+
   /** The run's changes against the baseline its workspace was taken from. */
   async changes(id: string): Promise<ChangeSet | null> {
     const ws = await this.workspace(id)
@@ -269,6 +284,10 @@ export class CodingSupervisor extends EventEmitter<{
     if (!/^[a-f0-9-]{36}$/i.test(id)) throw new Error('invalid run id')
     return join(this.dir, `${id}.jsonl`)
   }
+}
+
+function describe(mode: CodingStartRequest['mode']): string {
+  return mode === 'run' ? 'edit and run commands' : mode === 'edit' ? 'edit' : 'inspect'
 }
 
 /**
