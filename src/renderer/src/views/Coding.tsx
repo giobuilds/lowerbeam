@@ -191,7 +191,7 @@ function TermsRow({ disabled }: { disabled: boolean }): React.JSX.Element {
         + folder to read
       </button>
       {toggle('network', 'network', 'Commands in the sandbox may reach the network. Off, nothing outside the box is reachable.')}
-      {toggle('install', 'install', 'Commands may install dependencies into the copy, which gets its own empty node_modules instead of the project\u2019s lent read-only. Usually needs the network too.')}
+      {toggle('install', 'install', 'Commands may install dependencies: writes to node_modules land in the copy, on top of the project\u2019s tree, which is never changed. Usually needs the network too.')}
     </div>
   )
 }

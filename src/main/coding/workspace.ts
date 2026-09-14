@@ -26,7 +26,7 @@ const run = promisify(execFile)
  */
 
 /** Files that are never part of a workspace: nothing a task needs, plenty it must not touch. */
-const SKIP = new Set(['.git', 'node_modules', 'dist', 'out', '.build'])
+const SKIP = new Set(['.git', 'node_modules', 'dist', 'out', '.build', '.lowerbeam-deps'])
 
 export interface Manifest {
   projectRoot: string

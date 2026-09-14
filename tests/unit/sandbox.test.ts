@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
-import { probeSandbox, runInSandbox, bwrapArgs } from '../../src/main/coding/sandbox.js'
+import { probeSandbox, runInSandbox, bwrapArgs, overlaySupported, DEPS_DIR } from '../../src/main/coding/sandbox.js'
 import { execFileSync, spawn } from 'node:child_process'
 
 let n = 0; const ok = (m: string) => { n++; console.log('  ok', m) }
@@ -98,10 +98,21 @@ console.log('\nthe box\u2019s shape follows the terms of the grant')
   assert.ok(plain.some((a, k) => a === '--ro-bind' && plain[k + 2] === join(workspace, 'node_modules'))); ok('and the project\u2019s node_modules is lent read only')
   const net = await bwrapArgs(workspace, project, { alsoRead: [], network: true, install: false })
   assert.ok(net.includes('--share-net') && net.indexOf('--share-net') > net.indexOf('--unshare-all')); ok('network: shared back in after everything else is unshared')
-  const inst = await bwrapArgs(workspace, project, { alsoRead: [], network: false, install: true })
-  assert.ok(!inst.some((a, k) => a === '--ro-bind' && inst[k + 2] === join(workspace, 'node_modules'))); ok('install: the project\u2019s node_modules is not lent, so the copy\u2019s own is what an install writes')
-  const r = await runInSandbox({ ...opts, command: 'ls node_modules', terms: { alsoRead: [], network: false, install: true } })
-  assert.equal(r.exitCode, 0); assert.ok(!r.stdout.includes('dep')); ok('and inside the box the copy\u2019s node_modules starts empty')
+  const install = { alsoRead: [], network: false, install: true }
+  const inst = await bwrapArgs(workspace, project, install)
+  assert.ok(!inst.some((a, k) => a === '--ro-bind' && inst[k + 2] === join(workspace, 'node_modules'))); ok('install: the project\u2019s node_modules is not lent read only')
+  if (await overlaySupported()) {
+    assert.ok(inst.includes('--overlay-src') && inst[inst.indexOf('--overlay-src') + 1] === join(project, 'node_modules')); ok('it is the lower layer of an overlay instead')
+    const sees = await runInSandbox({ ...opts, command: 'cat node_modules/dep/index.js && echo added > node_modules/added.js && ls node_modules', terms: install })
+    assert.equal(sees.exitCode, 0); assert.ok(sees.stdout.includes('dep') && sees.stdout.includes('added.js')); ok('inside the box the project\u2019s dependencies are there and an install can add to them')
+    assert.equal(await stat(join(project, 'node_modules', 'added.js')).then(() => true, () => false), false); ok('the project\u2019s tree is not written')
+    assert.equal(await stat(join(workspace, DEPS_DIR, 'upper', 'added.js')).then(() => true, () => false), true); ok('the write landed beside the copy, where a change listing never looks')
+    const again = await runInSandbox({ ...opts, command: 'cat node_modules/added.js', terms: install })
+    assert.equal(again.exitCode, 0); assert.ok(again.stdout.includes('added')); ok('and it is still there for the next command')
+  } else {
+    const r = await runInSandbox({ ...opts, command: 'ls node_modules', terms: install })
+    assert.equal(r.exitCode, 0); assert.ok(!r.stdout.includes('dep')); ok('no overlay on this kernel: the copy\u2019s own node_modules starts empty')
+  }
   const also = await bwrapArgs(workspace, project, { alsoRead: [project], network: false, install: false })
   assert.ok(also.some((a, k) => a === '--ro-bind' && also[k + 1] === project && also[k + 2] === project)); ok('an extra root is bound read only at its own path')
   const seen = await runInSandbox({ ...opts, command: `cat ${join(project, 'node_modules', 'dep', 'index.js')}`, terms: { alsoRead: [project], network: false, install: false } })

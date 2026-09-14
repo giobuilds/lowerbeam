@@ -165,9 +165,9 @@ export interface GrantTerms {
   /** Commands in the sandbox may reach the network. */
   network: boolean
   /**
-   * Commands may install dependencies: the copy gets a dependency tree of its
-   * own to write, instead of the project's lent read-only. An install usually
-   * needs the network as well.
+   * Commands may install dependencies: writes to node_modules land in the
+   * copy, on top of the project's tree, which is never written. An install
+   * usually needs the network as well.
    */
   install: boolean
 }
@@ -184,7 +184,7 @@ export function describeTerms(terms: GrantTerms, mode: CodingMode): string {
   if (terms.alsoRead.length) parts.push(`You may also read, but not change, ${terms.alsoRead.map((d) => `\`${d}\``).join(' and ')}; refer to files there by their full path.`)
   if (mode === 'run') {
     if (terms.network) parts.push('Commands may use the network.')
-    if (terms.install) parts.push('Commands may install dependencies into the copy; it has its own node_modules, which starts empty.')
+    if (terms.install) parts.push('Commands may install dependencies into the copy, on top of what the project already has; the project\u2019s own dependency tree is not changed.')
   }
   return parts.join(' ')
 }
