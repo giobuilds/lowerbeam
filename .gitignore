@@ -9,3 +9,6 @@ tests/.build/
 # Stage 0 harness output: journals and answers per run, kept locally
 tests/harness/results/
 tests/harness/matrix.log
+
+# Training data rebuilt from the journals by tests/harness/dataset.mjs, kept locally like the results
+tests/harness/dataset/

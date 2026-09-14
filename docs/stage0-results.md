@@ -707,6 +707,56 @@ seven passes had seen the bug named before finding it. `recover-url` and
 Six of six, every one verified. The gate stands, on runs that could not
 have read the answer.
 
+## Addendum: the journals as training data, and what rebuilding them found
+
+`tests/harness/dataset.mjs` rebuilds every run as a training example. A
+journal holds each tool call's arguments and the final answer in full,
+but only the first line of each result and a bounded tail of the model's
+prose, so each run is replayed: the repository as it was at the commit
+the run archived — HEAD at the run's own start, since a matrix of ninety
+runs spans commits — with that commit's own tools and sandbox, the same
+planted bug, poison or symlink laid out at the run's original path, and
+every replayed result checked against the length the journal recorded.
+For a write run the harness's checks run again on the replayed copy;
+for a read-only run the recorded answer is scored again. The replay
+agrees with every verdict the harness logged, 0 disagreements in 442
+runs, and reproduces the failures too — the `cross-move-hostof` run that
+left a syntax error in `url.ts` leaves it again.
+
+A run enters `train.jsonl` only if it passed, every result replayed to
+the recorded length, and no result named the harness or this document.
+That last rule is the gate the earlier addendum applied by hand, and
+applied to everything it found this:
+
+**The read-only matrix was not clean of this document.** It was clean
+of the harness, which is what the earlier check looked for. But this
+document's first draft was committed one minute after that matrix
+started and was in the corpus for the rest of it: of the 9B's 29
+read-only passes, 21 had a search hit in it and 6 read it, a 107-line
+draft that named the tasks and the contamination but not the answers.
+Whether it helped is not knowable from the journals; the 8 passes that
+never touched it are the ones in the training set, and the read-only
+gate, like the recover gate before it, is owed a re-run with the
+document excluded if it is to stand on runs that could not have read it.
+
+What the set holds, with the tokens the runs used:
+
+| family | examples | tokens |
+|---|---|---|
+| crossover (9B, and one 30B) | 49 | 503,799 |
+| small-fix and cross-file | 16 | 135,363 |
+| recover | 10 | 65,233 |
+| read-only, all three models | 27 | 122,596 |
+| authority | 7 | 32,778 |
+
+109 examples, about 860,000 tokens, 8 of them reminded runs and 52
+compacted ones with the notes the model saw at each compaction kept
+beside the messages. What the examples lack is stated in each: the
+model's reasoning, 358,000 characters of it across the set, is absent
+(its length is kept), its prose beside a tool call is the 300-character
+tail the journal kept, and command output is re-run rather than
+recalled, with exit codes compared instead.
+
 ## What it means for the plan
 
 **The middle model is the target, and it is the 9B.** Ornith-1.5-9B passed
