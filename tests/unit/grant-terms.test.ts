@@ -36,6 +36,10 @@ console.log('\nthe terms are checked where they are enforced')
   await assert.rejects(checkTerms({ ...DEFAULT_TERMS, alsoRead: [homedir()] }, 'run', own), /whole home directory/); ok('the home directory is refused')
   await assert.rejects(checkTerms({ ...DEFAULT_TERMS, alsoRead: [own] }, 'run', own), /own state/); ok('the app\u2019s own state is refused')
   await assert.rejects(checkTerms({ ...DEFAULT_TERMS, alsoRead: [base] }, 'run', own), /own state/); ok('and so is any folder that contains it')
+  const project = join(base, 'project')
+  await mkdir(join(project, 'src'), { recursive: true })
+  const dropped = await checkTerms({ ...DEFAULT_TERMS, alsoRead: [project, join(project, 'src'), lib] }, 'run', own, project)
+  assert.deepEqual(dropped.alsoRead, [lib]); ok('the project itself, or a folder inside it, is already granted and is dropped rather than recorded as beyond it')
   await rm(base, { recursive: true, force: true })
 }
 

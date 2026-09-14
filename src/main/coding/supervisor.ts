@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import { stat } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import { DEFAULT_TERMS, type CodingRunSummary, type CodingStartRequest, type GrantTerms, type JournalEvent } from '@shared/coding.js'
 import { Grant } from '../../agent/grant.js'
 import { runTask } from '../../agent/loop.js'
@@ -91,7 +91,7 @@ export class CodingSupervisor extends EventEmitter<{
     // The terms are checked here, where they are enforced, whatever the
     // interface offered: an extra root must be a real directory, narrow
     // enough to mean something, and never this app's own state.
-    const terms = await this.checkTerms(req.grant ?? DEFAULT_TERMS, req.mode)
+    const terms = await this.checkTerms(req.grant ?? DEFAULT_TERMS, req.mode, req.projectRoot)
     if (req.mode === 'run') {
       // No box, no run mode: it is refused here, with the reason, rather than
       // running anything unsandboxed and calling that a sandbox.
@@ -133,8 +133,8 @@ export class CodingSupervisor extends EventEmitter<{
     return summary
   }
 
-  private checkTerms(terms: GrantTerms, mode: CodingStartRequest['mode']): Promise<GrantTerms> {
-    return checkTerms(terms, mode, dirname(this.dir))
+  private checkTerms(terms: GrantTerms, mode: CodingStartRequest['mode'], projectRoot: string): Promise<GrantTerms> {
+    return checkTerms(terms, mode, dirname(this.dir), projectRoot)
   }
 
   cancel(id: string): boolean {
@@ -371,13 +371,18 @@ export class CodingSupervisor extends EventEmitter<{
  * directory, narrow enough to mean something — not the filesystem, not the
  * home directory — and never this app's own state. Network and install mean
  * nothing outside run mode and are dropped there, so the record never
- * claims a term the run could not have used.
+ * claims a term the run could not have used. A folder that is the project,
+ * or inside it, is already granted and is dropped rather than recorded as
+ * something beyond the project.
  */
-export async function checkTerms(terms: GrantTerms, mode: CodingStartRequest['mode'], own: string): Promise<GrantTerms> {
+export async function checkTerms(terms: GrantTerms, mode: CodingStartRequest['mode'], own: string, projectRoot?: string): Promise<GrantTerms> {
   const home = homedir()
+  const project = projectRoot ? await realpath(projectRoot).catch(() => resolve(projectRoot)) : null
   const alsoRead: string[] = []
   for (const dir of terms.alsoRead) {
     const abs = resolve(dir)
+    const real = await realpath(abs).catch(() => abs)
+    if (project && (real === project || real.startsWith(project + '/'))) continue
     let info
     try {
       info = await stat(abs)
