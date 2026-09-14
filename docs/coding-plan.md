@@ -259,7 +259,9 @@ conflict path. The loop still runs in the main process.
 majority, cross-file 3 of 4, unwanted changes in 0 of 33 write runs. Met.
 The two small-fix tasks that scored 0/3 both show the model reading the
 file with the bug and then answering in prose without editing — a failure
-shape the read-only families did not have, and the next thing to work on.
+shape the read-only families did not have. A reminder half-way through a
+run that has changed nothing, measured in Stage 3's crossover family, is
+the answer to it that worked.
 Details in [stage0-results.md](stage0-results.md).
 
 Not yet: the C corpus, and command execution, which is Stage 3.
@@ -306,10 +308,11 @@ tree, restart mid-execution, model disconnect — measured against the real
 app: no orphan in any case, and a run cut off with a command in flight is
 reported as exactly that, the command named and its outcome unknown. Met.
 The crossover family — the write tasks in a window a third of the size,
-continued from notes projected out of the journal — over eight matrices:
-the record held in 96 of 96 runs (every checkpoint claim supported, every
+continued from notes projected out of the journal — over nine matrices:
+the record held in 108 of 108 runs (every checkpoint claim supported, every
 changed-files slot matching the diff), and task completion ranged from 0
-to 6 of 12, one task of four by majority over the pooled runs. **Met on
+to 6 of 12 for eight of them and reached 8 of 12 in the ninth, one task
+of four by majority over the pooled runs. **Met on
 the record, not on completion.**
 
 Four changes were tried against it and none moved the total outside that
@@ -325,7 +328,13 @@ change touches — which leaves seven or eight informative runs per matrix,
 too few to resolve a change worth one or two of them. **The family is a
 sound regression check and too small an experiment.** Further tuning of
 the context engine needs many more runs per matrix, or tasks that do not
-fail for reasons the engine cannot reach. The same family on a larger model is now run and answers a
+fail for reasons the engine cannot reach. The one change that reached the
+tax is not to the context engine: a write run that has spent half its
+rounds without changing a file is told so once, from the record, and the
+matrix with that scored 8 of 12, the first outside the spread. The runs
+the reminder fires in had passed 10 of 56 times before it and passed 5 of
+7 with it; the runs it does not fire in were unchanged. One matrix, and
+by the family's own verdict a second is owed before it is credited. The same family on a larger model is now run and answers a
 different question than it was asked: on this card a larger model is
 either too slow (the 30B MoE pages experts from CPU — eight of twelve
 runs killed at the time budget) or too damaged (the dense 27B fits only

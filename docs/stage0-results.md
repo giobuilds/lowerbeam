@@ -227,7 +227,9 @@ and the reminder had nothing to remind. Both tasks plant a *wrong constant*
 does not see it as wrong. That is a capability limit, not a prompt problem,
 and it is recorded as one. The sentence stays, because a run that searches
 is at least honest about not being done; the reminder was removed as
-untriggered code.
+untriggered code. A different reminder — mid-run, from the record, for a
+run that has spent half its rounds without a change — is what later
+moved this failure, in the crossover family's matrix 9.
 
 **A false failure, and what it teaches about checks.** `cross-rename-summarise`
 scored 0/3 on the first pass because its absence check searched all of
@@ -322,8 +324,8 @@ compacted tested nothing), every claim in every checkpoint supported by
 the journal, and the last checkpoint's changed files present in the
 workspace diff.
 
-Eight matrices of twelve runs, each changing one thing, reported together
-because the spread between them is the finding.
+Nine matrices of twelve runs, each changing one thing, reported together
+because the spread between them is the finding — and the one that left it.
 
 | matrix | change | passes | by majority | compacted | record held |
 |---|---|---|---|---|---|
@@ -335,32 +337,35 @@ because the spread between them is the finding.
 | 6 | the notes carry what the model last said it was doing | 2/12 | 0 of 4 | 12/12 | 12/12 |
 | 7 | that statement expires if it is two rounds old | 4/12 | 1 of 4 | 12/12 | 12/12 |
 | 8 | a read takes at most a third of the window | 6/12 | 3 of 4 | 12/12 | 12/12 |
+| 9 | a write run with nothing changed by mid-run is told so once, from the record | 8/12 | 2 of 4 | 12/12 | 12/12 |
 
-Per task over matrices 2–8, twenty-one runs each, beside the same task at
+Per task over matrices 2–9, twenty-four runs each, beside the same task at
 the full window in its own family:
 
 | task | window | crossover passes | at 16k | verified when passed |
 |---|---|---|---|---|
-| crossover-slug | 4,096 | 9/21 | 5/6 | 9/9 |
-| crossover-read-window | 6,144 | 0/21 | 2/3 | — |
-| crossover-rename-summarise | 6,144 | 14/21 | 3/3 | 14/14 |
-| crossover-new-ipc-channel | 6,144 | 10/21 | 1/3 | 10/10 |
+| crossover-slug | 4,096 | 12/24 | 5/6 | 12/12 |
+| crossover-read-window | 6,144 | 1/24 | 2/3 | 1/1 |
+| crossover-rename-summarise | 6,144 | 17/24 | 3/3 | 17/17 |
+| crossover-new-ipc-channel | 6,144 | 11/24 | 1/3 | 11/11 |
 
 **Stage 3 crossover gate: not met on task completion; met on the record.**
-The record's part held in every one of 96 runs: compaction fired in 90,
+The record's part held in every one of 108 runs: compaction fired in 102,
 every claim in every checkpoint was supported by the journal up to its
 sequence, the changed-files slot matched the workspace diff at the end
 each time, and nothing unwanted was touched. Task completion in a window
-a third of the size ranged from 0 to 6 of 12 across matrices of the same
-code, and pooled over 84 runs one task of four passes by majority —
-rename, 14 of 21. The spread between matrices 2 and 3 — six passes to
+a third of the size ranged from 0 to 6 of 12 across eight matrices of the
+same code and reached 8 of 12 in the ninth; pooled over 96 runs one task
+of four passes by majority — rename, 17 of 24; slug is at exactly half. The spread between matrices 2 and 3 — six passes to
 none, the search fix the only change between them — is larger than any
 single change made here and is the 9B's own: the failing runs reason two
 to three times as long per round and read the same short file repeatedly
 without editing it. That is the *analysis without action* shape from the
-small-fix family, more frequent in a small window. No change made since
-matrix 2 has moved the total outside that spread, which is the honest
-summary of every experiment below.
+small-fix family, more frequent in a small window. No change to the
+context engine moved the total outside that spread, which is the honest
+summary of the experiments below. The one change that did, in matrix 9,
+is not to the context engine but to what the run is told half-way
+through, and it is reported last.
 
 ### Folding was aimed at the wrong thing
 
@@ -458,27 +463,30 @@ arithmetic holds and it costs nothing at the full window.
 
 ### What the family can and cannot resolve
 
-Eight matrices, 96 runs, and the same 0-to-6-of-12 spread throughout.
+Nine matrices, 108 runs, and for eight of them the same 0-to-6-of-12
+spread throughout.
 Splitting the runs by how far they got says why, and it is the most
 useful thing the family has produced:
 
-| how far the run got | matrices 2–8 |
-|---|---|
-| never called an edit tool | 34/84 |
-| edited, did not fix it | 16/84 |
-| fixed it, never ran the check | 6/84 |
-| touched the wrong file | 1/84 |
-| pass | 27/84 |
+| how far the run got | matrices 2–8 | matrix 9 |
+|---|---|---|
+| never called an edit tool | 34/84 | 2/12 |
+| edited, did not fix it | 16/84 | 1/12 |
+| fixed it, never ran the check | 6/84 | 1/12 |
+| touched the wrong file | 1/84 | 0/12 |
+| pass | 27/84 | 8/12 |
 
 Two numbers are stable across every matrix: the record holds, and about
 four runs in ten never edit anything at all. That second one is the
 *analysis without action* limit, it is a constant tax, and no change to
 the context engine has ever moved it — nor should one be expected to.
+What moved it, in matrix 9, is not a context change; see the last
+section of this family.
 
 What is left after that tax is seven or eight informative runs per
 matrix, and *that* is where the whole 0-to-6 spread lives: the share of
 editing runs that ended correct and verified was 6/7, 0/5, 6/7, 6/8, 2/7,
-4/7 and 6/9 across matrices 2 to 8. A twelve-run matrix cannot resolve a
+4/7 and 6/9 across matrices 2 to 8, and 8/10 in matrix 9. A twelve-run matrix cannot resolve a
 change worth one or two runs, and every change tried here is that size.
 The family is sound as a *regression* check — it has caught four real
 defects — and too small as an *experiment*. Any further tuning of the
@@ -600,6 +608,52 @@ action. In these runs the model's own turns carried nothing to extract
 (the 9B emits tool calls with reasoning that is never resent, and no
 prose), so the mechanical record was the whole record. Whether that stays
 true on longer tasks is the open question the family is for.
+
+### Told once that nothing has changed
+
+The runs that never edit do not answer in prose. In matrices 7 and 8
+every one of the eight called a tool each round to the limit, and the
+reminder tried in the small-fix family — a turn for a run that tries to
+answer without having written anything — never fired because that is
+not where the failure is. Matrix 9 puts a different reminder where it
+is. A write run that has spent half its rounds without a successful
+edit is given one user turn, rendered from the record like the notes:
+how many rounds are used and left, what it has read with ranges, what
+it has searched and run, anything unresolved, and that the task is a
+change to the code and is not done until a file has changed. It is
+journalled as its own event with the record it was projected from, so
+what it says the run has done is checkable the way a checkpoint is.
+
+It scored **8 of 12 — the first matrix outside the spread** — with two
+runs that never edited, the fewest yet, and the record held in 12 of
+12. The split that says why is by whether the reminder fired at all. It
+fires only in a run with no edit by round 7, and those runs are the
+ones that used to fail:
+
+| runs with no edit by round 7 | of the matrix | went on to pass |
+|---|---|---|
+| matrices 2–8 | 56 of 84 | 10 (18%) |
+| matrix 9, reminded | 7 of 12 | 5 (71%) |
+
+The runs that had edited before round 7 — the ones the reminder never
+touches — passed 17 of 28 before and 3 of 5 here, the same three in
+five. Everything the matrix gained is in the runs that were reminded.
+`slug` went 3 of 3, its first sweep in the family, and all three were
+reminded: the first edit came on rounds 7, 11 and 14. `read-window`
+passed for the first time in 22 runs — reminded before round 7, the run
+searched for the constant on round 7, read seven lines of the file on
+round 8, edited on round 9, and verified. Its other two runs were
+reminded too, kept reading, and never edited; one was shown
+`const READ_MAX_LINES = 100` by a search on round 14 and read a
+different part of the file twice more. That is the wrong-constant
+limit the small-fix family recorded, and no reminder reaches it.
+
+One matrix, seven reminded runs, and the family's own verdict two
+sections up applies: a change worth five runs in seven is larger than
+any tried here, and it is still one matrix. A second is owed before it
+is credited with more than the direction. The two IPC failures are
+unrelated to it — neither was reminded; one edited every file and never
+ran the typecheck, the other missed the shared channel entry.
 
 ## Addendum: this document was in the corpus
 
