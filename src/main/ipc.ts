@@ -40,6 +40,7 @@ import { conversationSchema, type ConversationStore } from './conversations.js'
 import { openExternally, readerFor } from './reader.js'
 import type { CodingSupervisor } from './coding/supervisor.js'
 import type { SandboxProbe } from './coding/sandbox.js'
+import type { CapabilityStatus } from '@shared/capability.js'
 import type { ApplyResult, ChangeSet, CodingRunSummary, JournalEvent } from '@shared/coding.js'
 import type { ProfileStore } from './profiles.js'
 import {
@@ -481,6 +482,7 @@ export function registerIpc(
   handle<JournalEvent[]>(IPC.codingGet, (id) => coding.events(String(id ?? '')))
   handle<ChangeSet | null>(IPC.codingChanges, (id) => coding.changes(String(id ?? '')))
   handle<SandboxProbe>(IPC.codingSandbox, () => coding.sandbox())
+  handle<CapabilityStatus>(IPC.codingCapability, () => coding.capability())
   handle<ApplyResult>(IPC.codingApply, (id) => coding.apply(String(id ?? '')))
   handle<ApplyResult>(IPC.codingUndo, (id) => coding.undo(String(id ?? '')))
   handle<null>(IPC.codingDiscard, async (id) => {

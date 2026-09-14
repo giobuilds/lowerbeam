@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ChangeSet, CodingRunSummary, JournalEvent } from '@shared/coding.js'
 import { useCodingStore } from '../state/codingStore.js'
+import { verdictFor, type CapabilityStatus } from '@shared/capability.js'
 import { useServerStore } from '../state/serverStore.js'
 import { renderMarkdown } from '../api/markdown.js'
 
@@ -23,13 +24,19 @@ export function Coding(): React.JSX.Element {
   const error = useCodingStore((s) => s.error)
   const clearError = useCodingStore((s) => s.clearError)
   const status = useServerStore((s) => s.status)
+  const loadCapability = useCodingStore((s) => s.loadCapability)
 
   useEffect(() => {
     void init()
   }, [init])
 
   const active = runs.find((r) => r.id === activeRunId) ?? null
-  const modelName = status?.phase === 'ready' ? status.config?.modelPath?.split('/').pop() : null
+  const modelPath = status?.phase === 'ready' ? (status.config?.modelPath ?? null) : null
+  const modelName = modelPath?.split('/').pop() ?? null
+  // Whenever a different model is ready, ask the record about it.
+  useEffect(() => {
+    void loadCapability()
+  }, [loadCapability, modelPath])
 
   return (
     <div className="flex h-full min-h-0">
@@ -136,7 +143,7 @@ function Composer({ disabled, modelName }: { disabled: boolean; modelName: strin
         <ModeToggle disabled={running} />
         {modelName && (
           <p className="text-[11px] text-muted">
-            Using <span className="text-slate-300">{modelName}</span>.{' '}
+            Using <span className="text-slate-300">{modelName}</span>. <Measured />{' '}
             {mode === 'run'
               ? 'Edits go to a copy; the model can run commands there in a sandbox with no network, and you apply the result, or not.'
               : mode === 'edit'
@@ -153,6 +160,11 @@ function ModeToggle({ disabled }: { disabled: boolean }): React.JSX.Element {
   const mode = useCodingStore((s) => s.mode)
   const setMode = useCodingStore((s) => s.setMode)
   const sandbox = useCodingStore((s) => s.sandbox)
+  const capability = useCodingStore((s) => s.capability)
+  const refused = (value: 'inspect' | 'edit' | 'run'): string | null => {
+    const v = verdictFor(capability, value)
+    return v.verdict === 'refused' ? v.evidence : null
+  }
   const option = (value: 'inspect' | 'edit' | 'run', label: string, off = false, why = ''): React.JSX.Element => (
     <button
       type="button"
@@ -168,13 +180,49 @@ function ModeToggle({ disabled }: { disabled: boolean }): React.JSX.Element {
   )
   // The third mode is offered only where the box exists. Without it the
   // button says why, and a run is refused by the main process as well.
+  // A mode the capability record refuses for this model is off, with the
+  // measurement as the reason; the main process refuses it as well.
+  const runOff = refused('run') ?? (sandbox !== null && !sandbox.ok ? (sandbox.reason ?? 'Commands cannot be contained here.') : null)
   return (
     <div className="flex items-center gap-1 rounded border border-edge p-0.5">
-      {option('inspect', 'Inspect')}
-      {option('edit', 'Edit in a copy')}
-      {option('run', 'Edit and run', sandbox !== null && !sandbox.ok, sandbox?.reason ?? 'Checking whether commands can be contained…')}
+      {option('inspect', 'Inspect', refused('inspect') !== null, refused('inspect') ?? '')}
+      {option('edit', 'Edit in a copy', refused('edit') !== null, refused('edit') ?? '')}
+      {option('run', 'Edit and run', runOff !== null, runOff ?? (sandbox === null ? 'Checking whether commands can be contained…' : ''))}
     </div>
   )
+}
+
+/**
+ * What the capability record says about the loaded model, in a line: the
+ * measurement behind the mode that is selected, or that there is none.
+ */
+function Measured(): React.JSX.Element | null {
+  const capability = useCodingStore((s) => s.capability)
+  const mode = useCodingStore((s) => s.mode)
+  if (capability === null) return <span>Identifying the model…</span>
+  if (capability.state === 'none') return null
+  if (capability.state === 'unmeasured') {
+    return (
+      <span title={`sha256 ${capability.sha256}`}>
+        <span className="text-amber-200/80">Not measured:</span> no record for this file, so nothing here is known to work; the journal is the evidence.
+      </span>
+    )
+  }
+  const v = capability.record.modes[mode]
+  return (
+    <span title={summary(capability)}>
+      <span className={v.verdict === 'cleared' ? 'text-emerald-300/80' : v.verdict === 'refused' ? 'text-rose-300' : 'text-amber-200/80'}>
+        {v.verdict === 'cleared' ? 'Measured:' : v.verdict === 'refused' ? 'Refused:' : 'Not measured for this:'}
+      </span>{' '}
+      {v.evidence}
+      {capability.record.limits.length > 0 && mode !== 'inspect' && <> Known limit: {capability.record.limits[0]}</>}
+    </span>
+  )
+}
+
+function summary(c: Extract<CapabilityStatus, { state: 'measured' }>): string {
+  const families = c.record.families.map((f) => `${f.family} ${f.passed}/${f.of} ${f.unit}`).join(', ')
+  return `${c.record.name}, measured ${c.record.measured.on} under ${c.record.measured.build}, ${c.record.measured.launch.join(' ')}: ${families}. See ${c.record.measured.results}.`
 }
 
 function ModeBadge(): React.JSX.Element {
