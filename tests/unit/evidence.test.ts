@@ -68,7 +68,7 @@ console.log('\nevidence is read off the record')
   const before = ' FAIL  unit/command\nAssertionError: slug\n FAIL  unit/old\n'
   const after = '  ok   unit/command  12 assertions\n FAIL  unit/old\n'
   const e = evidenceFrom(events, { 1: before, 2: after }, ['src/shared/command.ts', 'tests/unit/command.test.ts'])
-  assert.equal(e.verification?.command, 'node tests/run.mjs command'); assert.equal(e.verification?.exitCode, 0); ok('the verification is the last command after the last edit')
+  assert.ok(e.edited); assert.equal(e.verification?.command, 'node tests/run.mjs command'); assert.equal(e.verification?.exitCode, 0); ok('the run edited, and the verification is the last command after the last edit')
   assert.equal(e.baseline?.source, 'record'); assert.equal(e.baseline?.exitCode, 1); ok('the baseline is the same command before any edit, from the run itself')
   assert.deepEqual(e.newFailures, []); assert.deepEqual(e.preexisting, ['FAIL unit/old']); assert.deepEqual(e.fixed, ['FAIL unit/command', 'AssertionError: slug'])
   ok('a failure that was there before the run is not the run’s; what went away is named')
@@ -77,8 +77,10 @@ console.log('\nevidence is read off the record')
   const missing = evidenceFrom(events, { 1: null, 2: after }, [])
   assert.equal(missing.baseline?.outputAvailable, false); assert.deepEqual(missing.preexisting, []); ok('without the baseline output nothing is classified, and the record says the output is missing')
 
-  const none = evidenceFrom(events.slice(0, 6), { 1: before }, ['src/shared/command.ts'])
-  assert.equal(none.verification, null); ok('a run that ran nothing after its edit has no verification')
+  const none = evidenceFrom(events.slice(0, 10), { 1: before }, ['src/shared/command.ts'])
+  assert.ok(none.edited); assert.equal(none.verification, null); ok('a run that ran nothing after its edit has no verification')
+  const idle = evidenceFrom(events.slice(0, 6), { 1: before }, [])
+  assert.ok(!idle.edited && idle.verification === null); ok('and a run that never edited says so, which is a different thing')
 
   const rerun = withRerun(e, { command: 'node tests/run.mjs command', exitCode: 1, timedOut: false, output: ' FAIL  unit/command\n FAIL  unit/old\n', drifted: ['README.md'] })
   assert.equal(rerun.baseline?.source, 'rerun'); assert.deepEqual(rerun.fixed, ['FAIL unit/command']); assert.deepEqual(rerun.drifted, ['README.md'])

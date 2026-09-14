@@ -488,7 +488,9 @@ function EvidencePanel({ run }: { run: CodingRunSummary }): React.JSX.Element {
         )}
       </div>
       <div className="space-y-1 rounded border border-edge bg-panel p-3 text-[11px]">
-        {!v ? (
+        {!evidence.edited ? (
+          <p className="text-muted">The run made no edit, so there is nothing to verify.</p>
+        ) : !v ? (
           <p className="text-amber-200">Nothing was run after the last edit, so the change is unverified.</p>
         ) : (
           <>
@@ -519,7 +521,8 @@ function EvidencePanel({ run }: { run: CodingRunSummary }): React.JSX.Element {
         )}
         {evidence.testFilesChanged.length > 0 && (
           <p className="text-amber-200">
-            The run changed {evidence.testFilesChanged.length} test file{evidence.testFilesChanged.length === 1 ? '' : 's'} ({evidence.testFilesChanged.join(', ')}). {passed ? 'The pass is not proof the change is right: read those diffs first.' : 'Those are changes to review, not proof of anything.'}
+            The run changed {evidence.testFilesChanged.length} test file{evidence.testFilesChanged.length === 1 ? '' : 's'} ({evidence.testFilesChanged.slice(0, 4).join(', ')}
+            {evidence.testFilesChanged.length > 4 ? ` and ${evidence.testFilesChanged.length - 4} more` : ''}). {passed ? 'The pass is not proof the change is right: read those diffs first.' : 'Those are changes to review, not proof of anything.'}
           </p>
         )}
       </div>
