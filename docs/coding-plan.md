@@ -306,17 +306,17 @@ tree, restart mid-execution, model disconnect — measured against the real
 app: no orphan in any case, and a run cut off with a command in flight is
 reported as exactly that, the command named and its outcome unknown. Met.
 The crossover family — the write tasks in a window a third of the size,
-continued from notes projected out of the journal — over seven matrices:
-the record held in 84 of 84 runs (every checkpoint claim supported, every
+continued from notes projected out of the journal — over eight matrices:
+the record held in 96 of 96 runs (every checkpoint claim supported, every
 changed-files slot matching the diff), and task completion ranged from 0
 to 6 of 12, one task of four by majority over the pooled runs. **Met on
 the record, not on completion.**
 
-Three changes were tried against it and none moved the total outside that
+Four changes were tried against it and none moved the total outside that
 spread: folding less in a small window (compaction fires every two or
 three rounds there, so folding barely runs at all), the transient *next
-action* slot, and an expiry rule for it. The last two are kept for
-correctness rather than for a number.
+action* slot, an expiry rule for it, and a read budget that follows the
+window. The last three are kept for correctness rather than for a number.
 
 Splitting the runs by how far each got explains the spread and is the
 family's most useful result. About four runs in ten never call an edit
@@ -331,8 +331,12 @@ either too slow (the 30B MoE pages experts from CPU — eight of twelve
 runs killed at the time budget) or too damaged (the dense 27B fits only
 at one bit, and writes tool calls as prose — 0 of 12, never edited). The
 9B is not a compromise, it is the only member of its class that works
-here. Remaining: a read window that scales with the context a run has —
-which needs tasks that do not plant their bug in the read window. The results document was found in the corpus during this
+here. The read budget now follows the window — a third of it, which at
+16k is the 16 KB it always was — and the matrix run with it scored 6 of
+12 and three tasks of four by majority, the top of the spread and not
+outside it: reads got smaller and no less frequent, and compaction fired
+at the same rate. The line cap is separate from the byte cap, which is
+why the planted bug stayed detectable and this was never blocked. The results document was found in the corpus during this
 work and is excluded now; the recover tasks it could have helped were
 re-run clean, 6 of 6. Details in [stage0-results.md](stage0-results.md).
 
