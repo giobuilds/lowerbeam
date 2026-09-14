@@ -238,6 +238,11 @@ export class CodingSupervisor extends EventEmitter<{
     return probeSandbox()
   }
 
+  /** What the record says about a model file that is not running: for a launch being prepared. */
+  capabilityOf(path: string): Promise<CapabilityStatus> {
+    return this.identifier.status(path)
+  }
+
   /** What the capability record says about the model that is loaded now, and the context it is running with. */
   async capability(): Promise<CapabilityStatus> {
     const status = this.inference()?.status

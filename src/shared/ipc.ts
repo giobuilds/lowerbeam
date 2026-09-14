@@ -50,6 +50,7 @@ export const IPC = {
   codingDiscard: 'coding:discard',
   codingSandbox: 'coding:sandbox',
   codingCapability: 'coding:capability',
+  codingCapabilityOf: 'coding:capability-of',
   codingEvidence: 'coding:evidence',
   codingCheckBaseline: 'coding:check-baseline',
   codingEvent: 'coding:event',

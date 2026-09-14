@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { useServerStore } from '../state/serverStore.js'
+import { contextAdvice, type CapabilityStatus } from '@shared/capability.js'
 import { KV_CACHE_TYPES } from '@shared/types.js'
 import { Field, inputClass } from '../components/Field.js'
 import { StatusBadge } from '../components/StatusBadge.js'
@@ -145,7 +147,7 @@ export function LaunchPanel(): React.JSX.Element {
             onChange={(e) => setDraft({ gpuLayers: Number(e.target.value) })}
           />
         </Field>
-        <Field label="Context (-c)" hint="0 = use the model's trained size">
+        <Field label="Context (-c)" hint="0 = the model's trained size, which may be far more than fits">
           <input
             type="number"
             min={0}
@@ -155,6 +157,7 @@ export function LaunchPanel(): React.JSX.Element {
             disabled={live || draft.autoFit}
             onChange={(e) => setDraft({ contextSize: Number(e.target.value) })}
           />
+          <ContextAdvice modelPath={draft.modelPath} current={draft.contextSize} disabled={live || draft.autoFit} onUse={(n) => setDraft({ contextSize: n })} />
         </Field>
         {supports('--cache-type-k') && (
           <Field label="KV cache K (-ctk)">
@@ -356,5 +359,45 @@ export function LaunchPanel(): React.JSX.Element {
         </footer>
       )}
     </aside>
+  )
+}
+
+/**
+ * What coding runs on this model have needed, from the capability record:
+ * the cache is sized by the launch and nothing else, so this is the number
+ * the launch has to cover, and the trained length is not it. Identifying
+ * the file hashes it once; the line waits for that.
+ */
+function ContextAdvice({ modelPath, current, disabled, onUse }: { modelPath: string; current: number; disabled: boolean; onUse: (n: number) => void }): React.JSX.Element | null {
+  const [status, setStatus] = useState<CapabilityStatus | null>(null)
+  useEffect(() => {
+    let stale = false
+    setStatus(null)
+    if (!modelPath) return
+    void window.llama.coding.capabilityOf(modelPath).then((s) => {
+      if (!stale) setStatus(s)
+    }).catch(() => undefined)
+    return () => {
+      stale = true
+    }
+  }, [modelPath])
+  if (!modelPath || !status || status.state !== 'measured') return null
+  const advice = contextAdvice(status.record)
+  if (!advice) return null
+  const covers = current >= advice.max && current > 0
+  return (
+    <p className="mt-1 text-[11px] leading-snug text-muted">
+      Coding runs on this model needed up to {advice.max.toLocaleString()} tokens in a request, {advice.needed.toLocaleString()} for nine in ten, over {advice.runs} measured runs; the record was measured at {advice.measuredAt.toLocaleString()}.{' '}
+      {current === advice.measuredAt ? (
+        <span className="text-emerald-300/80">This launch matches it.</span>
+      ) : (
+        <>
+          {current === 0 ? <span className="text-amber-200">0 here means the trained length, far more cache than any run has used. </span> : !covers ? <span className="text-amber-200">This launch would not cover the largest run. </span> : null}
+          <button type="button" disabled={disabled} onClick={() => onUse(advice.measuredAt)} className="text-accent hover:underline disabled:opacity-50">
+            Use {advice.measuredAt.toLocaleString()}
+          </button>
+        </>
+      )}
+    </p>
   )
 }

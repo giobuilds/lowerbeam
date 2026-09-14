@@ -332,6 +332,20 @@ kept beside the journal, numbered in the order the journal has them.
 Verified by the unit suite, including a rerun in the sandbox; not yet
 in the running app.
 
+**Context follows the task.** The cache is sized by the launch, so the
+context a launch needs is the peak window a task reaches, and the
+journals hold that for every family: no coding run has needed more than
+16,384 tokens, half a gigabyte of cache on the 9B, against the 8 GB its
+trained length costs. The measured table is in the capability record;
+the Server tab shows it under the context field for the selected model
+and offers the measured context; the planner counts a cache only in the
+blocks that hold one — the 9B is a hybrid with one in four — and reads a
+context of 0 as the trained length it is. The supply side, memory and
+speed at each context size on this card, is measured by
+`tests/harness/memory.mjs`. What is deliberately not built: a coding run
+does not relaunch the server, since neither supervisor reconfigures the
+other's process; the person launches, told what the task needs.
+
 **Grant terms.** Shipped as `GrantTerms` in `src/shared/coding.ts`: what a
 run may reach beyond its mode — folders outside the project it may also
 read and never write, and for a run that executes commands, the network

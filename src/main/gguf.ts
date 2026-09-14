@@ -82,6 +82,14 @@ export interface GgufMetadata {
    */
   keyLength: number | null
   valueLength: number | null
+  /**
+   * Hybrid attention: only every Nth block keeps a KV cache, the rest are
+   * linear-attention or state-space blocks with a fixed state. Qwen 3.5
+   * sets 4. Null when every block has a cache.
+   */
+  fullAttentionInterval: number | null
+  /** Multi-token-prediction blocks counted in block_count that the server does not run. */
+  nextnLayers: number | null
   /** Mixture-of-experts shape. Null on a dense model. */
   expertCount: number | null
   expertUsedCount: number | null
@@ -362,6 +370,8 @@ export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
       valueLength: num(kv.get(`${arch}.attention.value_length`)),
       // Present only on a mixture of experts, and the reason such a model reads
       // far less per token than its size suggests.
+      fullAttentionInterval: num(kv.get(`${arch}.full_attention_interval`)),
+      nextnLayers: num(kv.get(`${arch}.nextn_predict_layers`)),
       expertCount: num(kv.get(`${arch}.expert_count`)),
       expertUsedCount: num(kv.get(`${arch}.expert_used_count`)),
       expertFeedForwardLength: num(kv.get(`${arch}.expert_feed_forward_length`))

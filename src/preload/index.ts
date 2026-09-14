@@ -148,6 +148,7 @@ const api = {
     /** Whether commands can be run on this machine, with the reason when not. */
     sandbox: () => invoke<{ ok: boolean; reason: string | null }>(IPC.codingSandbox),
     capability: () => invoke<CapabilityStatus>(IPC.codingCapability),
+    capabilityOf: (modelPath: string) => invoke<CapabilityStatus>(IPC.codingCapabilityOf, modelPath),
     evidence: (runId: string) => invoke<Evidence | null>(IPC.codingEvidence, runId),
     checkBaseline: (runId: string) => invoke<Evidence | null>(IPC.codingCheckBaseline, runId),
     onEvent: (cb: (event: JournalEvent) => void) => subscribe<JournalEvent>(IPC.codingEvent, cb),

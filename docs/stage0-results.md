@@ -734,10 +734,14 @@ document's first draft was committed one minute after that matrix
 started and was in the corpus for the rest of it: of the 9B's 29
 read-only passes, 21 had a search hit in it and 6 read it, a 107-line
 draft that named the tasks and the contamination but not the answers.
-Whether it helped is not knowable from the journals; the 8 passes that
-never touched it are the ones in the training set, and the read-only
-gate, like the recover gate before it, is owed a re-run with the
-document excluded if it is to stand on runs that could not have read it.
+Whether it helped was not knowable from the journals, so the read-only
+families were re-run on the 9B with the document excluded, three runs
+each, the same day: **locate 17 of 18, explain 12 of 12 — 29 of 30, the
+same score, the same task dropping the same one run** — at a median of
+40 seconds, with the planted instruction shown in 9 of 9 poisoned runs
+and followed in none. The draft had not helped. The read-only gate
+stands on runs that could not have read it, and those 29 runs are in
+the training set in place of the exposed ones.
 
 What the set holds, with the tokens the runs used:
 
@@ -746,16 +750,87 @@ What the set holds, with the tokens the runs used:
 | crossover (9B, and one 30B) | 49 | 503,799 |
 | small-fix and cross-file | 16 | 135,363 |
 | recover | 10 | 65,233 |
-| read-only, all three models | 27 | 122,596 |
+| read-only, all three models | 56 | 350,463 |
 | authority | 7 | 32,778 |
 
-109 examples, about 860,000 tokens, 8 of them reminded runs and 52
+138 examples with the clean read-only re-run, about 1.1 million tokens,
+8 of them reminded runs and 52
 compacted ones with the notes the model saw at each compaction kept
 beside the messages. What the examples lack is stated in each: the
 model's reasoning, 358,000 characters of it across the set, is absent
 (its length is kept), its prose beside a tool call is the 300-character
 tail the journal kept, and command output is re-run rather than
 recalled, with exit codes compared instead.
+
+## Memory: what a task demands and what a launch supplies
+
+A model's memory is three things, and they behave differently. The
+weights — 5.8 GB for the 9B — are all used for every token in a dense
+model, so there is nothing to load selectively; the file says so, tensor
+by tensor, and the planner reads it. The compute buffers are a few
+hundred megabytes and fixed. The KV cache is the part a launch decides,
+because it is sized by the context size and nothing else, and it is
+where the 9B's launch at a context of 0 — the trained length, 262,144
+tokens — went wrong: 8 GB of cache on an 8 GB card, prompt speed falling
+from 467 tokens a second to 66 as it spilled, and the GPU lost.
+
+**Demand, from the journals.** Every request's prompt and generation is
+in the record, so the peak window a task family reaches is a measurement,
+not a guess. Over every 9B run:
+
+| family | runs | median | p90 | max | cache at p90 |
+|---|---|---|---|---|---|
+| explain | 34 | 2,967 | 7,609 | 9,940 | 240 MB |
+| locate | 49 | 3,283 | 8,140 | 13,825 | 250 MB |
+| crossover | 128 | 4,332 | 5,214 | 6,593 | 160 MB |
+| recover | 23 | 5,157 | 10,953 | 13,642 | 340 MB |
+| authority | 12 | 7,737 | 10,662 | 12,365 | 330 MB |
+| cross-file | 18 | 6,959 | 11,324 | 12,240 | 350 MB |
+| small-fix | 25 | 10,543 | 15,276 | 16,384 | 480 MB |
+
+No coding task has needed more than the 16,384 the record was measured
+at, and that context costs half a gigabyte. This table is now in the
+capability record, and the Server tab says under the context field what
+coding runs on the selected model have needed, and offers the measured
+context with one click; a context of 0 is named for what it is.
+
+**The planner was wrong by four on this model.** It counted a KV cache
+in every block. The 9B is a hybrid: 33 blocks, one of them a
+next-token-prediction head the server does not run, and of the 32 that
+remain only one in four is full attention — the rest are linear-attention
+blocks with a fixed state that does not grow with context. The file
+states both (`full_attention_interval`, `nextn_predict_layers`), the
+planner now reads them, and the estimate at 16,384 is 512 MiB, not the
+2.1 GiB it was. A context of 0 is estimated as the trained length rather
+than as no cache at all, which is what showed the 262,144-token launch
+as fitting.
+
+**Supply, measured.** `tests/harness/memory.mjs` launches the model at
+each context size with the harness's own arguments, reads VRAM in use
+from the kernel before and after the server is ready, makes one fixed
+request — 2,954 tokens of this repository's code, 128 generated — and
+records the server's own timings. The 9B on the RX 6600, 8,176 MiB of
+VRAM with about 720 MiB in use before any launch:
+
+| context | VRAM after load | after one request | prompt t/s | generation t/s |
+|---|---|---|---|---|
+| 4,096 | 5,094 MiB | 5,134 MiB | 554 | 35.9 |
+| 8,192 | 5,226 MiB | 5,266 MiB | 552 | 35.6 |
+| 16,384 | 5,490 MiB | 5,530 MiB | 550 | 35.9 |
+| 32,768 | 6,018 MiB | 6,058 MiB | 549 | 36.0 |
+| 65,536 | 7,074 MiB | 7,114 MiB | 549 | 36.1 |
+
+The rise is 33 KB a token, within a kilobyte of the 32 KB the file
+predicts, on a base of about 4,960 MiB for weights, buffers and the
+backend; the planner's corrected estimate and the measurement now agree.
+Speed does not move at all across the range: prompt processing at 550
+tokens a second and generation at 36 whatever the context, because
+nothing spills. At 65,536 the card has about 350 MiB left. The next
+doubling would need 9.2 GB and the trained length 13.4 GB, and that is
+the launch whose prompt speed fell to 66 tokens a second before the
+driver gave up. The context that fits at f16 on this card is roughly
+72,000 tokens; the context coding runs need is 16,384; the record was
+measured there and the tab now says so.
 
 ## What it means for the plan
 
