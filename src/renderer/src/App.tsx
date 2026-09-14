@@ -135,6 +135,9 @@ export default function App(): React.JSX.Element {
         <TabButton active={tab === 'chat'} onClick={() => setTab('chat')}>
           Chat
         </TabButton>
+        <TabButton active={tab === 'coding'} onClick={() => setTab('coding')}>
+          Coding
+        </TabButton>
         <TabButton active={tab === 'server'} onClick={() => setTab('server')}>
           Server
         </TabButton>
@@ -148,9 +151,6 @@ export default function App(): React.JSX.Element {
         </TabButton>
         <TabButton active={tab === 'tuning'} onClick={() => setTab('tuning')}>
           Tuning
-        </TabButton>
-        <TabButton active={tab === 'coding'} onClick={() => setTab('coding')}>
-          Coding
         </TabButton>
 
         <div className="ml-auto flex items-center gap-3 text-[11px] text-muted">
