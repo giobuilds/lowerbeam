@@ -316,6 +316,22 @@ artifact beside the journal, the tail shown to the model — and is offered in
 the interface only where the probe passes; the main process refuses it
 otherwise. The probe has still not been run on a clean RPM install.
 
+**Test evidence.** Shipped as `src/shared/evidence.ts` and an Evidence
+panel above the Changes panel of a run-mode run. The verification is
+the last command after the run's last edit; the baseline is the same
+command before any edit, taken from the run's own record when the model
+ran it first — which it usually does — and otherwise from one rerun on a
+fresh copy of the project, checked file by file against the run's
+baseline manifest, which the person asks for. Failure lines are picked
+out of both outputs by a stated heuristic over runners' vocabulary and
+compared as sets: new since the change, already failing before the run,
+and failing before but not now. A test file among the run's changes is
+named in the panel and badged in the Changes list, since a pass that
+came from editing the tests is not a pass. Each command's full output is
+kept beside the journal, numbered in the order the journal has them.
+Verified by the unit suite, including a rerun in the sandbox; not yet
+in the running app.
+
 **Gates.** Recover, on the 9B, three runs each: 3 of 4 tasks by majority
 (7/12 runs), every pass verified by a test run after the edit, unwanted
 changes in 0 of 12. Met. The task that failed all three is the same

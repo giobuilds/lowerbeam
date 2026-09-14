@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ApplyResult, ChangeSet, CodingMode, CodingRunSummary, JournalEvent } from '@shared/coding.js'
 import type { CapabilityStatus } from '@shared/capability.js'
+import type { Evidence } from '@shared/evidence.js'
 
 /**
  * A projection of the coding supervisor's state — never a second engine.
@@ -24,6 +25,8 @@ interface CodingState {
   capability: CapabilityStatus | null
   /** An edit run's changes, once fetched; the last apply or undo result beside them. */
   changes: Record<string, ChangeSet>
+  /** What a run's commands show, once fetched. */
+  evidence: Record<string, Evidence>
   applyResults: Record<string, ApplyResult>
   busy: Record<string, boolean>
   error: string | null
@@ -32,6 +35,8 @@ interface CodingState {
   setMode: (mode: CodingMode) => void
   loadCapability: () => Promise<void>
   loadChanges: (runId: string) => Promise<void>
+  loadEvidence: (runId: string) => Promise<void>
+  checkBaseline: (runId: string) => Promise<void>
   apply: (runId: string) => Promise<void>
   undo: (runId: string) => Promise<void>
   discard: (runId: string) => Promise<void>
@@ -53,6 +58,7 @@ export const useCodingStore = create<CodingState>((set, get) => ({
   sandbox: null,
   capability: null,
   changes: {},
+  evidence: {},
   applyResults: {},
   busy: {},
   error: null,
@@ -97,6 +103,24 @@ export const useCodingStore = create<CodingState>((set, get) => ({
   async loadChanges(runId) {
     const changes = await window.llama.coding.changes(runId)
     if (changes) set({ changes: { ...get().changes, [runId]: changes } })
+  },
+
+  async loadEvidence(runId) {
+    const evidence = await window.llama.coding.evidence(runId)
+    if (evidence) set({ evidence: { ...get().evidence, [runId]: evidence } })
+  },
+
+  async checkBaseline(runId) {
+    set({ busy: { ...get().busy, [runId]: true }, error: null })
+    try {
+      const evidence = await window.llama.coding.checkBaseline(runId)
+      if (evidence) set({ evidence: { ...get().evidence, [runId]: evidence } })
+    } catch (err) {
+      set({ error: (err as Error).message })
+    } finally {
+      const { [runId]: _done, ...rest } = get().busy
+      set({ busy: rest })
+    }
   },
 
   async apply(runId) {
