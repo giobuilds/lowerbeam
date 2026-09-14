@@ -407,6 +407,12 @@ function Line({ event }: { event: JournalEvent }): React.JSX.Element | null {
           {event.record.changed.length} file{event.record.changed.length === 1 ? '' : 's'} changed so far · verification {event.record.verification.status}
         </li>
       )
+    case 'reminder':
+      return (
+        <li className="text-amber-200/80">
+          reminded that nothing has changed · after {event.record.rounds} rounds · {event.record.read.length} file{event.record.read.length === 1 ? '' : 's'} read
+        </li>
+      )
     case 'run.finished':
       return (
         <li className="text-muted">

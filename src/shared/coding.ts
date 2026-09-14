@@ -105,6 +105,21 @@ export type JournalEvent =
       roundsAllowed?: number
     })
   | (Base & {
+      /**
+       * A write run reached the middle of its rounds without changing a
+       * file, and was told so once: what the record shows it has read,
+       * searched and run, and that the task is a change. Projected from the
+       * journal like the notes, so the claim is checkable the same way.
+       */
+      type: 'reminder'
+      /** The round the reminder precedes. */
+      round: number
+      throughSeq: number
+      record: Checkpoint
+      /** Characters of prose the reminder renders to. */
+      chars: number
+    })
+  | (Base & {
       type: 'run.finished'
       outcome: RunOutcome
       answer: string

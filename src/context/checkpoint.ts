@@ -161,6 +161,35 @@ export function renderCheckpoint(c: Checkpoint): string {
 }
 
 /**
+ * What a write run is told, once, when it has spent half its rounds without
+ * changing anything.
+ *
+ * Measured before this existed: in the crossover family about four runs in
+ * ten never called an edit tool, and none of those answered in prose — every
+ * one called a tool each round to the limit, the file with the bug among
+ * the ones it had read. A reminder at answer time had been tried and never
+ * fired; this one fires mid-run. It is rendered from the record, not
+ * written by the model, so what it says the run has done is what the
+ * journal shows.
+ */
+export function renderReminder(c: Checkpoint, roundsLeft: number): string {
+  const lines: string[] = [
+    `You have used ${c.rounds} round${c.rounds === 1 ? '' : 's'} and changed nothing yet; ${roundsLeft} remain${roundsLeft === 1 ? 's' : ''}.`
+  ]
+  lines.push(c.read.length ? `Files read: ${c.read.map((r) => (r.range ? `${r.path} (${r.range})` : r.path)).join('; ')}.` : 'No files read yet.')
+  if (c.searched.length) lines.push(`Searches: ${c.searched.map((s) => `"${s.query}" → ${s.result}`).join('; ')}.`)
+  if (c.commands.length) {
+    lines.push(`Commands run: ${c.commands.map((k) => `\`${k.command}\` → ${k.timedOut ? 'timed out' : `exit ${k.exitCode ?? '?'}`}`).join('; ')}.`)
+  }
+  if (c.problems.length) lines.push(`Unresolved: ${c.problems.join('; ')}.`)
+  lines.push(
+    'If the cause is in a file you have read, change it now with edit_file: read the passage once more if you need its exact text, then replace it. ' +
+      'If it is not, name the one file you still need and read that. The task is a change to the code, and it is not done until a file has changed.'
+  )
+  return lines.join('\n')
+}
+
+/**
  * Every claim in a record must be something the journal recorded up to the
  * sequence the record covers. Returns the claims it could not find. Empty
  * for a record this module built — the check is for records that came from
