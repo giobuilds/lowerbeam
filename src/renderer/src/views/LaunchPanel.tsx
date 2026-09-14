@@ -147,7 +147,7 @@ export function LaunchPanel(): React.JSX.Element {
             onChange={(e) => setDraft({ gpuLayers: Number(e.target.value) })}
           />
         </Field>
-        <Field label="Context (-c)" hint="0 = the model's trained size, which may be far more than fits">
+        <Field label="Context (-c)" hint="0 = the model's trained size">
           <input
             type="number"
             min={0}
@@ -383,21 +383,17 @@ function ContextAdvice({ modelPath, current, disabled, onUse }: { modelPath: str
   }, [modelPath])
   if (!modelPath || !status || status.state !== 'measured') return null
   const advice = contextAdvice(status.record)
-  if (!advice) return null
-  const covers = current >= advice.max && current > 0
+  // Nothing to say when the launch already matches; one short line otherwise,
+  // with the measurement behind it in the tooltip.
+  if (!advice || current === advice.measuredAt) return null
+  const detail = `Coding runs on this model reached up to ${advice.max.toLocaleString()} tokens in a request, ${advice.needed.toLocaleString()} for nine in ten, over ${advice.runs} measured runs; the record was measured at ${advice.measuredAt.toLocaleString()}.`
   return (
-    <p className="mt-1 text-[11px] leading-snug text-muted">
-      Coding runs on this model needed up to {advice.max.toLocaleString()} tokens in a request, {advice.needed.toLocaleString()} for nine in ten, over {advice.runs} measured runs; the record was measured at {advice.measuredAt.toLocaleString()}.{' '}
-      {current === advice.measuredAt ? (
-        <span className="text-emerald-300/80">This launch matches it.</span>
-      ) : (
-        <>
-          {current === 0 ? <span className="text-amber-200">0 here means the trained length, far more cache than any run has used. </span> : !covers ? <span className="text-amber-200">This launch would not cover the largest run. </span> : null}
-          <button type="button" disabled={disabled} onClick={() => onUse(advice.measuredAt)} className="text-accent hover:underline disabled:opacity-50">
-            Use {advice.measuredAt.toLocaleString()}
-          </button>
-        </>
-      )}
+    <p className="mt-1 text-[11px] leading-snug text-muted" title={detail}>
+      {current === 0 ? <span className="text-amber-200">0 is the trained length. </span> : null}
+      Coding runs need {advice.measuredAt.toLocaleString()}.{' '}
+      <button type="button" disabled={disabled} onClick={() => onUse(advice.measuredAt)} className="text-accent hover:underline disabled:opacity-50">
+        Use it
+      </button>
     </p>
   )
 }
