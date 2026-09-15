@@ -409,6 +409,8 @@ function report(
     const crossLine = cross.length
       ? `; crossover: compaction fired in ${cross.filter((r) => r.compactions > 0).length} of ${cross.length} runs, ${cross.reduce((n, r) => n + r.unsupportedClaims.length, 0)} unsupported claim(s), record/diff mismatch in ${cross.filter((r) => r.recordedButUnchanged.length).length}`
       : ''
+    const held = rs.filter((r) => tasks.find((t) => t.id === r.task)?.heldout)
+    if (held.length) lines.push(`**${m}** — held out, over code no training run read: ${held.filter((r) => r.passed).length}/${held.length}`)
     if (writes.length) {
       const counts = STAGES.map((stage) => [stage, writes.filter((r) => stageOf(r) === stage).length] as const).filter(([, n]) => n > 0)
       lines.push(`**${m}** — how far the write runs got: ` + counts.map(([stage, n]) => `${stage} ${n}`).join(', '))

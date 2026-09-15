@@ -837,6 +837,45 @@ driver gave up. The context that fits at f16 on this card is roughly
 72,000 tokens; the context coding runs need is 16,384; the record was
 measured there and the tab now says so.
 
+## Held-out family: the measuring stick for a fine-tune
+
+Training a model on the runs above and measuring it on the same tasks
+would prove nothing, so a family the training set cannot contain was
+added: the same four shapes over code that landed on 14 September — the
+evidence module, the capability identifier, the grant terms — which no
+run in the training set ever read, since none existed when they ran.
+Two tasks of each shape, flagged `heldout` in `tasks.ts`: the harness
+reports them apart, and the dataset keeps them out of `train.jsonl`
+whatever they score. The 9B's baseline, three runs each, before any
+training:
+
+| task | shape | passes | what the failures were |
+|---|---|---|---|
+| heldout-locate-test-path | locate | 3/3 | |
+| heldout-locate-own-state | locate | 1/3 | out of rounds twice without naming the function |
+| heldout-explain-model-hash | explain | 2/3 | one answer named neither the size nor the modification time |
+| heldout-explain-baseline-drift | explain | 2/3 | one run out of rounds without an answer |
+| heldout-fix-evidence-timing | small-fix | 3/3 | |
+| heldout-fix-test-path-contest | small-fix | 2/3 | one fix left the suite failing |
+| heldout-recover-terms-network | recover | 3/3 | every pass verified |
+| heldout-recover-evidence-timing | recover | 2/3 | one run never edited in twelve rounds |
+
+**18 of 24, seven tasks of eight by majority**, at the full 16,384
+window, with the model's reasoning kept for every run. That is the
+number a fine-tuned 9B has to beat on tasks and code it has not seen,
+and the family is small enough that a change worth one or two runs will
+not show — the same caveat the crossover family carries. Two of the
+eight tasks (`fix-evidence-timing` and `recover-evidence-timing`) plant
+the same bug in two modes, so they are one measurement of the model and
+one of the mode.
+
+What this machine can train with: nothing yet. The llama.cpp build has
+no training command, there is no PyTorch, Python is 3.14, which the
+ROCm wheels do not target, the card is gfx1032, which ROCm does not
+list, and 40 GB of disk is free. The training set is 1.1 million tokens,
+an hour of low-rank fine-tuning on a rented 24 GB GPU; the measurement
+is here, and it is this family.
+
 ## What it means for the plan
 
 **The middle model is the target, and it is the 9B.** Ornith-1.5-9B passed

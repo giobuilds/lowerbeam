@@ -157,6 +157,8 @@ interface Example {
     logged: boolean | null
     /** A replayed result named the harness or an answer-key document: the run saw the exam. Never trained on. */
     contaminated: boolean
+    /** A held-out task: the measuring stick. Never trained on. */
+    heldout: boolean
     fidelity: { results: number; matched: number; mismatched: string[]; commands: number; exitMatched: number }
   }
   stats: {
@@ -250,7 +252,7 @@ async function main(): Promise<void> {
   }
 
   examples.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-  const train = examples.filter((e) => e.verdict.pass && !e.verdict.contaminated && e.verdict.fidelity.mismatched.length === 0 && e.messages.length > 0)
+  const train = examples.filter((e) => e.verdict.pass && !e.verdict.contaminated && !e.verdict.heldout && e.verdict.fidelity.mismatched.length === 0 && e.messages.length > 0)
   await writeFile(join(outDir, 'all.jsonl'), examples.map((e) => JSON.stringify(e)).join('\n') + '\n')
   await writeFile(join(outDir, 'train.jsonl'), train.map((e) => JSON.stringify(e)).join('\n') + '\n')
   await writeFile(join(outDir, 'summary.md'), summary(examples, train))
@@ -307,7 +309,7 @@ function commitTable(): (startedAt: number, logged: string | null) => Array<{ co
 function skipped(dir: string, file: string, p: { model: string; task: string; run: number }, task: Task, commit: string, source: Example['commitSource'], pass: boolean, reasons: string[]): Example {
   return {
     id: `${dir}/${p.model}.${p.task}.${p.run}`, dir, file, model: p.model, task: p.task, family: task.family, mode: task.mode ?? 'inspect', commit, commitSource: source,
-    verdict: { pass, reasons, logged: pass, contaminated: false, fidelity: { results: 0, matched: 0, mismatched: [], commands: 0, exitMatched: 0 } },
+    verdict: { pass, reasons, logged: pass, contaminated: false, heldout: Boolean(task.heldout), fidelity: { results: 0, matched: 0, mismatched: [], commands: 0, exitMatched: 0 } },
     stats: { rounds: 0, toolCalls: 0, promptTokens: 0, predictedTokens: 0, reasoningChars: 0, compactions: 0, reminded: false, wordsKept: false },
     tools: [], messages: [], checkpoints: []
   }
@@ -322,7 +324,7 @@ async function replay(
   const mode = task.mode ?? 'inspect'
   const example: Example = {
     id: `${dir}/${p.model}.${p.task}.${p.run}`, dir, file, model: p.model, task: p.task, family: task.family, mode, commit, commitSource: source,
-    verdict: { pass: false, reasons: [], logged: loggedPass, contaminated: false, fidelity: { results: 0, matched: 0, mismatched: [], commands: 0, exitMatched: 0 } },
+    verdict: { pass: false, reasons: [], logged: loggedPass, contaminated: false, heldout: Boolean(task.heldout), fidelity: { results: 0, matched: 0, mismatched: [], commands: 0, exitMatched: 0 } },
     stats: { rounds: finished?.rounds ?? 0, toolCalls: 0, promptTokens: finished?.tokens.promptTokens ?? 0, predictedTokens: finished?.tokens.predictedTokens ?? 0, reasoningChars: 0, compactions: 0, reminded: false, wordsKept: false },
     tools: [], messages: [], checkpoints: []
   }
@@ -514,6 +516,8 @@ function summary(examples: Example[], train: Example[]): string {
   const disagree = examples.filter((e) => e.verdict.logged !== null && e.messages.length > 0 && e.verdict.logged !== e.verdict.pass)
   lines.push('', `Replay and harness log disagree on ${disagree.length} run${disagree.length === 1 ? '' : 's'}${disagree.length ? ': ' + disagree.map((e) => `${e.id} (log ${e.verdict.logged ? 'pass' : 'fail'}, replay ${e.verdict.pass ? 'pass' : 'fail'}: ${e.verdict.reasons.join('; ') || e.verdict.fidelity.mismatched.join('; ')})`).join('; ') : '.'}`)
   const unfaithful = examples.filter((e) => e.verdict.pass && e.verdict.fidelity.mismatched.length > 0)
+  const held = examples.filter((e) => e.verdict.heldout)
+  if (held.length) lines.push('', `Held out of train.jsonl as the measuring stick: ${held.length} runs, ${held.filter((e) => e.verdict.pass).length} passed.`)
   lines.push('', `Passes kept out of train.jsonl for an unfaithful replay: ${unfaithful.length}.`)
   for (const e of unfaithful.slice(0, 40)) lines.push(`- ${e.id} at ${e.commit} [${e.commitSource}]: ${e.verdict.fidelity.mismatched.slice(0, 3).join('; ')}${e.verdict.fidelity.mismatched.length > 3 ? ' …' : ''}`)
   const reasoning = train.reduce((n, e) => n + e.stats.reasoningChars, 0)
