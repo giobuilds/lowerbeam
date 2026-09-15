@@ -35,6 +35,8 @@ function createWindow(): BrowserWindow {
     show: false,
     backgroundColor: '#0b0d12',
     title: 'Lowerbeam',
+    // Packaged, the desktop entry carries the icon; in development the window has it from here.
+    ...(app.isPackaged ? {} : { icon: join(dirname, '../../resources/icon.png') }),
     webPreferences: {
       preload: join(dirname, '../preload/index.cjs'),
       contextIsolation: true,
