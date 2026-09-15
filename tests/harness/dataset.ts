@@ -135,6 +135,8 @@ interface Message {
   content: string
   tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>
   tool_call_id?: string
+  /** The model's reasoning before this turn, where the run kept it. */
+  reasoning?: string
 }
 
 interface Example {
@@ -165,6 +167,8 @@ interface Example {
     reasoningChars: number
     compactions: number
     reminded: boolean
+    /** Whether the run kept the model's reasoning and prose in full beside its journal. */
+    wordsKept: boolean
   }
   tools: Array<{ name: string; description: string; parameters: unknown }>
   messages: Message[]
@@ -304,7 +308,7 @@ function skipped(dir: string, file: string, p: { model: string; task: string; ru
   return {
     id: `${dir}/${p.model}.${p.task}.${p.run}`, dir, file, model: p.model, task: p.task, family: task.family, mode: task.mode ?? 'inspect', commit, commitSource: source,
     verdict: { pass, reasons, logged: pass, contaminated: false, fidelity: { results: 0, matched: 0, mismatched: [], commands: 0, exitMatched: 0 } },
-    stats: { rounds: 0, toolCalls: 0, promptTokens: 0, predictedTokens: 0, reasoningChars: 0, compactions: 0, reminded: false },
+    stats: { rounds: 0, toolCalls: 0, promptTokens: 0, predictedTokens: 0, reasoningChars: 0, compactions: 0, reminded: false, wordsKept: false },
     tools: [], messages: [], checkpoints: []
   }
 }
@@ -319,12 +323,23 @@ async function replay(
   const example: Example = {
     id: `${dir}/${p.model}.${p.task}.${p.run}`, dir, file, model: p.model, task: p.task, family: task.family, mode, commit, commitSource: source,
     verdict: { pass: false, reasons: [], logged: loggedPass, contaminated: false, fidelity: { results: 0, matched: 0, mismatched: [], commands: 0, exitMatched: 0 } },
-    stats: { rounds: finished?.rounds ?? 0, toolCalls: 0, promptTokens: finished?.tokens.promptTokens ?? 0, predictedTokens: finished?.tokens.predictedTokens ?? 0, reasoningChars: 0, compactions: 0, reminded: false },
+    stats: { rounds: finished?.rounds ?? 0, toolCalls: 0, promptTokens: finished?.tokens.promptTokens ?? 0, predictedTokens: finished?.tokens.predictedTokens ?? 0, reasoningChars: 0, compactions: 0, reminded: false, wordsKept: false },
     tools: [], messages: [], checkpoints: []
   }
   if (!started || !finished) {
     example.verdict.reasons.push('journal has no start or no finish')
     return example
+  }
+  // The model's own words, where the run kept them beside its journal.
+  const words = new Map<number, { reasoning: string; content: string }>()
+  try {
+    for (const line of (await readFile(join(resultsDir, dir, file.replace(/\.jsonl$/, '.words.jsonl')), 'utf8')).split('\n').filter(Boolean)) {
+      const w = JSON.parse(line) as { round: number; reasoning: string; content: string }
+      words.set(w.round, { reasoning: w.reasoning, content: w.content })
+    }
+    example.stats.wordsKept = words.size > 0
+  } catch {
+    /* an older run: the journal's bounded tail is all there is */
   }
   if (mode === 'run' && !sandboxOk) {
     example.verdict.reasons.push('no sandbox to replay commands in')
@@ -395,7 +410,8 @@ async function replay(
         round = e.round
         example.stats.reasoningChars += e.reasoningChars
         if (e.toolCalls > 0) {
-          current = { role: 'assistant', content: e.say ?? '', tool_calls: [] }
+          const kept = words.get(e.round)
+          current = { role: 'assistant', content: kept?.content ?? e.say ?? '', tool_calls: [], ...(kept?.reasoning ? { reasoning: kept.reasoning } : {}) }
           messages.push(current)
         }
       } else if (e.type === 'tool.call') {
@@ -441,7 +457,10 @@ async function replay(
         messages.push({ role: 'user', content: text })
       }
     }
-    if (finished.outcome === 'answered' && finished.answer) messages.push({ role: 'assistant', content: finished.answer })
+    if (finished.outcome === 'answered' && finished.answer) {
+      const kept = words.get(round)
+      messages.push({ role: 'assistant', content: finished.answer, ...(kept?.reasoning ? { reasoning: kept.reasoning } : {}) })
+    }
     example.messages = messages
     // A hit or a read, not a refusal: a run told "No such path" saw nothing.
     example.verdict.contaminated = messages.some((m) => m.role === 'tool' && ANSWER_KEY.test(m.content.split('\n').filter((l) => !l.startsWith('No such path') && !l.startsWith('Outside the project')).join('\n')))
@@ -498,7 +517,8 @@ function summary(examples: Example[], train: Example[]): string {
   lines.push('', `Passes kept out of train.jsonl for an unfaithful replay: ${unfaithful.length}.`)
   for (const e of unfaithful.slice(0, 40)) lines.push(`- ${e.id} at ${e.commit} [${e.commitSource}]: ${e.verdict.fidelity.mismatched.slice(0, 3).join('; ')}${e.verdict.fidelity.mismatched.length > 3 ? ' …' : ''}`)
   const reasoning = train.reduce((n, e) => n + e.stats.reasoningChars, 0)
-  lines.push('', `What the examples lack: the model's reasoning (${reasoning.toLocaleString()} characters of it across train.jsonl, length only) and its prose beside tool calls beyond the 300-character tail the journal kept. Command output is re-run, not recalled. Reminded runs: ${train.filter((e) => e.stats.reminded).length}; compacted runs: ${train.filter((e) => e.stats.compactions > 0).length}, with their notes in \`checkpoints\`.`)
+  const kept = train.filter((e) => e.stats.wordsKept).length
+  lines.push('', `Examples with the model's reasoning and prose kept in full: ${kept} of ${train.length}. What the rest lack: the model's reasoning (${reasoning.toLocaleString()} characters of it across train.jsonl, length only) and its prose beside tool calls beyond the 300-character tail the journal kept. Command output is re-run, not recalled. Reminded runs: ${train.filter((e) => e.stats.reminded).length}; compacted runs: ${train.filter((e) => e.stats.compactions > 0).length}, with their notes in \`checkpoints\`.`)
   return lines.join('\n') + '\n'
 }
 

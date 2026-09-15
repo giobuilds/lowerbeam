@@ -15,7 +15,7 @@ import { ModelIdentifier } from './capability.js'
 import { verdictFor, type CapabilityStatus } from '@shared/capability.js'
 import { evidenceFrom, withRerun, type Evidence } from '@shared/evidence.js'
 import { hashFile } from './workspace.js'
-import { writeFile } from 'node:fs/promises'
+import { appendFile, writeFile } from 'node:fs/promises'
 import type { ApplyResult, ChangeSet } from '@shared/coding.js'
 
 /**
@@ -211,7 +211,10 @@ export class CodingSupervisor extends EventEmitter<{
           // Journal first. The renderer is a view of the record, not the
           // other way round.
           void journal.append(event).then(() => this.emit('event', event))
-        }
+        },
+        // The model's own words, beside the journal: what a run rebuilt as
+        // a training example needs and the record only measures.
+        keep: (round, words) => appendFile(join(this.dir, `${id}.words.jsonl`), JSON.stringify({ round, ...words }) + '\n')
       })
       Object.assign(summary, {
         finishedAt: Date.now(),

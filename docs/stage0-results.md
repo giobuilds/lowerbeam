@@ -760,7 +760,12 @@ beside the messages. What the examples lack is stated in each: the
 model's reasoning, 358,000 characters of it across the set, is absent
 (its length is kept), its prose beside a tool call is the 300-character
 tail the journal kept, and command output is re-run rather than
-recalled, with exit codes compared instead.
+recalled, with exit codes compared instead. From 15 September the loop
+keeps the model's reasoning and prose in full beside the journal — in
+the app as `<run>.words.jsonl`, in the harness beside each journal —
+and a run rebuilt from then on carries both, the reasoning as a field
+of each assistant turn. The journal itself is unchanged: it measures
+the words; the file beside it holds them.
 
 ## Memory: what a task demands and what a launch supplies
 

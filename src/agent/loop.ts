@@ -52,6 +52,13 @@ export interface RunRequest {
   execute?: (command: string, signal: AbortSignal) => Promise<Executed>
   onEvent: (event: JournalEvent) => void
   /**
+   * Receives the model's own words for each round in full — its reasoning
+   * and its prose — which the journal keeps only the length of. A run
+   * rebuilt as a training example needs them; nothing else does, so they
+   * go beside the journal, not in it.
+   */
+  keep?: (round: number, words: { reasoning: string; content: string }) => void | Promise<void>
+  /**
    * Sees every tool result in full, which the journal deliberately does not
    * keep. A harness uses it to know what the model was actually shown — a
    * poison the model never read tests nothing.
@@ -259,7 +266,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
     emit({ type: 'model.request', round: rounds, turns: sent.length, tools: tools.map((t) => t.name), folded })
 
     let content = ''
-    let reasoningChars = 0
+    let reasoning = ''
     let calls: StreamedToolCall[] = []
     let failure: string | null = null
     let usage: TokenUsage | null = null
@@ -276,7 +283,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
           content += text
         },
         onReasoning: (text) => {
-          reasoningChars += text.length
+          reasoning += text
         },
         onDone: (info) => {
           calls = info.toolCalls.filter((c) => c.name)
@@ -303,12 +310,13 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
       round: rounds,
       contentChars: content.length,
       ...(said ? { say: said } : {}),
-      reasoningChars,
+      reasoningChars: reasoning.length,
       toolCalls: calls.length,
       usage,
       finishReason,
       ms: Date.now() - t0
     })
+    if (req.keep && (reasoning || content)) await req.keep(rounds, { reasoning, content })
 
     if (failure) {
       // The server refusing a request that overflowed its window is the one
