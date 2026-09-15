@@ -290,7 +290,9 @@ async function runOnce(model: string, task: Task, run: number, repo: string, out
         if (event.type === 'tool.result' && event.ok && /^(Edited|Overwrote|Created)/.test(event.summary)) lastEditSeq = event.seq
         if (event.type === 'command.finished') lastCommandSeq = event.seq
         void appendFile(journalPath, JSON.stringify(event) + '\n')
-      }
+      },
+      // The model's reasoning and prose in full, beside the journal, for the dataset.
+      keep: (round, words) => appendFile(journalPath.replace(/\.jsonl$/, '.words.jsonl'), JSON.stringify({ round, ...words }) + '\n')
     })
     await writeFile(join(outDir, `${model}.${task.id}.${run}.answer.md`), result.answer)
     const verdict = score(task, result.answer)
