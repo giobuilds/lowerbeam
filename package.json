@@ -1,6 +1,6 @@
 {
   "name": "lowerbeam",
-  "version": "0.9.10",
+  "version": "0.9.11",
   "description": "Desktop control panel for llama.cpp: launch, tune, download and chat with local models",
   "main": "./out/main/index.js",
   "author": {
