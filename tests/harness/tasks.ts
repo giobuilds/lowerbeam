@@ -46,6 +46,12 @@ export interface Task {
   mutate?: { file: string; find: string; replace: string }
   /** Files the task is expected to change; anything else changed is unwanted. */
   expectFiles?: string[]
+  /**
+   * Held out: a measuring stick for a model trained on the other runs, over
+   * code no training run ever read. Reported apart, and never in the
+   * training set.
+   */
+  heldout?: boolean
   /** Mechanical acceptance, run inside the workspace after the run. */
   check?: {
     suite?: string
@@ -335,6 +341,85 @@ export const TASKS: Task[] = [
     mutate: { file: 'src/context/compact.ts', find: 'export const KEEP_RECENT_TURNS = 4', replace: 'export const KEEP_RECENT_TURNS = 1' },
     expectFiles: ['src/context/compact.ts'],
     check: { suite: 'compaction' }
+  },
+  // Held out. The same four shapes over code that landed on 14 September —
+  // the evidence module, the capability identifier, the grant terms — which
+  // no run in the training set ever read. A model trained on those runs is
+  // measured here, on tasks and code it has not seen; the harness reports
+  // the family apart and the dataset keeps it out of train.jsonl.
+  {
+    id: 'heldout-locate-test-path',
+    family: 'locate',
+    heldout: true,
+    prompt: 'Which function decides whether a file the run changed counts as a test file, and in which file is it defined?',
+    paths: ['src/shared/evidence.ts'],
+    symbols: ['isTestPath']
+  },
+  {
+    id: 'heldout-locate-own-state',
+    family: 'locate',
+    heldout: true,
+    prompt: 'A run may be granted extra folders to read. Where does the main process refuse a folder because the app\u2019s own state lives in it?',
+    paths: ['src/main/coding/supervisor.ts'],
+    symbols: ['checkTerms']
+  },
+  {
+    id: 'heldout-explain-model-hash',
+    family: 'explain',
+    heldout: true,
+    prompt: 'How does the app work out which model file is loaded, for the capability record, and when does it hash the file again?',
+    paths: ['src/main/coding/capability.ts'],
+    symbols: ['ModelIdentifier', 'sha256'],
+    phrases: [['sha256', 'hash'], ['size', 'mtime', 'modification']]
+  },
+  {
+    id: 'heldout-explain-baseline-drift',
+    family: 'explain',
+    heldout: true,
+    prompt: 'When a run\u2019s verification command is run again on the baseline, how does the app know the project has changed since the run began, and what does it do about it?',
+    paths: ['src/main/coding/supervisor.ts'],
+    symbols: ['checkBaseline', 'drifted'],
+    phrases: [['manifest', 'hash'], ['drift', 'changed since', 'as it is now']]
+  },
+  {
+    id: 'heldout-fix-evidence-timing',
+    family: 'small-fix',
+    heldout: true,
+    mode: 'edit',
+    prompt: "`node tests/run.mjs evidence` fails at 'FAIL, AssertionError and error: lines, once each, without colour codes, timestamps or timings': a trailing timing such as (12ms) is left on a failure line. Fix it without changing the tests.",
+    mutate: { file: 'src/shared/evidence.ts', find: ".replace(TIMING, '')", replace: '' },
+    expectFiles: ['src/shared/evidence.ts'],
+    check: { suite: 'evidence' }
+  },
+  {
+    id: 'heldout-fix-test-path-contest',
+    family: 'small-fix',
+    heldout: true,
+    mode: 'edit',
+    prompt: "`node tests/run.mjs evidence` fails at 'tests/, __tests__/, spec/, .test., .spec., _test.go, test_*.py, _spec.rb \u2014 and not contest/': contest/rules.md is taken for a test file. Fix it without changing the tests.",
+    mutate: { file: 'src/shared/evidence.ts', find: '/(^|\\/)(tests?|__tests__|specs?|testdata|fixtures)\\//i.test(path)', replace: '/(tests?|__tests__|specs?|testdata|fixtures)\\//i.test(path)' },
+    expectFiles: ['src/shared/evidence.ts'],
+    check: { suite: 'evidence' }
+  },
+  {
+    id: 'heldout-recover-terms-network',
+    family: 'recover',
+    heldout: true,
+    mode: 'run',
+    prompt: '`node tests/run.mjs grant-terms` fails. Run it, find the cause, fix it, and run it again to confirm it passes. Do not change the tests.',
+    mutate: { file: 'src/main/coding/supervisor.ts', find: "network: mode === 'run' && terms.network", replace: 'network: terms.network' },
+    expectFiles: ['src/main/coding/supervisor.ts'],
+    check: { suite: 'grant-terms' }
+  },
+  {
+    id: 'heldout-recover-evidence-timing',
+    family: 'recover',
+    heldout: true,
+    mode: 'run',
+    prompt: '`node tests/run.mjs evidence` fails. Run it, find the cause, fix it, and run it again to confirm it passes. Do not change the tests.',
+    mutate: { file: 'src/shared/evidence.ts', find: ".replace(TIMING, '')", replace: '' },
+    expectFiles: ['src/shared/evidence.ts'],
+    check: { suite: 'evidence' }
   },
   {
     id: 'explain-context-division',

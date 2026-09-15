@@ -332,6 +332,17 @@ kept beside the journal, numbered in the order the journal has them.
 Verified by the unit suite, including a rerun in the sandbox; not yet
 in the running app.
 
+**Toward a fine-tune.** The journals are a training set now
+(`tests/harness/dataset.mjs`, 139 examples that replayed faithfully and
+never saw the answer key), the loop keeps the model's reasoning and
+prose beside each journal from 15 September, and a held-out family of
+eight tasks over code no training run read gives the number a trained
+model has to beat: the 9B's baseline is 18 of 24. Training itself
+cannot happen on this machine as it stands — no training path in the
+llama.cpp build, no PyTorch, a Python and a card the ROCm wheels do not
+cover — so the recipe is a rented GPU for the hour of fine-tuning and
+this harness for the measurement.
+
 **Context follows the task.** The cache is sized by the launch, so the
 context a launch needs is the peak window a task reaches, and the
 journals hold that for every family: no coding run has needed more than
