@@ -1,5 +1,7 @@
 # Lowerbeam
 
+![Lowerbeam Banner](brand/banner.png)
+
 A desktop control panel for [llama.cpp](https://github.com/ggml-org/llama.cpp).
 
 llama.cpp ships a web UI, but it only appears *after* you have started a server
