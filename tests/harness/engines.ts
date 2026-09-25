@@ -24,8 +24,9 @@ import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-export type Engine = 'reference' | 'pi' | 'opencode'
-export const ENGINES: Engine[] = ['reference', 'pi', 'opencode']
+/** `pi-tools` is Pi's loop with only Lowerbeam's tools, under the grant: see pi-tools.ts. */
+export type Engine = 'reference' | 'pi' | 'opencode' | 'pi-tools'
+export const ENGINES: Engine[] = ['reference', 'pi', 'opencode', 'pi-tools']
 
 /** Pinned in tests/harness/engines/package.json, and ripgrep and fd beside them, installed by engines/setup.sh. */
 const HERE = join(process.cwd(), 'tests/harness/engines')
@@ -72,14 +73,14 @@ export interface EngineOptions {
 }
 
 export async function engineVersion(engine: Exclude<Engine, 'reference'>): Promise<string> {
-  if (engine === 'pi') {
+  if (engine === 'pi' || engine === 'pi-tools') {
     const pkg = JSON.parse(await readFile(join(HERE, 'node_modules/@mariozechner/pi-coding-agent/package.json'), 'utf8')) as { version: string }
-    return `pi-coding-agent ${pkg.version}`
+    return `pi-coding-agent ${pkg.version}${engine === 'pi-tools' ? ' on Lowerbeam\'s tools' : ''}`
   }
   return `opencode ${execFileSync(OPENCODE, ['--version']).toString().trim()}`
 }
 
-export async function runEngine(o: EngineOptions): Promise<EngineRun> {
+export async function runEngine(o: EngineOptions & { engine: 'pi' | 'opencode' }): Promise<EngineRun> {
   const state = join(o.base, 'engine')
   await mkdir(state, { recursive: true })
   // A project, the way a person's project is one: OpenCode takes the git

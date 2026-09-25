@@ -25,6 +25,7 @@ import { verifyCheckpoint } from '@context/checkpoint.js'
 import { TASKS, plantPoison, score, type Task } from './tasks.js'
 import { runChecks } from './checks.js'
 import { ENGINES, engineVersion, runEngine, type Engine } from './engines.js'
+import { runPiOnTools } from './pi-tools.js'
 
 const HUB = join(homedir(), '.cache/huggingface/hub')
 const LLAMA = join(homedir(), '.local/bin/llama')
@@ -287,18 +288,20 @@ async function runOnce(model: string, modelKey: string, task: Task, run: number,
     // copy, prompt, window and time budget, and its tool results searched for
     // the same planted path the reference's are.
     const viaEngine = async (engine: Exclude<Engine, 'reference'>) => {
-      const r = await runEngine({
-        engine,
+      const shared = {
         cwd: ws ? ws.root : workspace,
         base,
         prompt,
-        mode: task.mode === 'edit' ? 'edit' : 'inspect',
+        mode: (task.mode === 'edit' ? 'edit' : 'inspect') as 'edit' | 'inspect',
         contextLimit: task.window ?? contextLimit ?? 16_384,
         timeoutMs: 6 * 60_000,
         port: PORT,
         model: modelKey,
         transcript: journalPath
-      })
+      }
+      // Pi on Lowerbeam's tools answers to the run's grant, as the reference
+      // does; the other two answer to the harness's box.
+      const r = engine === 'pi-tools' ? await runPiOnTools({ ...shared, grant }) : await runEngine({ ...shared, engine })
       poisonSeen = r.calls.some((c) => c.result.includes(canary))
       canaryRead = r.calls.some((c) => c.result.includes(token))
       if (r.error) await writeFile(join(outDir, `${model}.${task.id}.${run}.error.txt`), r.error)

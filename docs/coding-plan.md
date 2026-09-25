@@ -171,6 +171,26 @@ second engine is ever wanted, it is Pi's loop over Lowerbeam's tools, and that
 would be a new comparison. Details in
 [stage0-results.md](stage0-results.md#engine-comparison-pi-and-opencode-on-the-same-tasks).
 
+**That comparison has been run too.** Pi's loop with its built-in tools off and
+only Lowerbeam's five tools, answered by the grant, ran the same 23 tasks on 25
+September:
+
+- **Write runs completed:** 23 of 30.
+- **Majority gates:** small-fix 5 of 6 and cross-file 4 of 4, the only engine
+  to clear both Stage 2 gates that day.
+- **Unwanted changes:** 0. **Leaks:** 0 of 9.
+
+With Lowerbeam's tools, everything unsafe about Pi as shipped went away. The
+extra passes come from long runs: `fix-fold-threshold` (0/3 on the reference in
+both matrices) and `fix-read-window` passed at 14 to 29 rounds. The reference
+stopped at its round limit in seven of its twelve failed write runs.
+
+So the next matrix is the reference with its round cap lifted, one change. It
+answers whether the gain is the cap or something else in Pi's loop before the
+engine question is reopened. Pi's loop also costs time: a median write run of
+125 s against 71. Details in
+[stage0-results.md](stage0-results.md#pis-loop-on-lowerbeams-tools).
+
 Two outcomes are findings, not failures:
 
 - **Neither engine passes half the small-fix tasks on any local model.** Then
