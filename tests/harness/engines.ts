@@ -102,16 +102,19 @@ export async function runEngine(o: EngineOptions): Promise<EngineRun> {
       await new Promise((r) => setTimeout(r, 100))
     }
     const child = spawn('bwrap', [...box(o, state, env), '/usr/bin/bash', '-c', INSIDE, 'bash', String(o.port), sock, ...argv], {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [o.engine === 'pi' ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       detached: true
     })
     child.stdout!.on('data', (c: Buffer) => (stdout += c))
     child.stderr!.on('data', (c: Buffer) => (stderr = (stderr + c).slice(-20_000)))
     const exited = new Promise<number | null>((res) => child.on('exit', (code) => res(code)))
-    const timer = new Promise<'timeout'>((res) => setTimeout(() => res('timeout'), o.timeoutMs))
-    const first = await Promise.race([exited, timer])
-    if (first === 'timeout') {
-      outcome = 'timeout'
+    let timer: NodeJS.Timeout | undefined
+    const timeout = new Promise<'timeout'>((res) => (timer = setTimeout(() => res('timeout'), o.timeoutMs)))
+    const done = o.engine === 'pi' ? piSettled(child, o.prompt, () => stdout) : exited
+    const first = await Promise.race([done, exited, timeout])
+    clearTimeout(timer)
+    if (first === 'timeout') outcome = 'timeout'
+    if (child.exitCode === null) {
       kill(child)
       await exited
     }
@@ -179,6 +182,51 @@ function kill(child: ChildProcess): void {
 
 // ---- Pi -------------------------------------------------------------------
 
+/**
+ * Pi over its RPC mode, the way an application drives it. Print mode exits
+ * at the end of the agent's turn, and Pi's compaction runs just after it:
+ * on the first full matrix Pi began compacting on an overflow nine times and
+ * exited before it finished or retried. Here the prompt is sent, and the run
+ * is over only when Pi says it is idle, with no compaction in flight and no
+ * retry owed, on two polls a second apart.
+ */
+async function piSettled(child: ChildProcess, prompt: string, out: () => string): Promise<'settled'> {
+  // A write after the box is gone is an EPIPE, not a crash of the harness.
+  child.stdin!.on('error', () => {})
+  child.stdin!.write(JSON.stringify({ type: 'prompt', message: prompt }) + '\n')
+  let seen = 0
+  let ended = false
+  // Pi reports a failed overflow recovery as a compaction_end with no start.
+  let compacting = false
+  let owed = false
+  let idle = 0
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 1000))
+    if (child.exitCode !== null || child.signalCode !== null) return 'settled'
+    const lines = out().split('\n')
+    for (const line of lines.slice(seen, -1)) {
+      let e: { type?: string; willRetry?: boolean; command?: string; data?: { isStreaming?: boolean; isCompacting?: boolean } }
+      try {
+        e = JSON.parse(line)
+      } catch {
+        continue
+      }
+      if (e.type === 'agent_start') owed = false
+      else if (e.type === 'agent_end') ended = true
+      else if (e.type === 'compaction_start') compacting = true
+      else if (e.type === 'compaction_end') {
+        compacting = false
+        if (e.willRetry) owed = true
+      } else if (e.type === 'response' && e.command === 'get_state') {
+        idle = ended && !owed && !compacting && !e.data?.isStreaming && !e.data?.isCompacting ? idle + 1 : 0
+      }
+    }
+    seen = lines.length - 1
+    if (idle >= 2) return 'settled'
+    child.stdin!.write(JSON.stringify({ type: 'get_state' }) + '\n')
+  }
+}
+
 async function piArgs(o: EngineOptions, state: string): Promise<string[]> {
   const dir = join(state, 'pi')
   await mkdir(join(state, 'home'), { recursive: true })
@@ -209,8 +257,7 @@ async function piArgs(o: EngineOptions, state: string): Promise<string[]> {
     '--provider', 'lowerbeam', '--model', o.model,
     '--no-session', '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files',
     '--tools', tools,
-    '--mode', 'json',
-    '-p', o.prompt
+    '--mode', 'rpc'
   ]
 }
 
