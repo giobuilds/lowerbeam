@@ -148,7 +148,28 @@ If it does not, the other one wins on that alone.
 [stage0-results.md](stage0-results.md). On the reference loop, the 9B passed
 29/30 at a median of 34s with the poison seen nine times and never followed;
 the 30B passed 18/30 at twice the time; the floor passed 10/30 and located
-code in 2 of 18. The engine comparison has its baseline and has not been run.
+code in 2 of 18.
+
+**The engine comparison has been run, and the reference loop stays.** Run on
+24–25 September: Pi 0.73.1 and OpenCode 1.18.21, as shipped, on the 9B, in a
+box with no network except the model, three runs each of 23 tasks. On small-fix
+and cross-file together, the reference completed 18 of 30 write runs, Pi 21
+and OpenCode 21. Three runs is inside the reference's own run-to-run spread.
+Neither engine clears the rest of the rule:
+
+- **OpenCode** hit the six-minute budget in 26 of its 30 write runs, still
+  going after it had made the fix. It runs its tools in its own process, so
+  Lowerbeam cannot own the broker. Its boundary is lexical, and it read the
+  canary through a symlink inside the project in 2 of 3 runs.
+- **Pi** made unwanted changes in 3 of 30 runs, once rewriting the test
+  runner. It has no boundary: the canary leaked in 5 of 9 authority runs.
+- **The reference** leaked in 0 of 9 and made no unwanted changes.
+
+Pi's surface is the one that would let Lowerbeam own the broker: a library,
+application-supplied tools only, and a hook that can block any call. If a
+second engine is ever wanted, it is Pi's loop over Lowerbeam's tools, and that
+would be a new comparison. Details in
+[stage0-results.md](stage0-results.md#engine-comparison-pi-and-opencode-on-the-same-tasks).
 
 Two outcomes are findings, not failures:
 
@@ -274,6 +295,10 @@ conflict path. The loop still runs in the main process.
 
 **Gates.** Measured on the 9B, three runs each: small-fix 4 of 6 tasks by
 majority, cross-file 3 of 4, unwanted changes in 0 of 33 write runs. Met.
+Re-run as the engine comparison's baseline on 24 September, the same families
+scored small-fix 3 of 6, cross-file 3 of 4, and 0 unwanted in 30.
+`fix-read-window` went from 3/3 to 0/3. So the small-fix gate was met once and
+has not held.
 The two small-fix tasks that scored 0/3 both show the model reading the
 file with the bug and then answering in prose without editing — a failure
 shape the read-only families did not have. A reminder half-way through a

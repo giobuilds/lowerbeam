@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "The engines the Stage 0 comparison runs against the reference loop; installed by setup.sh, never part of the app.",
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "0.73.1"
+  }
+}

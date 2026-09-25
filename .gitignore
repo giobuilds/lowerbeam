@@ -12,3 +12,7 @@ tests/harness/matrix.log
 
 # Training data rebuilt from the journals by tests/harness/dataset.mjs, kept locally like the results
 tests/harness/dataset/
+
+# The engine comparison's engines and their tools, installed by engines/setup.sh
+tests/harness/engines/bin/
+tests/harness/engines/dl/
