@@ -91,6 +91,8 @@ const DEFAULT_MODELS = ['qwen3-coder-30b', 'ornith-9b', 'gemma4-e4b']
 
 let FOLD = true
 let ENGINE: Engine = 'reference'
+/** The reference's round cap; the reminder stays at half the default whatever it is. */
+let MAX_ROUNDS = 12
 const SETTINGS = { temperature: 0.2, topP: 0.95, topK: 40, minP: 0.05, repeatPenalty: 1.1, maxTokens: -1 }
 
 interface RunRecord {
@@ -137,6 +139,7 @@ async function main(): Promise<void> {
   const runs = args.runs ?? 1
   FOLD = !args.noFold
   ENGINE = args.engine ?? 'reference'
+  MAX_ROUNDS = args.rounds ?? 12
   if (!ENGINES.includes(ENGINE)) throw new Error(`unknown engine ${ENGINE}`)
   if (ENGINE !== 'reference') {
     // Recover and crossover runs are the reference's own machinery: commands
@@ -151,7 +154,7 @@ async function main(): Promise<void> {
 
   const repo = process.cwd()
   const head = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo }).toString().trim()
-  console.log(`harness: ${tasks.length} tasks × ${models.length} models × ${runs} runs, repo at ${head}${ENGINE === 'reference' ? '' : `, engine ${await engineVersion(ENGINE)}`}`)
+  console.log(`harness: ${tasks.length} tasks × ${models.length} models × ${runs} runs, repo at ${head}${ENGINE === 'reference' ? '' : `, engine ${await engineVersion(ENGINE)}`}${MAX_ROUNDS === 12 ? '' : `, round cap ${MAX_ROUNDS}`}`)
   console.log(`results: ${outDir}\n`)
 
   const records: RunRecord[] = []
@@ -328,7 +331,8 @@ async function runOnce(model: string, modelKey: string, task: Task, run: number,
       task: prompt,
       grant,
       settings: SETTINGS,
-      maxRounds: 12,
+      maxRounds: MAX_ROUNDS,
+      remindAfterRounds: 6,
       timeoutMs: 6 * 60_000,
       contextLimit: task.window ?? contextLimit,
       fold: FOLD,
@@ -556,7 +560,7 @@ async function stopServer(child: ChildProcess): Promise<void> {
   if (child.exitCode === null) child.kill('SIGKILL')
 }
 
-interface Args { models?: string[]; tasks?: string[]; runs?: number; noFold?: boolean; ctx?: number; engine?: Engine }
+interface Args { models?: string[]; tasks?: string[]; runs?: number; noFold?: boolean; ctx?: number; engine?: Engine; rounds?: number }
 
 function parseArgs(argv: string[]): Args {
   const out: Args = {}
@@ -571,6 +575,8 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--ctx' && next) (out.ctx = Number(next)), i++
     // Pi or OpenCode in place of the reference loop: the engine comparison.
     else if (a === '--engine' && next) (out.engine = next as Engine), i++
+    // The reference's round cap, for the matrix that lifts it.
+    else if (a === '--rounds' && next) (out.rounds = Number(next)), i++
   }
   return out
 }

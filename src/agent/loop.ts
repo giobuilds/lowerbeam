@@ -31,6 +31,12 @@ export interface RunRequest {
   settings: ChatSettingsView
   /** How many model calls before the run is declared to have wandered. */
   maxRounds?: number
+  /**
+   * The round after which a write run that has changed nothing is reminded.
+   * Half of `maxRounds` unless given: an experiment that moves the cap can
+   * hold the reminder where it was, so only one thing changes.
+   */
+  remindAfterRounds?: number
   timeoutMs?: number
   /** Cancellation from outside — the user's stop button. */
   signal?: AbortSignal
@@ -157,6 +163,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
   const run = req.runId ?? randomUUID()
   const started = Date.now()
   const maxRounds = req.maxRounds ?? 12
+  const remindAfter = req.remindAfterRounds ?? maxRounds * REMIND_AFTER
   const timeout = AbortSignal.timeout(req.timeoutMs ?? 5 * 60_000)
   const deadline = req.signal ? AbortSignal.any([timeout, req.signal]) : timeout
   let seq = 0
@@ -254,7 +261,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
     // A write run that has spent half its rounds without changing anything
     // is told so, once, from the record. After compaction, so it stays in
     // the newest round rather than being replaced by the notes it repeats.
-    if (mode !== 'inspect' && !edited && !reminded && rounds > maxRounds * REMIND_AFTER) {
+    if (mode !== 'inspect' && !edited && !reminded && rounds > remindAfter) {
       reminded = true
       const record = checkpointFrom(events)
       const text = renderReminder(record, roundBudget - rounds + 1)
