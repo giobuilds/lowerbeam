@@ -191,6 +191,23 @@ engine question is reopened. Pi's loop also costs time: a median write run of
 125 s against 71. Details in
 [stage0-results.md](stage0-results.md#pis-loop-on-lowerbeams-tools).
 
+**The cap was lifted, 12 to 40, with the reminder held at round 6.** Result:
+
+- **Write runs completed:** 22 of 30, against 23 for Pi on the same tools.
+- **Cross-file:** 4 of 4 by majority.
+- **Small-fix:** still 3 of 6.
+- **Unwanted changes:** 1.
+
+The cap explains most of the gap, but not `fix-fold-threshold`, still 0 of 3,
+or `fix-read-window`, 1 of 3. On those two tasks the runs now read until the
+time budget without editing.
+
+What the journals point at is folding. The reference drops older tool results
+to their first line, and Pi keeps them. So the next matrix is cap 40 with
+folding off. The app keeps its cap of 12 until that says which difference
+matters. Details in
+[stage0-results.md](stage0-results.md#the-reference-with-its-round-cap-lifted).
+
 Two outcomes are findings, not failures:
 
 - **Neither engine passes half the small-fix tasks on any local model.** Then

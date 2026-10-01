@@ -1108,6 +1108,77 @@ differently is worth isolating next.
 Results directory `2026-09-25T09-43-34-058Z`. To reproduce, run
 `node tests/harness/run.mjs --engine pi-tools --models ornith-9b --tasks ...`.
 
+## The reference with its round cap lifted
+
+The next matrix after Pi on Lowerbeam's tools, one change, run on 25
+September on the same 23 tasks, three runs each, with a byte-identical
+corpus:
+
+- **The cap goes from 12 rounds to 40** (`--rounds 40`), so the
+  six-minute budget binds instead, as it does for Pi.
+- **The reminder stays at round 6.** It is placed at half the cap by
+  default, so the harness holds it there (`remindAfterRounds`); otherwise
+  the matrix would have moved two things.
+- **Compaction still adds up to four rounds** beyond the cap.
+
+| | reference, cap 12 | reference, cap 40 | Pi on Lowerbeam's tools |
+|---|---|---|---|
+| locate / explain | 17/18, 12/12 | 18/18, 12/12 | 18/18, 11/12 |
+| small-fix | 8/18, 3 of 6 by majority | 10/18, 3 of 6 | 12/18, 5 of 6 |
+| cross-file | 10/12, 3 of 4 | 12/12, 4 of 4 | 11/12, 4 of 4 |
+| write runs completed | 18/30 | 22/30 | 23/30 |
+| unwanted changes | 0 of 30 | 1 of 30 | 0 of 30 |
+| authority, canary leaked | 0 of 9 | 0 of 9 | 0 of 9 |
+| write runs cut off by the budget | 2 | 7 | 5 |
+| median write run | 71 s, 10,102 tok | 92 s, 11,326 tok | 125 s, 85,272 tok |
+
+**The cap accounts for most of the gap, but not the tasks that
+motivated this.** Four more write runs completed:
+
+- `cross-move-hostof` went from 1 to 3 of 3, at 10 to 16 rounds.
+- `fix-grant-node-modules` went from 2 to 3 of 3.
+- `fix-compact-keep` went from 0 to 1 of 3.
+
+`fix-fold-threshold` stayed at 0 of 3, and `fix-read-window` went from 0
+to only 1 of 3.
+
+**The failures changed shape: runs that used to hit the round limit now
+run out of time without editing.** On those two tasks:
+
+- Five of the six runs ran to the six-minute budget, at 14 to 29 rounds.
+- Four of them never changed a file.
+- All three `fold-threshold` runs were reminded at round 7 and went on
+  reading: ten or eleven reads each, three to ten searches.
+- The one that edited changed `src/agent/loop.ts` instead of `fold.ts`.
+  That is the matrix's one unwanted change.
+
+Pi's loop, on the same tools, pace and budget, fixed `fold-threshold`
+twice at 21 and 29 rounds. So whatever gets it there is not the number of
+rounds it is allowed.
+
+What differs between the two loops, besides the cap:
+
+- **Pi re-sends the whole conversation every round.** The reference folds
+  older tool results to their first line once the window fills, which is
+  why its median write run is 11,326 tokens to Pi's 85,272. A model that
+  can no longer see the file it read may read it again instead of
+  editing it. The reference's journals show ten or eleven reads on a task
+  that touches one file.
+- **The system prompt.**
+- **Pi's compaction against the reference's.**
+
+Folding is the one the journals point at. The harness can already switch
+it off (`--no-fold`), so the next matrix is the reference, cap 40, with
+folding off.
+
+On the gate: small-fix is 3 of 6 by majority here too. Lifting the cap
+does not meet the Stage 2 gate, and it costs one unwanted change and 21
+seconds on the median write run. The app keeps its cap of 12 until the
+next matrix says which of the two differences matters.
+
+Results directory `2026-09-25T12-33-17-470Z`. To reproduce, run
+`node tests/harness/run.mjs --rounds 40 --models ornith-9b --tasks ...`.
+
 ## What it means for the plan
 
 **The middle model is the target, and it is the 9B.** Ornith-1.5-9B passed
