@@ -470,6 +470,9 @@ export function buildArgs(config: LaunchConfig, port: number, binary: BinaryInfo
     args.push('--ctx-size', String(config.contextSize))
     args.push('--gpu-layers', String(config.gpuLayers))
   }
+  // Under --fit too: it sizes what is left unset around the experts' placement.
+  if (config.cpuMoeLayers === -1) args.push('--cpu-moe')
+  else if (config.cpuMoeLayers > 0) args.push('--n-cpu-moe', String(config.cpuMoeLayers))
   if (config.mmprojPath) args.push('--mmproj', config.mmprojPath)
   if (binary.flashAttnStyle === 'value') {
     args.push('--flash-attn', config.flashAttn ? 'on' : 'off')

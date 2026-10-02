@@ -1,5 +1,6 @@
 import type { GgufMetadata } from './gguf.js'
 import type { KvCacheType } from '@shared/types.js'
+import { activeParameters } from './speed.js'
 
 /**
  * Estimates what a launch will cost in VRAM.
@@ -49,6 +50,8 @@ export interface PlanInput {
   computeProfile?: ComputeProfile
   /** True when a GPU backend will be initialised, which reserves memory of its own. */
   hasGpuBackend?: boolean
+  /** Experts kept in system RAM: 0 none, -1 every layer's, N the first N layers'. */
+  cpuMoeLayers?: number
 }
 
 export interface VramPlan {
@@ -69,6 +72,10 @@ export interface VramPlan {
   /** Context each concurrent conversation actually gets: total / slots. */
   contextPerSlot: number
   slots: number
+  /** Blocks with experts on a mixture-of-experts model; null on a dense one. */
+  moeBlocks: number | null
+  /** Expert weights held in system RAM by --cpu-moe / --n-cpu-moe. */
+  expertsOnCpuMiB: number
   /** Human-readable arithmetic, shown in the UI so the estimate is auditable. */
   notes: string[]
 }
@@ -165,17 +172,56 @@ export function weightBytesOnGpu(meta: GgufMetadata, gpuLayers: number): number 
   // (measured: 89 MiB of a 463 MiB file). Its share of the file is estimated
   // from its share of the parameters, which avoids modelling per-tensor
   // quantisation while still being much closer than ignoring it.
+  // Read from the tensor table where it was, which is exact, does not need a
+  // parameter count many files leave out, and knows when the embedding is tied
+  // to the output (then the GPU holds a copy) or comes with a per-layer table.
   const embdParams = (meta.vocabSize ?? 0) * (meta.embeddingLength ?? 0)
   const embdBytes =
-    embdParams > 0 && meta.parameterCount
+    meta.embeddingBytes ??
+    (embdParams > 0 && meta.parameterCount
       ? Math.min(meta.fileSize * (embdParams / meta.parameterCount), meta.fileSize * 0.5)
-      : 0
-  const body = meta.fileSize - embdBytes
+      : 0)
+  // Next-token-prediction blocks are in the file but never loaded.
+  const body = meta.fileSize - embdBytes - (meta.unusedBytes ?? 0)
 
   // Blocks offload proportionally; the final unit is the output layer.
   const blockShare = blocks > 0 ? (body * Math.min(offloaded, blocks)) / units : 0
   const outputShare = offloaded > blocks ? body / units : 0
   return blockShare + outputShare
+}
+
+/**
+ * Expert weights per block, and how many of them --cpu-moe / --n-cpu-moe keep
+ * off the GPU. Bytes come from the file's tensor table when it was read —
+ * exact, and necessary: a UD quantisation keeps experts at far fewer bits than
+ * attention, so a share of the parameters put 400 MiB too little on the GPU
+ * for Qwen3-Coder-30B-A3B. Without the table, the parameter share is the
+ * fallback.
+ *
+ * -ngl offloads the last layers and --n-cpu-moe keeps the first N layers'
+ * experts on the CPU, so the experts that leave VRAM are those of layers in
+ * both sets: the overlap of [blocks - offloaded, blocks) with [0, N).
+ */
+export function expertPlacement(
+  meta: GgufMetadata,
+  offloadedBlocks: number,
+  cpuMoeLayers: number
+): { moeBlocks: number | null; onCpuBlocks: number; onCpuBytes: number; offGpuBytes: number } {
+  const blocks = meta.blockCount ?? 0
+  const params = activeParameters(meta)
+  const measured = meta.expertBytesPerBlock?.length === blocks ? meta.expertBytesPerBlock : null
+  if ((!params?.moe && !measured) || blocks <= 0) return { moeBlocks: null, onCpuBlocks: 0, onCpuBytes: 0, offGpuBytes: 0 }
+  const estimate = params?.moe ? (meta.fileSize * (params.expert / params.total)) / blocks : 0
+  const bytesOf = (b: number): number => measured?.[b] ?? estimate
+  const onCpuBlocks = cpuMoeLayers === -1 ? blocks : Math.max(0, Math.min(cpuMoeLayers, blocks))
+  const firstOnGpu = blocks - Math.max(0, Math.min(offloadedBlocks, blocks))
+  let onCpuBytes = 0
+  let offGpuBytes = 0
+  for (let b = 0; b < onCpuBlocks; b++) {
+    onCpuBytes += bytesOf(b)
+    if (b >= firstOnGpu) offGpuBytes += bytesOf(b)
+  }
+  return { moeBlocks: blocks, onCpuBlocks, onCpuBytes, offGpuBytes }
 }
 
 export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
@@ -190,7 +236,9 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
   const offloadedLayers = Math.max(0, Math.min(input.gpuLayers, totalLayers))
   const anyOffload = offloadedLayers > 0
 
-  const weights = weightBytesOnGpu(meta, input.gpuLayers)
+  const experts = expertPlacement(meta, Math.min(offloadedLayers, meta.blockCount ?? 0), input.cpuMoeLayers ?? 0)
+  const weights = Math.max(0, weightBytesOnGpu(meta, input.gpuLayers) - experts.offGpuBytes)
+  const expertsOnCpu = experts.onCpuBytes
   // KV lives with the layers it belongs to, so a partial offload only puts a
   // proportional slice of the cache in VRAM.
   // Only the blocks that hold a cache count, and only the offloaded share of them.
@@ -213,6 +261,12 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
 
   const notes: string[] = []
   notes.push(`weights: ${fmt(meta.fileSize / MiB)} MiB x ${offloadedLayers}/${totalLayers} layers`)
+  if (experts.onCpuBlocks > 0) {
+    notes.push(
+      `experts of ${experts.onCpuBlocks === experts.moeBlocks ? 'every' : `the first ${experts.onCpuBlocks}`} layer${experts.onCpuBlocks === 1 ? '' : 's'} in system RAM: ` +
+        `${fmt(expertsOnCpu / MiB)} MiB${meta.expertBytesPerBlock ? ', from the tensor table' : ', estimated from the parameter share'}`
+    )
+  }
   if (input.contextSize <= 0 && contextSize > 0) notes.push(`context 0 means the model's trained length: ${contextSize} tokens`)
   if (kv > 0 && meta.embeddingLength && meta.headCount && meta.headCountKv) {
     const headDim = meta.keyLength ?? meta.embeddingLength / meta.headCount
@@ -258,6 +312,8 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
     maxGpuLayers,
     contextPerSlot,
     slots: parallel,
+    moeBlocks: experts.moeBlocks,
+    expertsOnCpuMiB: expertsOnCpu / MiB,
     notes
   }
 }

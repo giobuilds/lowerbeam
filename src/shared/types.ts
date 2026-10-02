@@ -51,6 +51,13 @@ export interface LaunchConfig {
   /** -t: generation threads. -1 lets llama.cpp decide. */
   threads: number
   /**
+   * Mixture-of-experts weights kept in system RAM while the rest is offloaded:
+   * 0 none, -1 every layer's (--cpu-moe), N the first N layers' (--n-cpu-moe N).
+   * On an 8 GB card this is what makes a 30B-A3B usable: attention stays on
+   * the GPU and only the few active experts are read from RAM each token.
+   */
+  cpuMoeLayers: number
+  /**
    * --mmproj: multimodal projector. Without it a vision model loads as
    * text-only, silently — it starts and answers, it just cannot see.
    */
@@ -87,6 +94,7 @@ export const DEFAULT_LAUNCH_CONFIG: Omit<LaunchConfig, 'modelPath'> = {
   // concurrent conversations, which is the point of having slots at all.
   parallel: 4,
   threads: -1,
+  cpuMoeLayers: 0,
   extraArgs: ''
 }
 
@@ -207,6 +215,10 @@ export interface VramPlanView {
   maxGpuLayers: number | null
   contextPerSlot: number
   slots: number
+  /** Blocks with experts on a mixture-of-experts model; null on a dense one. */
+  moeBlocks: number | null
+  /** Expert weights held in system RAM by --cpu-moe / --n-cpu-moe. */
+  expertsOnCpuMiB: number
   notes: string[]
 }
 

@@ -211,6 +211,7 @@ export function registerIpc(
         cacheTypeK: req.cacheTypeK,
         cacheTypeV: req.cacheTypeV,
         parallel: req.parallel,
+        cpuMoeLayers: req.cpuMoeLayers,
         // The unified CLI is the newer line, which sizes its compute buffer very
         // differently from the classic standalone server.
         computeProfile: binary.kind === 'unified' ? 'modern' : 'classic',
