@@ -97,7 +97,10 @@ the run changed. The box is a second layer, not a VM: the kernel is shared.
 and stdout can supply more tools. Give Lowerbeam its command and it starts it,
 lists what it offers, and adds those tools to the same list chat picks from —
 the model cannot tell them apart from the built-in ones. Servers are stopped
-when the app quits and restarted when it opens.
+when the app quits and restarted when it opens. A server gets only the basics
+from Lowerbeam's environment — `PATH`, `HOME`, the locale, `TMPDIR`, `XDG_*` —
+plus what you give it under *Environment*, so a token in your shell is not
+handed to every server.
 
 **Tuning** — benchmarks launch settings with `llama bench` and applies the
 fastest. Sampler settings aren't here on purpose: they don't change throughput.

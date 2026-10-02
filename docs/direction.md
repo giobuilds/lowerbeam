@@ -182,8 +182,11 @@ worth carrying forward as constraints:
   handlers did. Since 0.9.19 every handler, and the context menu's
   listener, serves only the app's own page in its own window as the top
   frame (`src/main/sender.ts`, #76).
-- MCP servers start with the host's environment and expose every discovered
-  tool. That is acceptable for chat and not for a coding run, which should
-  select servers and tools per grant.
+- MCP servers started with the host's environment; since 0.9.20 they get
+  only `PATH`, `HOME`, the locale, `TMPDIR` and `XDG_*`, plus what their
+  config names (#77). They still expose every discovered tool. That is
+  acceptable for chat and not for a coding run, which should select servers
+  and tools per grant.
 
-Both were Stage 1 work; the second is still open (#77).
+Both were Stage 1 work. What remains of the second, choosing servers and
+tools per grant, comes with MCP in coding runs, which do not use it yet.
