@@ -77,7 +77,6 @@ console.log('\napply of a created file the project now has is a conflict')
   assert.equal(await stat(ws2.root).then(() => true, () => false), false); ok('discard removes the workspace')
 }
 
-await rm(base, { recursive: true, force: true })
 console.log('\nwhat git lists and what a walk lists is not a change')
 {
   // A repository: git names tracked files under a fixture's node_modules and
@@ -101,4 +100,37 @@ console.log('\nwhat git lists and what a walk lists is not a change')
   ok('a fixture file the run removes is a deletion, and the symlink whose target changed is not reported twice')
 }
 
+console.log('\napply and undo never write through a symlink in the project')
+{
+  // The copy skips a symlinked folder, so a run can create docs/new.md in a
+  // plain docs/ there; in the project, docs/ is a link. Reproduced in #69.
+  const linked = join(base, 'linked')
+  const outside = join(base, 'outside')
+  await mkdir(join(linked, 'src'), { recursive: true })
+  await mkdir(outside)
+  await writeFile(join(linked, 'src', 'a.ts'), 'a\n')
+  await symlink(outside, join(linked, 'docs'))
+  await symlink(join(linked, 'src'), join(linked, 'alias'))
+  const ws5 = await Workspace.create(linked, join(base, 'ws5'))
+  await mkdir(join(ws5.root, 'docs')); await writeFile(join(ws5.root, 'docs', 'new.md'), 'from the run\n')
+  await mkdir(join(ws5.root, 'alias')); await writeFile(join(ws5.root, 'alias', 'b.ts'), 'from the run\n')
+  await writeFile(join(ws5.root, 'src', 'a.ts'), 'a, changed\n')
+  const result = await ws5.apply()
+  assert.deepEqual(result.applied, ['src/a.ts']); ok('a change at a plain path is applied')
+  assert.equal(await stat(join(outside, 'new.md')).then(() => true, () => false), false); ok('nothing is created where a link out of the project points')
+  assert.equal(await stat(join(linked, 'src', 'b.ts')).then(() => true, () => false), false); ok('nor where a link inside the project points')
+  const reasons = Object.fromEntries(result.conflicts.map((c) => [c.path, c.reason]))
+  assert.deepEqual(Object.keys(reasons).sort(), ['alias/b.ts', 'docs/new.md']); ok('both are listed as conflicts')
+  assert.match(reasons['docs/new.md']!, /^docs is a symlink/); ok('naming the link')
+
+  // A folder swapped for a link after apply: undo must not follow it either.
+  await rm(join(linked, 'src'), { recursive: true })
+  await mkdir(join(outside, 'src')); await writeFile(join(outside, 'src', 'a.ts'), 'a, changed\n')
+  await symlink(join(outside, 'src'), join(linked, 'src'))
+  const undone = await ws5.undo()
+  assert.deepEqual(undone.applied, []); assert.equal(undone.conflicts[0]?.path, 'src/a.ts'); ok('undo through a link is a conflict')
+  assert.equal(await readFile(join(outside, 'src', 'a.ts'), 'utf8'), 'a, changed\n'); ok('and the file it points at is untouched')
+}
+
+await rm(base, { recursive: true, force: true })
 console.log(`\n${n} assertions passed`)

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { cp, lstat, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, readFile, realpath, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import { createTwoFilesPatch } from 'diff'
 import type { ApplyResult, ChangeSet, FileChange } from '@shared/coding.js'
@@ -97,11 +97,14 @@ export class Workspace {
    * still holds what the baseline held. A file the user edited since is a
    * conflict, reported and left alone; nothing is merged and nothing is
    * guessed. What was overwritten is kept beside the workspace so undo has
-   * something to restore.
+   * something to restore. A path that goes through a symlink in the project
+   * is a conflict too: the copy has no such link, so the run wrote to a
+   * plain folder, and following the link would put the file wherever it
+   * points.
    */
   async apply(): Promise<ApplyResult> {
     const changes = await this.changes()
-    const project = this.manifest.projectRoot
+    const project = await realpath(this.manifest.projectRoot)
     const undoDir = join(this.root, '.lowerbeam-undo')
     await mkdir(undoDir, { recursive: true })
     const applied: string[] = []
@@ -110,6 +113,11 @@ export class Workspace {
 
     for (const change of changes.files) {
       const target = join(project, change.path)
+      const unsafe = await unsafeTarget(project, change.path)
+      if (unsafe) {
+        conflicts.push({ path: change.path, reason: unsafe })
+        continue
+      }
       const baseline = this.manifest.files[change.path]
       const current = await hashFileOrNull(target)
 
@@ -130,6 +138,13 @@ export class Workspace {
         await unlink(target)
       } else {
         await mkdir(dirname(target), { recursive: true })
+        // Checked again now the folders exist, in case one appeared as a
+        // link in between. The run cannot do that: it writes only the copy.
+        const raced = await unsafeTarget(project, change.path)
+        if (raced) {
+          conflicts.push({ path: change.path, reason: raced })
+          continue
+        }
         await cp(join(this.root, change.path), target)
       }
       applied.push(change.path)
@@ -156,11 +171,16 @@ export class Workspace {
     } catch {
       return { applied: [], conflicts: [] }
     }
-    const project = this.manifest.projectRoot
+    const project = await realpath(this.manifest.projectRoot)
     const applied: string[] = []
     const conflicts: Array<{ path: string; reason: string }> = []
     for (const [path, entry] of Object.entries(record.entries)) {
       const target = join(project, path)
+      const unsafe = await unsafeTarget(project, path)
+      if (unsafe) {
+        conflicts.push({ path, reason: unsafe })
+        continue
+      }
       if ((await hashFileOrNull(target)) !== entry.appliedHash) {
         conflicts.push({ path, reason: 'the file was edited in the project after the change was applied' })
         continue
@@ -228,6 +248,31 @@ async function walk(root: string, dir: string): Promise<string[]> {
 
 export async function hashFile(path: string): Promise<string> {
   return createHash('sha256').update(await readFile(path)).digest('hex')
+}
+
+/**
+ * Why `rel` must not be written under `root`, or null when it may. Every part
+ * of the path that exists must be a real folder or file, not a link — one
+ * pointing back inside the project is refused as well, since the change was
+ * made at a different path from the one it would land on. What does not exist
+ * yet is created by apply as plain folders. `root` is already resolved.
+ */
+async function unsafeTarget(root: string, rel: string): Promise<string | null> {
+  const parts = rel.split('/')
+  if (parts.some((p) => p === '' || p === '.' || p === '..')) return 'the path does not stay inside the project'
+  let at = root
+  for (const part of parts) {
+    at = join(at, part)
+    try {
+      if ((await lstat(at)).isSymbolicLink()) {
+        return `${relative(root, at).split(sep).join('/')} is a symlink in the project, and the change would be written wherever it points`
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
+      return `${relative(root, at).split(sep).join('/')} cannot be checked in the project (${(err as NodeJS.ErrnoException).code ?? 'error'})`
+    }
+  }
+  return null
 }
 
 async function linkExists(path: string): Promise<boolean> {
