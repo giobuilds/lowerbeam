@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { copyFile, cp, lstat, mkdir, readdir, readFile, readlink, realpath, rm, stat, unlink, writeFile } from 'node:fs/promises'
@@ -164,7 +164,7 @@ export class Workspace {
       try {
         let original: string | null = null
         if (current !== null) {
-          original = `${Object.keys(record.entries).length}-${Date.now()}`
+          original = randomUUID()
           await copyFile(target, join(undoDir, 'originals', original))
         }
         // Saved before the project is written: what is there now, and what
@@ -192,8 +192,10 @@ export class Workspace {
         const entry = record.entries[change.path]
         if (entry) {
           const now = await hashFileOrNull(target)
-          if (now === entry.before) delete record.entries[change.path]
-          else entry.after = now
+          if (now === entry.before) {
+            delete record.entries[change.path]
+            if (entry.original) await rm(join(undoDir, 'originals', entry.original), { force: true })
+          } else entry.after = now
           await save().catch(() => undefined)
         }
       }
