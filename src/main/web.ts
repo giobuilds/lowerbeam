@@ -10,7 +10,21 @@
  * Everything here runs in the main process. The renderer's CSP allows loopback
  * only, which is deliberate, and fetching arbitrary sites from the page that
  * renders model output would be the wrong place for it regardless.
+ *
+ * A page fetch reaches the public internet and nothing else. Chat runs tool
+ * calls without asking, so a page that says "now read 127.0.0.1:8080/slots"
+ * is an instruction the model may follow — and llama-server there has no API
+ * key. Every address a fetch connects to is checked, after DNS and after every
+ * redirect, at the moment of connecting, so a name that resolves somewhere
+ * public once and somewhere private the next time is caught as well.
  */
+
+import { lookup as dnsLookup, type LookupAddress } from 'node:dns'
+import { request as httpRequest, type IncomingMessage } from 'node:http'
+import { request as httpsRequest } from 'node:https'
+import { BlockList, isIP, type LookupFunction } from 'node:net'
+import type { Readable } from 'node:stream'
+import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib'
 
 /** A budget in characters, converted to tokens at roughly four characters each. */
 export interface WebLimits {
@@ -202,28 +216,40 @@ function unwrapRedirect(href: string): string {
  * silently truncating leaves the model reasoning about half a document without
  * knowing it.
  */
-export async function fetchPage(url: string, limits = DEFAULT_LIMITS): Promise<PageResult> {
+export async function fetchPage(url: string, limits = DEFAULT_LIMITS, blocked: (ip: string) => string | null = blockedAddress): Promise<PageResult> {
   if (!/^https?:\/\//i.test(url)) throw new Error('Only http and https addresses can be fetched.')
 
-  const res = await fetch(url, {
-    headers: { 'user-agent': UA, accept: 'text/html,text/plain;q=0.9' },
-    signal: AbortSignal.timeout(limits.timeoutMs),
-    redirect: 'follow'
-  })
-  if (!res.ok) throw new Error(`The page returned HTTP ${res.status}.`)
+  const signal = AbortSignal.timeout(limits.timeoutMs)
+  let at = new URL(url)
+  let res: IncomingMessage
+  for (let hop = 0; ; hop++) {
+    res = await guardedGet(at, signal, blocked)
+    const location = res.headers.location
+    if (!location || !res.statusCode || res.statusCode < 300 || res.statusCode >= 400) break
+    res.resume()
+    if (hop === MAX_REDIRECTS) throw new Error(`The page redirected more than ${MAX_REDIRECTS} times.`)
+    at = new URL(location, at)
+    if (at.protocol !== 'http:' && at.protocol !== 'https:') throw new Error('The page redirected to an address that is not http or https.')
+  }
+  const status = res.statusCode ?? 0
+  if (status < 200 || status >= 300) {
+    res.resume()
+    throw new Error(`The page returned HTTP ${status}.`)
+  }
 
-  const type = res.headers.get('content-type') ?? ''
+  const type = res.headers['content-type'] ?? ''
   if (!/text\/html|text\/plain|application\/(xhtml|json)/i.test(type)) {
+    res.resume()
     throw new Error(`That address is ${type.split(';')[0] || 'not text'}, which cannot be read as a page.`)
   }
 
-  const raw = await readCapped(res, limits.maxDownloadBytes)
+  const raw = await readCapped(decoded(res), limits.maxDownloadBytes)
   const text = /text\/plain|application\/json/i.test(type) ? raw : extractReadableText(raw)
   const title = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
   const truncated = text.length > limits.pageChars
 
   return {
-    url: res.url || url,
+    url: at.href,
     title: title ? stripTags(title[1]!).slice(0, 160) : url,
     text: truncated ? `${text.slice(0, limits.pageChars)}\n\n[cut here — the page continues]` : text,
     truncated,
@@ -231,25 +257,106 @@ export async function fetchPage(url: string, limits = DEFAULT_LIMITS): Promise<P
   }
 }
 
+const MAX_REDIRECTS = 5
+
 /** Stop reading once the cap is passed, so one huge page cannot stall a reply. */
-async function readCapped(res: Response, maxBytes: number): Promise<string> {
-  if (!res.body) return ''
-  const reader = res.body.getReader()
+async function readCapped(body: Readable, maxBytes: number): Promise<string> {
   const decoder = new TextDecoder()
   let out = ''
   let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.byteLength
-    out += decoder.decode(value, { stream: true })
+  for await (const chunk of body) {
+    const bytes = chunk as Buffer
+    total += bytes.byteLength
+    out += decoder.decode(bytes, { stream: true })
     if (total >= maxBytes) {
-      await reader.cancel()
+      body.destroy()
       break
     }
   }
   return out
 }
+
+/** The body as sent before compression, which fetch undid on its own and http does not. */
+function decoded(res: IncomingMessage): Readable {
+  const encoding = (res.headers['content-encoding'] ?? '').trim().toLowerCase()
+  const inflate = encoding === 'gzip' || encoding === 'x-gzip' ? createGunzip() : encoding === 'br' ? createBrotliDecompress() : encoding === 'deflate' ? createInflate() : null
+  if (!inflate) return res
+  res.on('error', (e) => inflate.destroy(e))
+  return res.pipe(inflate)
+}
+
+/**
+ * One GET, connecting only to an address `blocked` allows. A literal address
+ * is checked here, since Node does not look one up; a name is checked in the
+ * lookup the socket itself uses, so what is checked is what is connected to.
+ */
+function guardedGet(url: URL, signal: AbortSignal, blocked: (ip: string) => string | null): Promise<IncomingMessage> {
+  const host = url.hostname.replace(/^\[|\]$/g, '')
+  if (isIP(host)) {
+    const why = blocked(host)
+    if (why) return Promise.reject(refusal(url, host, why))
+  }
+  const lookup: LookupFunction = (hostname, options, callback) => {
+    dnsLookup(hostname, { ...options, all: true }, (err, addresses: LookupAddress[]) => {
+      if (err) return callback(err, '', 0)
+      for (const a of addresses) {
+        const why = blocked(a.address)
+        if (why) return callback(refusal(url, a.address, why), '', 0)
+      }
+      if (options.all) (callback as unknown as (e: null, a: LookupAddress[]) => void)(null, addresses)
+      else callback(null, addresses[0]!.address, addresses[0]!.family)
+    })
+  }
+  const request = url.protocol === 'https:' ? httpsRequest : httpRequest
+  return new Promise((resolve, reject) => {
+    const req = request(url, {
+      method: 'GET',
+      headers: { 'user-agent': UA, accept: 'text/html,text/plain;q=0.9', 'accept-encoding': 'gzip, deflate, br' },
+      lookup,
+      signal
+    })
+    req.on('response', resolve)
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+function refusal(url: URL, address: string, why: string): Error {
+  const shown = url.hostname === address || url.hostname === `[${address}]` ? address : `${url.hostname} (${address})`
+  return new Error(
+    `${shown} is ${why}, so it was not fetched. Only pages on the public internet can be read; ` +
+      'an address on this computer or the local network is refused even when a page or a redirect points there.'
+  )
+}
+
+/**
+ * What an address is, when it is somewhere a page fetch must not reach, or
+ * null when it is public. Loopback, the private ranges, link-local (where cloud
+ * metadata lives), carrier-grade NAT, and the reserved and multicast blocks,
+ * in both families; an IPv4 address written as IPv6 is checked as IPv4.
+ */
+export function blockedAddress(ip: string): string | null {
+  const family = isIP(ip) === 6 ? 'ipv6' : isIP(ip) === 4 ? 'ipv4' : null
+  if (!family) return 'not an address'
+  for (const [why, list] of RANGES) if (list.check(ip, family)) return why
+  return null
+}
+
+const RANGES: Array<[string, BlockList]> = (
+  [
+    ['on this computer', [['127.0.0.0', 8, 'ipv4'], ['::1', 128, 'ipv6']]],
+    ['an unspecified address', [['0.0.0.0', 8, 'ipv4'], ['::', 128, 'ipv6']]],
+    ['on the local network', [['10.0.0.0', 8, 'ipv4'], ['172.16.0.0', 12, 'ipv4'], ['192.168.0.0', 16, 'ipv4'], ['fc00::', 7, 'ipv6']]],
+    ['a link-local address', [['169.254.0.0', 16, 'ipv4'], ['fe80::', 10, 'ipv6']]],
+    ['a carrier-grade NAT address', [['100.64.0.0', 10, 'ipv4']]],
+    ['a reserved address', [['192.0.0.0', 24, 'ipv4'], ['198.18.0.0', 15, 'ipv4'], ['240.0.0.0', 4, 'ipv4'], ['2001:db8::', 32, 'ipv6']]],
+    ['a multicast address', [['224.0.0.0', 4, 'ipv4'], ['ff00::', 8, 'ipv6']]]
+  ] as Array<[string, Array<[string, number, 'ipv4' | 'ipv6']>]>
+).map(([why, subnets]) => {
+  const list = new BlockList()
+  for (const [net, prefix, family] of subnets) list.addSubnet(net, prefix, family)
+  return [why, list]
+})
 
 export function extractReadableText(html: string): string {
   let working = html
