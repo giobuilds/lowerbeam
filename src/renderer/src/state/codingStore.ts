@@ -22,7 +22,7 @@ interface CodingState {
   /** The terms the next run will have beyond its mode: a visible change to the grant, made before the run. */
   terms: GrantTerms
   /** Whether "edit and run" can be offered, and why not when it cannot. */
-  sandbox: { ok: boolean; reason: string | null } | null
+  sandbox: { ok: boolean; reason: string | null; toolchain: string } | null
   /** What the capability record says about the loaded model; null while it is being identified. */
   capability: CapabilityStatus | null
   /** An edit run's changes, once fetched; the last apply or undo result beside them. */
