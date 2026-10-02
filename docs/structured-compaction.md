@@ -152,6 +152,18 @@ Measured while building the current implementation, and worth not rediscovering:
 - Summarising 1,795 tokens with a 9B costs ~22s. Run in the background after a
   reply, that is free; run in front of the next question, it is a stall.
 
+### Constrained decoding, as shipped for chat
+
+Chat can require a reply to match a JSON schema or a GBNF grammar (#107), and
+`streamChat` takes the same `OutputConstraint`, so M2 has the plumbing. One
+finding to carry into it: a thinking model starts its reply in a reasoning
+block, and llama.cpp then files the constrained text under reasoning and
+returns an empty reply. Measured on Ornith-1.5-9B: a yes/no grammar answered
+"no" as reasoning and nothing as content. Constrained requests therefore turn
+thinking off (`chat_template_kwargs.enable_thinking = false`); with it off the
+same model answered "yes", and filled `{"name", "born"}` with
+`"Ada Lovelace", 1815`. M2 itself waits for M0 (#117).
+
 ## Open questions
 
 - **Does grammar-constrained extraction actually hold up at 1B?** The whole case

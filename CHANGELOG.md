@@ -28,6 +28,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   local network only when asked for and only with a key. A port already in
   use is refused with a clear message, and the key is masked in the server
   log. (#104)
+- Structured output in chat: a conversation can require its replies to be JSON
+  matching a schema, or text matching a GBNF grammar. Both are checked before
+  anything is sent, and thinking is turned off for such replies, since a
+  thinking model otherwise files the constrained text as reasoning and leaves
+  the reply empty. (#107)
 
 ## [0.10.0] - 2026-10-02
 

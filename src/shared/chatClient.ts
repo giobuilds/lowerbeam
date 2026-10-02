@@ -1,3 +1,4 @@
+import { constraintFields, type OutputConstraint } from './structuredOutput.js'
 import type { ChatSettingsView } from '@shared/types.js'
 
 /**
@@ -145,7 +146,9 @@ export async function streamChat(
   signal: AbortSignal,
   cb: StreamCallbacks,
   /** Sent only when tools are enabled; each definition costs tokens every time. */
-  tools?: unknown[]
+  tools?: unknown[],
+  /** A JSON schema or grammar the reply must match. llama.cpp does not combine one with tools. */
+  constraint?: OutputConstraint | null
 ): Promise<void> {
   const { url: baseUrl, apiKey } = typeof endpoint === 'string' ? { url: endpoint, apiKey: null } : endpoint
   let res: Response
@@ -165,7 +168,8 @@ export async function streamChat(
         min_p: settings.minP,
         repeat_penalty: settings.repeatPenalty,
         ...(settings.maxTokens > 0 ? { max_tokens: settings.maxTokens } : {}),
-        ...(tools && tools.length > 0 ? { tools, tool_choice: 'auto' } : {})
+        ...(tools && tools.length > 0 ? { tools, tool_choice: 'auto' } : {}),
+        ...constraintFields(constraint)
       })
     })
   } catch (err) {

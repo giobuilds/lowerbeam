@@ -1,3 +1,4 @@
+import type { OutputSetting } from './structuredOutput.js'
 /**
  * The contract between the main process and the renderer.
  * Everything crossing IPC is defined here and validated with the zod schemas
@@ -641,6 +642,8 @@ export interface ConversationView {
   compaction: CompactionView | null
   /** Whether to compact on its own when the window is nearly full. */
   autoCompact: boolean
+  /** What replies must be: free text, JSON matching a schema, or text matching a grammar. */
+  output?: OutputSetting
 }
 
 export interface ConversationSummaryView {

@@ -16,6 +16,7 @@ import {
   summarise,
   verbatimUserMessages
 } from '@context/compact.js'
+import { DEFAULT_OUTPUT, outputConstraint, type OutputSetting } from '@shared/structuredOutput.js'
 import { projectConversation } from '@context/project.js'
 
 const DEFAULT_SETTINGS: ChatSettingsView = {
@@ -70,6 +71,8 @@ interface ChatState {
   /** Summarise the oldest turns so the conversation keeps fitting. */
   compact: (conversationId?: string) => Promise<void>
   setAutoCompact: (enabled: boolean) => Promise<void>
+  /** What replies in the active conversation must be: free text, a JSON schema, or a grammar. */
+  setOutput: (patch: Partial<OutputSetting>) => Promise<void>
   /** Wait for a background compaction of this conversation, if one is running. */
   awaitCompaction: (conversationId: string) => Promise<void>
   stop: (conversationId?: string) => void
@@ -179,6 +182,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // One in-flight reply per conversation; a second send would race the first
     // into the same message list.
     if (get().streams[conversation.id]) return
+    // A constraint that will not work is said before the message is sent, not
+    // after the server has refused it.
+    const output = outputConstraint(conversation.output)
+    if (!output.ok) {
+      set({ error: `The reply format is not usable: ${output.error}` })
+      return
+    }
 
     const userMessage: ChatMessageView = {
       id: newId(),
@@ -231,6 +241,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } finally {
       inFlight.delete(id)
     }
+  },
+
+  async setOutput(patch) {
+    const conversation = activeConversation(get())
+    if (!conversation) return
+    const next = { ...conversation, output: { ...DEFAULT_OUTPUT, ...conversation.output, ...patch } }
+    put(set, get, next)
+    await persist(next, set, get)
   },
 
   async setAutoCompact(enabled) {
@@ -498,6 +516,15 @@ async function runCompletion(
     return
   }
   const baseUrl = { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey }
+  // Checked here too, since a regenerate reaches this without passing send().
+  // llama.cpp does not decode under a grammar and offer tools in one request,
+  // so a constrained reply is asked for without them.
+  const checked = outputConstraint(conversation.output)
+  if (!checked.ok) {
+    set({ error: `The reply format is not usable: ${checked.error}` })
+    return
+  }
+  const constraint = checked.constraint
 
   const turns = projectConversation(conversation)
 
@@ -532,7 +559,7 @@ async function runCompletion(
 
   // Only the tools the user switched on are declared, because every definition
   // is sent with every request whether or not it is used.
-  const chosen = activeConversation(get())?.tools ?? []
+  const chosen = constraint ? [] : (activeConversation(get())?.tools ?? [])
   const enabled = get().availableTools.filter((t) => chosen.includes(t.name))
   const toolSpec = enabled.map((t) => ({
     type: 'function',
@@ -582,7 +609,8 @@ async function runCompletion(
             set({ error: message })
           }
         },
-        toolSpec.length > 0 ? toolSpec : undefined
+        toolSpec.length > 0 ? toolSpec : undefined,
+        constraint
       )
 
       if (failed || abort.signal.aborted || requested.length === 0) break

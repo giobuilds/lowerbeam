@@ -40,6 +40,7 @@ worked for a model are remembered and reapplied next time.
 **Chat** — streaming replies as markdown with syntax-highlighted code, persisted
 conversations you can search and export as Markdown or JSON,
 stop/regenerate/edit, per-conversation system prompt (with saved presets) and samplers,
+replies constrained to a JSON schema or a GBNF grammar,
 and images for models that can read them. llama.cpp decodes one sequence per
 slot, so several conversations can generate at once; switching away doesn't
 interrupt a reply.
