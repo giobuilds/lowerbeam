@@ -1,0 +1,48 @@
+# Every push to main and every pull request: types, the unit tier, a build,
+# and an audit of what ships. Integration suites need a llama.cpp binary, a
+# model or the network, and stay manual (`npm run test:all`).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Nothing here launches Electron; the build and the suites do not need its binary.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # The sandbox suites run commands in bubblewrap. Ubuntu's runners ship
+      # with unprivileged user namespaces restricted by AppArmor, which
+      # bubblewrap needs; lifting that here means those suites run for real
+      # instead of failing or being skipped.
+      - name: Install bubblewrap
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx electron-vite build
+      - run: npm audit --omit=dev --audit-level=high
