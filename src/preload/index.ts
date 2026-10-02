@@ -5,6 +5,8 @@ import type { CapabilityStatus } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
 import type {
   UpdateState,
+  ConversationSearchHitView,
+  PromptPreset,
   BinaryInfo,
   ConversationSummaryView,
   ConversationView,
@@ -197,7 +199,14 @@ const api = {
     create: (systemPrompt?: string, tools?: string[]) =>
       invoke<ConversationView>(IPC.chatCreate, systemPrompt ?? '', tools ?? []),
     save: (conversation: ConversationView) => invoke<ConversationView>(IPC.chatSave, conversation),
-    remove: (id: string) => invoke<null>(IPC.chatDelete, id)
+    remove: (id: string) => invoke<null>(IPC.chatDelete, id),
+    search: (query: string) => invoke<ConversationSearchHitView[]>(IPC.chatSearch, query),
+    /** Asks where to save; the path written, or null if the dialog was cancelled. */
+    export: (id: string, format: 'md' | 'json') => invoke<string | null>(IPC.chatExport, id, format)
+  },
+  presets: {
+    list: () => invoke<PromptPreset[]>(IPC.presetsList),
+    save: (presets: PromptPreset[]) => invoke<PromptPreset[]>(IPC.presetsSave, presets)
   },
   dialog: {
     pickModelFile: () => invoke<string | null>(IPC.pickModelFile),

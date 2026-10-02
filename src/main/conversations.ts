@@ -2,6 +2,7 @@ import { readdir, readFile, rm, mkdir } from 'node:fs/promises'
 import { writeFileAtomic, WriteQueue } from './atomicWrite.js'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { matchConversation } from '@shared/chatExport.js'
 import { z } from 'zod'
 
 /**
@@ -161,6 +162,40 @@ export class ConversationStore {
       }
     }
     return out.sort((a, b) => b.updatedAt - a.updatedAt)
+  }
+
+  /**
+   * Conversations matching every word of `query`, in their titles or their
+   * messages, newest first, each with the line where it matched. Reads every
+   * file, which a few hundred chats make cheap; the sidebar asks once typing
+   * pauses, not per key.
+   */
+  async search(query: string): Promise<Array<ConversationSummary & { where: 'title' | 'message'; snippet: string }>> {
+    if (!query.trim()) return []
+    let names: string[]
+    try {
+      names = await readdir(this.dir)
+    } catch {
+      return []
+    }
+    const hits: Array<ConversationSummary & { where: 'title' | 'message'; snippet: string }> = []
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue
+      try {
+        const c = conversationSchema.parse(JSON.parse(await readFile(join(this.dir, name), 'utf8')))
+        const match = matchConversation(c, query)
+        if (!match) continue
+        const last = [...c.messages].reverse().find((m) => m.role !== 'system')
+        hits.push({
+          id: c.id, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt, messageCount: c.messages.length,
+          preview: (last?.content ?? '').slice(0, 120).replace(/\s+/g, ' ').trim(),
+          ...match
+        })
+      } catch {
+        // As in list(): one bad file does not hide the rest.
+      }
+    }
+    return hits.sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
   async get(id: string): Promise<Conversation | null> {

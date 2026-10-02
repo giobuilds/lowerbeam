@@ -78,6 +78,10 @@ export const IPC = {
   chatSave: 'chat:save',
   chatCreate: 'chat:create',
   chatDelete: 'chat:delete',
+  chatSearch: 'chat:search',
+  chatExport: 'chat:export',
+  presetsList: 'presets:list',
+  presetsSave: 'presets:save',
   pickModelFile: 'dialog:pick-model',
   pickModelDir: 'dialog:pick-model-dir'
 } as const
