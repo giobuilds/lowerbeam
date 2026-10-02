@@ -21,6 +21,7 @@ import type {
   ModelEntryView,
   McpServerState,
   AboutView,
+  UpdateState,
   McpSnapshot,
   ReaderState,
   ToolDefinition,
@@ -70,6 +71,7 @@ import {
 } from '@shared/schema.js'
 import type { SettingsStore } from './settings.js'
 import { isAppSender } from './sender.js'
+import type { Updater } from './updater.js'
 
 /** What a request from anywhere but the app's own page gets. Says nothing about the channel. */
 const NOT_THE_APP = 'This request did not come from Lowerbeam\u2019s own window.'
@@ -124,7 +126,8 @@ export function registerIpc(
   downloads: DownloadManager,
   coding: CodingSupervisor,
   /** Every llama.cpp install found at startup, best first. */
-  discovered: BinaryInfo[]
+  discovered: BinaryInfo[],
+  updater: Updater
 ): void {
   handle<ServerStatus>(IPC.serverStatus, () => supervisor.status)
 
@@ -511,6 +514,22 @@ export function registerIpc(
     return null
   })
 
+  const updateView = (): UpdateState => ({ ...updater.state, enabled: settings.current.updateChecks })
+  handle<UpdateState>(IPC.updateState, () => updateView())
+  handle<UpdateState>(IPC.updateCheck, async () => {
+    await updater.check()
+    return updateView()
+  })
+  handle<null>(IPC.updateRestart, () => {
+    updater.restartToUpdate()
+    return null
+  })
+  handle<UpdateState>(IPC.updateSetEnabled, async (on) => {
+    await settings.patch({ updateChecks: on === true })
+    if (on === true) await updater.check()
+    return updateView()
+  })
+
   handle<AboutView>(IPC.appAbout, () => {
     // Run unpackaged, Electron reports itself rather than the app, so the
     // manifest is the honest source in both cases — it ships inside the asar.
@@ -614,7 +633,9 @@ export function wireEvents(
   supervisor: ServerSupervisor,
   downloads: DownloadManager,
   mcp: McpRegistry,
-  coding: CodingSupervisor
+  coding: CodingSupervisor,
+  updater: Updater,
+  settings: SettingsStore
 ): void {
   const broadcast = (channel: string, payload?: unknown): void => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -630,6 +651,7 @@ export function wireEvents(
   broadcastBench = (run) => broadcast(IPC.benchChanged, run)
   coding.on('event', (event) => broadcast(IPC.codingEvent, event))
   coding.on('runs', (runs) => broadcast(IPC.codingRunsChanged, runs))
+  updater.on('state', (state: UpdateState) => broadcast(IPC.updateChanged, { ...state, enabled: settings.current.updateChecks }))
 
   // llama-server can emit hundreds of lines per second; coalesce the "there is
   // new output" hint so the renderer polls at most ~10x/sec instead of per line.

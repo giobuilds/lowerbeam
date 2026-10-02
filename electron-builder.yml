@@ -21,3 +21,11 @@ linux:
   description: >-
     Launch, monitor and tune llama-server without a terminal: pick a GGUF, see
     what fits in VRAM, and chat with it.
+# Releases, and where a running copy looks for the next one: electron-builder
+# writes latest-linux.yml beside the AppImage and RPM, and app-update.yml into
+# the package, which electron-updater reads (src/main/updater.ts).
+publish:
+  provider: github
+  owner: giobuilds
+  repo: lowerbeam
+  releaseType: release

@@ -4,6 +4,7 @@ import type { ApplyResult, ChangeSet, CodingRunSummary, CodingStartRequest, Jour
 import type { CapabilityStatus } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
 import type {
+  UpdateState,
   BinaryInfo,
   ConversationSummaryView,
   ConversationView,
@@ -131,6 +132,14 @@ const api = {
   app: {
     /** Name, version and the runtimes underneath, for the About panel. */
     about: () => invoke<AboutView>(IPC.appAbout)
+  },
+  update: {
+    state: () => invoke<UpdateState>(IPC.updateState),
+    check: () => invoke<UpdateState>(IPC.updateCheck),
+    /** Quit, install the downloaded update, and start the new version. */
+    restart: () => invoke<null>(IPC.updateRestart),
+    setEnabled: (on: boolean) => invoke<UpdateState>(IPC.updateSetEnabled, on),
+    onChanged: (cb: (state: UpdateState) => void) => subscribe<UpdateState>(IPC.updateChanged, cb)
   },
   coding: {
     pickProject: () => invoke<string | null>(IPC.codingPickProject),

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import type { AboutView } from '@shared/types.js'
+import type { AboutView, UpdateState } from '@shared/types.js'
 import { useServerStore } from '../state/serverStore.js'
+import { useUpdate } from './UpdateBanner.js'
 
 const REPO = 'https://github.com/giobuilds/lowerbeam'
 
@@ -15,6 +16,7 @@ const REPO = 'https://github.com/giobuilds/lowerbeam'
 export function About({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [about, setAbout] = useState<AboutView | null>(null)
   const binary = useServerStore((s) => s.binary)
+  const [update, setUpdate] = useUpdate()
 
   useEffect(() => {
     void window.llama.app.about().then(setAbout)
@@ -83,6 +85,9 @@ export function About({ onClose }: { onClose: () => void }): React.JSX.Element {
                 : '—'}
             </span>
           </Row>
+          <Row label="Updates">
+            <UpdateRow state={update} onChange={setUpdate} />
+          </Row>
         </dl>
 
         <div className="flex items-center gap-3 border-t border-edge px-5 py-3">
@@ -107,6 +112,47 @@ export function About({ onClose }: { onClose: () => void }): React.JSX.Element {
         </div>
       </div>
     </div>
+  )
+}
+
+/** The update setting, where things stand, and a way to check now. */
+function UpdateRow({ state, onChange }: { state: UpdateState | null; onChange: (s: UpdateState) => void }): React.JSX.Element {
+  if (!state) return <span className="text-muted">—</span>
+  if (state.phase === 'unsupported') return <span className="text-muted">Not checked in a development build.</span>
+  const status =
+    state.phase === 'checking'
+      ? 'Checking…'
+      : state.phase === 'downloading'
+        ? `Downloading ${state.version}${state.percent !== null ? ` · ${state.percent}%` : ''}`
+        : state.phase === 'ready'
+          ? `${state.version} is downloaded and goes in on the next restart.`
+          : state.phase === 'available'
+            ? `${state.version} is available.`
+            : state.phase === 'error'
+              ? `Could not check: ${state.error}`
+              : 'Up to date, as of the last check.'
+  return (
+    <>
+      <label className="flex items-center gap-1.5 text-slate-200">
+        <input type="checkbox" checked={state.enabled !== false} onChange={(e) => void window.llama.update.setEnabled(e.target.checked).then(onChange)} />
+        Check GitHub for new versions
+      </label>
+      {state.enabled !== false && (
+        <span className="mt-0.5 block text-[11px] text-muted">
+          {status}{' '}
+          {(state.phase === 'idle' || state.phase === 'error') && (
+            <button type="button" onClick={() => void window.llama.update.check().then(onChange)} className="text-accent hover:underline">
+              Check now
+            </button>
+          )}
+        </span>
+      )}
+      <span className="mt-0.5 block text-[11px] text-muted">
+        {state.selfUpdating
+          ? 'This AppImage downloads a new version in the background and installs it when you restart.'
+          : 'Installed as a package, so a new version is announced here and installed by your package manager.'}
+      </span>
+    </>
   )
 }
 

@@ -28,6 +28,8 @@ const settingsSchema = z.object({
    * A self-hosted one has no rate limit, which the default very much does.
    */
   searxngUrl: z.string().max(300).default(''),
+  /** Whether to look for a new release on GitHub. On unless turned off. */
+  updateChecks: z.boolean().default(true),
   /** Extra directories to scan for GGUF files, beyond the defaults. */
   modelDirs: z.array(z.string()).default([]),
   /**
@@ -63,7 +65,8 @@ const DEFAULTS: Settings = {
   calibration: EMPTY_CALIBRATION,
   downloadHistory: [],
   mcpServers: [],
-  searxngUrl: ''
+  searxngUrl: '',
+  updateChecks: true
 }
 
 /** Small JSON-backed settings file. Corrupt or missing files fall back to defaults. */

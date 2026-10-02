@@ -321,6 +321,24 @@ export interface McpServerState {
   log: string[]
 }
 
+/**
+ * Where an update stands. `available` is a release this copy cannot install
+ * itself (an RPM): it is only pointed at. `ready` is downloaded and goes in
+ * on the next restart. `unsupported` is a build that never checks.
+ */
+export interface UpdateState {
+  phase: 'unsupported' | 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'
+  version: string | null
+  percent: number | null
+  /** The release's page. */
+  url: string | null
+  error: string | null
+  /** Whether this copy replaces itself (an AppImage) or is only told. */
+  selfUpdating: boolean
+  /** Whether checks are on; the setting, carried here so one call answers both. */
+  enabled?: boolean
+}
+
 /** What the app knows about itself, for the About panel. */
 export interface AboutView {
   name: string
