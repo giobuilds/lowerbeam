@@ -148,18 +148,37 @@ sudo dnf install libxcrypt-compat
 
 ## Releasing
 
-Bump `version` in `package.json`, merge, then tag that commit and push the tag:
+Versions follow [semantic versioning](https://semver.org/), and the version
+changes when there is a release, not in every pull request. Each pull request
+adds a line to [CHANGELOG.md](CHANGELOG.md) under **Unreleased**, in the
+section for its kind of change: Breaking, Added, Changed, Fixed or Security.
+
+To release:
 
 ```bash
-git tag v0.9.25 && git push origin v0.9.25
+npm run release:suggest          # e.g. "patch: 0.9.25 → 0.9.26 (only Fixed entries)"
+npm run release:prepare          # moves Unreleased under the new version, sets package.json
+                                 # (or: npm run release:prepare -- minor)
 ```
 
-The *Release* workflow checks that the tag matches the version, runs the same
-checks as CI, and publishes `Lowerbeam.AppImage`, the RPM and
-`latest-linux.yml` as a GitHub release. Running AppImages find it within six
-hours and install it on their next restart. The AppImage's name carries no
-version on purpose: an update replaces the file in place, so a shortcut to it
-keeps working.
+Merge that as a "Release x.y.z" pull request, then tag the merge commit on
+`main` with an annotated tag and push it:
+
+```bash
+git switch main && git pull
+git tag -a v0.9.26 -m "Lowerbeam 0.9.26"
+git push origin v0.9.26
+```
+
+The *Release* workflow refuses a tag that is lightweight, not on `main`'s own
+history, not the version in `package.json`, or missing from the changelog. It
+runs the same checks as CI, publishes `Lowerbeam.AppImage`, the RPM and
+`latest-linux.yml` as a GitHub release, and writes its notes: the changelog
+section, then the pull requests merged since the previous release. Running
+AppImages find it within six hours and install it on their next restart. A
+published tag is never moved or deleted; a broken release is followed by a new
+one. The AppImage's name carries no version on purpose: an update replaces the
+file in place, so a shortcut to it keeps working.
 
 ## About the estimates
 
