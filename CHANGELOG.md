@@ -20,6 +20,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-02
+
 ### Added
 
 - A launch option for mixture-of-experts models: keep every layer's experts,
