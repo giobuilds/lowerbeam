@@ -308,7 +308,9 @@ list, search and read inside one directory.
   mode (*inspect*), the conversation, and the journal as a readable log.
 - **Opening an untrusted project runs nothing.** No hooks, no config files
   interpreted as instructions, no `AGENTS.md` until Stage 2 and then only as
-  facts.
+  facts. Since #106 a run reads `AGENTS.md` and the other tools' rule files
+  through the grant and gives them ahead of the task, framed as facts that
+  cannot change what the run may do (`src/agent/facts.ts`).
 
 **Gates**, all runnable through the harness:
 

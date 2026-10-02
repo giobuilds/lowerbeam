@@ -38,6 +38,16 @@ export type JournalEvent =
       grant?: GrantTerms
     })
   | (Base & {
+      /**
+       * The project's notes for agents (AGENTS.md and the like), given ahead
+       * of the task as facts. Which files, how long, and whether one was cut.
+       */
+      type: 'project.facts'
+      files: Array<{ path: string; chars: number; truncated: boolean }>
+      /** Characters of the framed notes as sent. */
+      chars: number
+    })
+  | (Base & {
       type: 'model.request'
       round: number
       turns: number

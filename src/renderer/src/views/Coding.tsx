@@ -619,6 +619,12 @@ function Line({ event }: { event: JournalEvent }): React.JSX.Element | null {
   switch (event.type) {
     case 'run.started':
       return <li className="text-muted">started · {event.model} · {event.grantRoot}</li>
+    case 'project.facts':
+      return (
+        <li className="text-muted" title="Given to the model as facts about the project, not as instructions. They cannot change what the run may do.">
+          notes from {event.files.map((f) => `${f.path}${f.truncated ? ' (cut)' : ''}`).join(', ')} given as facts · {event.chars.toLocaleString()} chars
+        </li>
+      )
     case 'model.request':
       return <li className="text-muted">round {event.round} · asking the model</li>
     case 'model.response':

@@ -5,7 +5,8 @@ import type { CodingMode, JournalEvent, RunOutcome, TokenCount } from '@shared/c
 import { JOURNAL_VERSION, DEFAULT_TERMS, describeTerms, sameTerms, type GrantTerms } from '@shared/coding.js'
 import { streamChat, windowUsed, type ChatTurn, type StreamedToolCall } from '@shared/chatClient.js'
 import type { Grant } from './grant.js'
-import { AGENT_TOOLS, WRITE_TOOLS, runAgentTool } from './tools.js'
+import { AGENT_TOOLS, WRITE_TOOLS, readBudgetBytes, runAgentTool } from './tools.js'
+import { projectFacts } from './facts.js'
 import { foldToolTurns, nextFoldIndex } from '@context/fold.js'
 import { checkpointFrom, renderCheckpoint, renderReminder, compactWorkingSet } from '@context/checkpoint.js'
 import { COMPACT_AT } from '@context/compact.js'
@@ -46,6 +47,11 @@ export interface RunRequest {
   contextLimit?: number | null
   /** Off only to measure what folding buys; never off in the app. */
   fold?: boolean
+  /**
+   * Give the project's notes for agents (AGENTS.md and the like) ahead of the
+   * task, as facts. On unless an experiment has to hold the prompt fixed.
+   */
+  facts?: boolean
   /** What the run may do. The grant enforces it; this only decides what is declared and said. */
   mode?: CodingMode
   /** What the run may reach beyond the project. Enforced by the grant and the sandbox; this only tells the model and the record. */
@@ -182,9 +188,14 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
 
   const policy = mode === 'run' ? (terms.network ? RUN_POLICY.replace('there is no network, and ', '') : RUN_POLICY) : mode === 'edit' ? EDIT_POLICY : POLICY
   const granted = describeTerms(terms, mode)
+  // In the first user message, not the system prompt: the project's own text
+  // should not borrow the authority of the instructions. Compaction keeps the
+  // first two messages, so the notes outlast it.
+  const facts = req.facts === false ? null : await projectFacts(req.grant, Math.floor(readBudgetBytes(req.contextLimit) / 2))
+  if (facts) emit({ type: 'project.facts', files: facts.files, chars: facts.text.length })
   let turns: ChatTurn[] = [
     { role: 'system', content: granted ? `${policy} ${granted}` : policy },
-    { role: 'user', content: req.task }
+    { role: 'user', content: facts ? `${facts.text}\n\nThe task:\n${req.task}` : req.task }
   ]
   const canRun = mode === 'run' && Boolean(req.execute)
   const tools =
