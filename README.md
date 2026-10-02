@@ -241,6 +241,11 @@ Five documents, meant to be read in this order:
   set for a fine-tune, and Pi and OpenCode run on the same tasks against the
   reference loop, which stays.
 
+Beside them, [feature gaps](docs/lowerbeam-feature-gaps.md) compares
+Lowerbeam with other local-model apps and coding harnesses: ten gaps ranked
+by value against effort, each tracked as an issue, what is already rare among
+them, and what is deliberately not built.
+
 Stages 1 and 2 are built: the Coding tab, its journal, and edits in a copy
 that you review and apply. Stage 3 is built in first form: *edit and run*
 runs commands in a bubblewrap box with no network, offered only where the
