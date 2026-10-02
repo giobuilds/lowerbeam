@@ -1,6 +1,6 @@
 {
   "name": "lowerbeam",
-  "version": "0.9.22",
+  "version": "0.9.23",
   "description": "Desktop control panel for llama.cpp: launch, tune, download and chat with local models",
   "main": "./out/main/index.js",
   "author": {
@@ -25,7 +25,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^38.8.6",
+    "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
     "electron-vite": "^4.0.1",
     "tailwindcss": "^4.3.3",
@@ -33,13 +33,12 @@
     "vite": "^7.3.6"
   },
   "allowScripts": {
-    "electron@38.8.6": true,
     "esbuild@0.25.12": true,
     "esbuild@0.28.2": true
   },
   "dependencies": {
     "diff": "^8.0.4",
-    "dompurify": "^3.4.15",
+    "dompurify": "^3.4.16",
     "highlight.js": "^11.12.0",
     "marked": "^18.0.12",
     "react": "^19.2.8",
