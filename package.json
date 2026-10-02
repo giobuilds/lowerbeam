@@ -16,7 +16,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "dist": "npm run build && electron-builder",
     "test": "node tests/run.mjs",
-    "test:all": "node tests/run.mjs --all"
+    "test:all": "node tests/run.mjs --all",
+    "release:suggest": "node scripts/release.mjs suggest",
+    "release:prepare": "node scripts/release.mjs prepare",
+    "release:notes": "node scripts/release.mjs notes"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
