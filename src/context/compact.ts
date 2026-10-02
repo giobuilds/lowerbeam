@@ -11,7 +11,7 @@
  * only what is *sent* changes.
  */
 import type { ChatMessageView, ConversationView } from '@shared/types.js'
-import { streamChat, type ChatTurn } from '@shared/chatClient.js'
+import { streamChat, type ChatTurn, type ServerEndpoint } from '@shared/chatClient.js'
 
 /**
  * Compact once the next request would use this much of the window.
@@ -193,7 +193,7 @@ export function trimToLastSentence(text: string): string {
  * second model to summarise would need a second model loaded.
  */
 export async function summarise(
-  baseUrl: string,
+  baseUrl: string | ServerEndpoint,
   conversation: ConversationView,
   older: ChatMessageView[],
   previous: string | null,

@@ -354,7 +354,7 @@ async function compactNow(id: string, set: Setter, get: Getter): Promise<void> {
     set({ compacting: { ...get().compacting, [id]: true } })
     try {
       const summary = await summarise(
-        `http://127.0.0.1:${status.port}`,
+        { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey },
         conversation,
         older,
         conversation.compaction?.summary ?? null,
@@ -497,7 +497,7 @@ async function runCompletion(
     set({ error: 'Start a model on the Server tab before chatting.' })
     return
   }
-  const baseUrl = `http://127.0.0.1:${status.port}`
+  const baseUrl = { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey }
 
   const turns = projectConversation(conversation)
 

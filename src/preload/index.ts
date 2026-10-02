@@ -7,6 +7,7 @@ import type {
   UpdateState,
   ConversationSearchHitView,
   PromptPreset,
+  LocalApiSettings,
   BinaryInfo,
   ConversationSummaryView,
   ConversationView,
@@ -203,6 +204,11 @@ const api = {
     search: (query: string) => invoke<ConversationSearchHitView[]>(IPC.chatSearch, query),
     /** Asks where to save; the path written, or null if the dialog was cancelled. */
     export: (id: string, format: 'md' | 'json') => invoke<string | null>(IPC.chatExport, id, format)
+  },
+  localApi: {
+    get: () => invoke<LocalApiSettings>(IPC.localApiGet),
+    set: (api: LocalApiSettings) => invoke<LocalApiSettings>(IPC.localApiSet, api),
+    lanAddresses: () => invoke<string[]>(IPC.lanAddresses)
   },
   presets: {
     list: () => invoke<PromptPreset[]>(IPC.presetsList),

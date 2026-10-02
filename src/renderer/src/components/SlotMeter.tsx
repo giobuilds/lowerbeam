@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useServerStore } from '../state/serverStore.js'
+import { authHeaders } from '@shared/chatClient.js'
 import { useChatStore } from '../state/chatStore.js'
 
 interface SlotInfo {
@@ -17,6 +18,7 @@ interface SlotInfo {
  */
 export function SlotMeter(): React.JSX.Element | null {
   const port = useServerStore((s) => (s.status?.phase === 'ready' ? s.status.port : null))
+  const apiKey = useServerStore((s) => s.status?.apiKey ?? null)
   const streamCount = useChatStore((s) => Object.keys(s.streams).length)
   const [slots, setSlots] = useState<SlotInfo | null>(null)
 
@@ -29,6 +31,7 @@ export function SlotMeter(): React.JSX.Element | null {
     const poll = async (): Promise<void> => {
       try {
         const res = await fetch(`http://127.0.0.1:${port}/slots`, {
+          headers: authHeaders(apiKey),
           signal: AbortSignal.timeout(2000)
         })
         if (!res.ok) return
@@ -49,7 +52,7 @@ export function SlotMeter(): React.JSX.Element | null {
       cancelled = true
       clearInterval(timer)
     }
-  }, [port])
+  }, [port, apiKey])
 
   if (!slots) return null
 

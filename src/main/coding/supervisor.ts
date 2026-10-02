@@ -169,6 +169,7 @@ export class CodingSupervisor extends EventEmitter<{
     try {
       const result = await runTask({
         baseUrl,
+        apiKey: this.inference()?.status.apiKey ?? null,
         model: summary.model,
         task,
         grant,

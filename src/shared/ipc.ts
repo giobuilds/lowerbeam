@@ -81,6 +81,9 @@ export const IPC = {
   chatSearch: 'chat:search',
   chatExport: 'chat:export',
   presetsList: 'presets:list',
+  localApiGet: 'local-api:get',
+  localApiSet: 'local-api:set',
+  lanAddresses: 'local-api:lan-addresses',
   presetsSave: 'presets:save',
   pickModelFile: 'dialog:pick-model',
   pickModelDir: 'dialog:pick-model-dir'

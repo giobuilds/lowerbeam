@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useServerStore } from '../state/serverStore.js'
 import { contextAdvice, type CapabilityStatus } from '@shared/capability.js'
-import { KV_CACHE_TYPES } from '@shared/types.js'
+import { KV_CACHE_TYPES, type LocalApiSettings, type ServerStatus } from '@shared/types.js'
 import { Field, inputClass } from '../components/Field.js'
 import { StatusBadge } from '../components/StatusBadge.js'
 import { ModelPicker } from '../components/ModelPicker.js'
@@ -291,6 +291,8 @@ export function LaunchPanel(): React.JSX.Element {
         </button>
       </div>
 
+      <LocalApi status={status} />
+
       <section className="mt-2 border-t border-edge pt-3">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-semibold text-muted">Devices</h2>
@@ -457,5 +459,129 @@ function ExpertOffload({
         )}
       </div>
     </Field>
+  )
+}
+
+/**
+ * The server as an API for other programs: a port that stays the same across
+ * launches, a key, and the local network only with that key. Settings apply
+ * from the next launch; while a server runs, its URLs and key can be copied.
+ */
+function LocalApi({ status }: { status: ServerStatus | null }): React.JSX.Element | null {
+  const [api, setApi] = useState<LocalApiSettings | null>(null)
+  const [portText, setPortText] = useState('')
+  const [showKey, setShowKey] = useState(false)
+  const [lanIps, setLanIps] = useState<string[]>([])
+  const [problem, setProblem] = useState('')
+  const [copied, setCopied] = useState<string | null>(null)
+
+  useEffect(() => {
+    void window.llama.localApi.get().then((a) => {
+      setApi(a)
+      setPortText(a.port ? String(a.port) : '')
+    })
+    void window.llama.localApi.lanAddresses().then(setLanIps)
+  }, [])
+  if (!api) return null
+
+  const save = async (patch: Partial<LocalApiSettings>): Promise<void> => {
+    try {
+      setApi(await window.llama.localApi.set({ ...api, ...patch }))
+      setProblem('')
+    } catch (err) {
+      setProblem((err as Error).message)
+    }
+  }
+  const commitPort = (): void => {
+    const text = portText.trim()
+    if (!text) return void save({ port: null })
+    const n = Number(text)
+    if (!Number.isInteger(n) || n < 1024 || n > 65535) return setProblem('A port between 1024 and 65535, or empty for a free one each launch.')
+    void save({ port: n })
+  }
+  const generate = (): void => {
+    const bytes = crypto.getRandomValues(new Uint8Array(24))
+    void save({ apiKey: Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('') })
+  }
+  const copy = (label: string, text: string): void => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(label)
+      setTimeout(() => setCopied(null), 1500)
+    })
+  }
+
+  const running = status?.phase === 'ready' && status.port ? status : null
+  const urls = running ? [`http://127.0.0.1:${running.port}/v1`, ...(running.lan ? lanIps.map((ip) => `http://${ip}:${running.port}/v1`) : [])] : []
+  const pending =
+    running && ((api.port !== null && api.port !== running.port) || (api.apiKey || null) !== running.apiKey || api.lan !== running.lan)
+
+  return (
+    <section className="mt-2 space-y-2 border-t border-edge pt-3">
+      <h2 className="text-xs font-semibold text-muted">Local API</h2>
+      <p className="text-[11px] leading-snug text-muted">
+        Lets other programs — an editor, an agent, a script — use the model this app runs, through its OpenAI-compatible
+        API. Settings apply from the next launch.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Port" hint="Empty: a free port each launch">
+          <input
+            type="number"
+            min={1024}
+            max={65535}
+            placeholder="automatic"
+            className={inputClass}
+            value={portText}
+            onChange={(e) => setPortText(e.target.value)}
+            onBlur={commitPort}
+            onKeyDown={(e) => e.key === 'Enter' && commitPort()}
+          />
+        </Field>
+        <Field label="API key" hint={api.apiKey ? 'Required by every client, this app included' : 'None: anyone on this computer can use it'}>
+          <div className="flex gap-1">
+            <input
+              type={showKey ? 'text' : 'password'}
+              className={`${inputClass} min-w-0 font-mono text-xs`}
+              value={api.apiKey}
+              placeholder="none"
+              spellCheck={false}
+              onChange={(e) => setApi({ ...api, apiKey: e.target.value })}
+              onBlur={() => void save({ apiKey: api.apiKey.trim(), lan: api.apiKey.trim() ? api.lan : false })}
+            />
+          </div>
+          <span className="mt-1 flex gap-2 text-[11px]">
+            <button type="button" onClick={generate} className="text-accent hover:underline">Generate</button>
+            {api.apiKey && (
+              <>
+                <button type="button" onClick={() => setShowKey(!showKey)} className="text-muted hover:text-slate-200">{showKey ? 'Hide' : 'Show'}</button>
+                <button type="button" onClick={() => void save({ apiKey: '', lan: false })} className="text-muted hover:text-rose-300">Clear</button>
+              </>
+            )}
+          </span>
+        </Field>
+      </div>
+      <label className={`flex items-center gap-2 text-[11px] ${api.apiKey ? 'text-slate-200' : 'text-muted'}`}>
+        <input type="checkbox" checked={api.lan} disabled={!api.apiKey} onChange={(e) => void save({ lan: e.target.checked })} />
+        Also listen on the local network
+        <span className="text-muted">{api.apiKey ? '(other machines need the key)' : '(needs an API key)'}</span>
+      </label>
+      {problem && <p className="text-[11px] text-rose-300">{problem}</p>}
+      {running && (
+        <div className="space-y-1 rounded border border-edge bg-ink/60 p-2 text-[11px]">
+          {urls.map((u) => (
+            <div key={u} className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate text-slate-200">{u}</code>
+              <button type="button" onClick={() => copy(u, u)} className="text-accent hover:underline">{copied === u ? 'Copied' : 'Copy'}</button>
+            </div>
+          ))}
+          {running.apiKey && (
+            <div className="flex items-center gap-2">
+              <span className="flex-1 text-muted">API key</span>
+              <button type="button" onClick={() => copy('key', running.apiKey!)} className="text-accent hover:underline">{copied === 'key' ? 'Copied' : 'Copy key'}</button>
+            </div>
+          )}
+          {pending && <p className="text-amber-200/80">The running server was launched with different settings; they apply from the next launch.</p>}
+        </div>
+      )}
+    </section>
   )
 }

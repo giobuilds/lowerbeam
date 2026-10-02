@@ -26,6 +26,11 @@ starting a rival, and never leaks a child process. A binary check loads a model
 and generates tokens, which catches a build that starts fine but cannot actually
 run inference.
 
+**Local API** — the server is an OpenAI-compatible API for other programs:
+an editor, an agent, a script. Give it a fixed port so their settings keep
+working across launches, and an API key; the app's own chat and coding send
+it too. The local network is off unless you turn it on, and it needs a key.
+
 **Models** — scans your disk and reads each GGUF header for architecture,
 quantisation, layers, trained context and chat template. Before launching it
 estimates VRAM, broken into weights, KV cache, compute and backend reserve. You
