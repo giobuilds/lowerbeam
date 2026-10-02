@@ -1,5 +1,7 @@
 # Lowerbeam
 
+[![CI](https://github.com/giobuilds/lowerbeam/actions/workflows/ci.yml/badge.svg)](https://github.com/giobuilds/lowerbeam/actions/workflows/ci.yml)
+
 ![Lowerbeam Banner](brand/banner.png)
 
 A desktop control panel for [llama.cpp](https://github.com/ggml-org/llama.cpp).
@@ -161,6 +163,10 @@ has been measured, no speed is claimed at all.
 npm test            # unit — needs nothing but a checkout
 npm run test:all    # adds integration suites
 ```
+
+CI runs the type check, the unit tier (bubblewrap included, so the sandbox
+suites run), a build and an audit of the shipped dependencies on every push
+to `main` and every pull request; see `.github/workflows/ci.yml`.
 
 No framework: suites import the app's own modules, are bundled with esbuild and
 run as scripts, and print what they checked. Unit suites cover argument
