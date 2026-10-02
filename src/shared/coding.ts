@@ -189,12 +189,13 @@ export function describeTerms(terms: GrantTerms, mode: CodingMode): string {
   return parts.join(' ')
 }
 
-export type ChangeKind = 'created' | 'modified' | 'deleted'
+/** `symlink`: a link the run made or changed. Shown by its text, never followed, never applied. */
+export type ChangeKind = 'created' | 'modified' | 'deleted' | 'symlink'
 
 export interface FileChange {
   path: string
   kind: ChangeKind
-  /** A unified diff against the baseline, or '(binary)'. Empty for a deletion. */
+  /** A unified diff against the baseline, or '(binary)'. Empty for a deletion; the link's text for a symlink. */
   diff: string
 }
 
