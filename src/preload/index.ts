@@ -146,7 +146,7 @@ const api = {
     undo: (runId: string) => invoke<ApplyResult>(IPC.codingUndo, runId),
     discard: (runId: string) => invoke<null>(IPC.codingDiscard, runId),
     /** Whether commands can be run on this machine, with the reason when not. */
-    sandbox: () => invoke<{ ok: boolean; reason: string | null }>(IPC.codingSandbox),
+    sandbox: () => invoke<{ ok: boolean; reason: string | null; toolchain: string }>(IPC.codingSandbox),
     capability: () => invoke<CapabilityStatus>(IPC.codingCapability),
     capabilityOf: (modelPath: string) => invoke<CapabilityStatus>(IPC.codingCapabilityOf, modelPath),
     evidence: (runId: string) => invoke<Evidence | null>(IPC.codingEvidence, runId),

@@ -227,7 +227,7 @@ function ModeToggle({ disabled }: { disabled: boolean }): React.JSX.Element {
     <div className="flex items-center gap-1 rounded border border-edge p-0.5">
       {option('inspect', 'Inspect', refused('inspect') !== null, refused('inspect') ?? '')}
       {option('edit', 'Edit in a copy', refused('edit') !== null, refused('edit') ?? '')}
-      {option('run', 'Edit and run', runOff !== null, runOff ?? (sandbox === null ? 'Checking whether commands can be contained…' : ''))}
+      {option('run', 'Edit and run', runOff !== null, runOff ?? (sandbox === null ? 'Checking whether commands can be contained…' : sandbox.toolchain))}
     </div>
   )
 }

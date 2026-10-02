@@ -2,9 +2,9 @@ import { spawn } from 'node:child_process'
 import { DEFAULT_TERMS, type GrantTerms } from '@shared/coding.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { mkdir, mkdtemp, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 const run = promisify(execFile)
 
@@ -31,6 +31,8 @@ export interface SandboxProbe {
   landlock: boolean
   /** Why execution is unavailable, in words, when it is. */
   reason: string | null
+  /** How Node is lent to the box, in words: from its install root, as the binary alone, or not at all. */
+  toolchain: string
 }
 
 /** Whether this machine can run anything in a box. Cached: it does not change while the app runs. */
@@ -61,7 +63,11 @@ export async function probeSandbox(): Promise<SandboxProbe> {
     : !userNamespaces
       ? 'unprivileged user namespaces are disabled, so bubblewrap cannot run without root.'
       : null
-  cachedProbe = { ok: reason === null, bubblewrap, userNamespaces, landlock, reason }
+  const node = await findNode()
+  const toolchain = node
+    ? (await lendNode(node, await realHome())).note
+    : 'No node was found on PATH, so commands run with the system’s tools only.'
+  cachedProbe = { ok: reason === null, bubblewrap, userNamespaces, landlock, reason, toolchain }
   return cachedProbe
 }
 let cachedProbe: SandboxProbe | null = null
@@ -184,13 +190,13 @@ export async function bwrapArgs(workspace: string, projectRoot: string, terms: G
     if (await exists(dir)) args.push('--ro-bind', dir, dir)
   }
 
-  // The toolchain: whatever node this process would run, by its install root.
+  // The toolchain: whatever node this process would run.
   const path: string[] = ['/usr/local/bin', '/usr/bin', '/bin']
   const node = await findNode()
   if (node) {
-    const root = dirname(dirname(node)) // …/bin/node → …
-    args.push('--ro-bind', root, root)
-    path.unshift(dirname(node))
+    const loan = await lendNode(node, await realHome())
+    args.push(...loan.args)
+    path.unshift(loan.bin)
   }
   args.push('--setenv', 'PATH', path.join(':'))
 
@@ -241,6 +247,66 @@ export function overlaySupported(): Promise<boolean> {
     }
   })()
   return overlayProbe
+}
+
+export interface NodeLoan {
+  /** What makes node visible in the box: binds, and links for npm and npx. */
+  args: string[]
+  /** The folder to put first on PATH inside the box. */
+  bin: string
+  /** How it was lent, in words, for the interface. */
+  note: string
+}
+
+/**
+ * How to make `node` (a resolved path) visible in the box without the home
+ * folder. Its install root — `…/bin/node` → `…` — is bound whole when that
+ * is an install of its own: nvm, fnm, volta, /usr/local, /opt. When the root
+ * is the home folder, an ancestor of it, or a folder directly in it — node in
+ * `~/bin` or `~/.local/bin` — binding it would lend the home folder or
+ * `~/.local`, keyrings and all. Then the binary is lent alone, with npm and
+ * npx where they are links into the root's `lib/node_modules`, as npm's own
+ * install makes them.
+ */
+export async function lendNode(node: string, home: string): Promise<NodeLoan> {
+  const bin = dirname(node)
+  const root = dirname(bin)
+  if (!holdsHome(root, home)) return { args: ['--ro-bind', root, root], bin, note: `Node is lent from its install, ${root}.` }
+
+  const args = ['--ro-bind', node, node]
+  const modules = join(root, 'lib', 'node_modules')
+  const lent = new Set<string>()
+  for (const tool of ['npm', 'npx']) {
+    const link = join(bin, tool)
+    let text: string
+    try {
+      text = await readlink(link)
+    } catch {
+      continue
+    }
+    const inside = relative(modules, resolve(bin, text))
+    if (!inside || inside.startsWith('..') || isAbsolute(inside)) continue
+    const pkg = join(modules, inside.split(sep)[0]!)
+    if (!(await exists(pkg))) continue
+    if (!lent.has(pkg)) args.push('--ro-bind', pkg, pkg)
+    lent.add(pkg)
+    args.push('--symlink', text, link)
+  }
+  const where = root === home ? 'the home folder' : dirname(root) === home ? 'a folder directly in the home folder' : 'above the home folder'
+  return {
+    args,
+    bin,
+    note: `Node is lent as the binary alone${lent.size ? ', with npm' : ''}: its install root, ${root}, is ${where}, which is never lent.`
+  }
+}
+
+/** Whether binding `dir` would lend the home folder or a folder directly in it. */
+function holdsHome(dir: string, home: string): boolean {
+  return dir === home || home.startsWith(dir.endsWith(sep) ? dir : dir + sep) || dirname(dir) === home
+}
+
+async function realHome(): Promise<string> {
+  return realpath(homedir()).catch(() => homedir())
 }
 
 /** The node the user's shell would run, not necessarily the one Electron embeds. */
