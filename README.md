@@ -70,7 +70,8 @@ your real browser, from its header.
 about the code. It gets three tools — list, search and read — and nothing
 else: every path it asks for is resolved and checked against that folder, so
 a link out of it, a `..`, or an instruction planted in a file to read
-something elsewhere all fail the same way. Every request, every file read,
+something elsewhere all fail the same way. Keys and `.env` files are left
+out at any depth, and the home folder or `/` cannot be the project. Every request, every file read,
 every refusal and the answer are written to a journal before the tab shows
 them, so reloading mid-run rebuilds exactly what was there. Switch the run to
 *edit in a copy* and it gets two more tools — `edit_file`, which must match a

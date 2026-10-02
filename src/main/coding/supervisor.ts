@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { realpath, stat } from 'node:fs/promises'
 import { DEFAULT_TERMS, type CodingRunSummary, type CodingStartRequest, type GrantTerms, type JournalEvent } from '@shared/coding.js'
-import { Grant } from '../../agent/grant.js'
+import { Grant, secretReason } from '../../agent/grant.js'
 import { runTask } from '../../agent/loop.js'
 import type { ServerSupervisor } from '../supervisor.js'
 import { Journal } from './journal.js'
@@ -91,6 +91,7 @@ export class CodingSupervisor extends EventEmitter<{
     // The terms are checked here, where they are enforced, whatever the
     // interface offered: an extra root must be a real directory, narrow
     // enough to mean something, and never this app's own state.
+    await checkProjectRoot(req.projectRoot, dirname(this.dir))
     const terms = await this.checkTerms(req.grant ?? DEFAULT_TERMS, req.mode, req.projectRoot)
     if (req.mode === 'run') {
       // No box, no run mode: it is refused here, with the reason, rather than
@@ -385,7 +386,6 @@ export class CodingSupervisor extends EventEmitter<{
  * something beyond the project.
  */
 export async function checkTerms(terms: GrantTerms, mode: CodingStartRequest['mode'], own: string, projectRoot?: string): Promise<GrantTerms> {
-  const home = homedir()
   const project = projectRoot ? await realpath(projectRoot).catch(() => resolve(projectRoot)) : null
   const alsoRead: string[] = []
   for (const dir of terms.alsoRead) {
@@ -399,11 +399,54 @@ export async function checkTerms(terms: GrantTerms, mode: CodingStartRequest['mo
       throw new Error(`The grant names a folder that does not exist: ${dir}`)
     }
     if (!info.isDirectory()) throw new Error(`The grant names something that is not a folder: ${dir}`)
-    if (abs === '/' || abs === home) throw new Error(`The grant cannot name ${abs === '/' ? 'the whole filesystem' : 'the whole home directory'}; choose the folder the task needs.`)
-    if (abs === own || own.startsWith(abs + '/')) throw new Error(`The grant cannot name ${dir}: Lowerbeam\u2019s own state lives there.`)
+    const broad = await tooBroad(abs, own)
+    if (broad === 'own') throw new Error(`The grant cannot name ${dir}: Lowerbeam\u2019s own state lives there.`)
+    if (broad) throw new Error(`The grant cannot name ${broad}; choose the folder the task needs.`)
     if (!alsoRead.includes(abs)) alsoRead.push(abs)
   }
   return { alsoRead, network: mode === 'run' && terms.network, install: mode === 'run' && terms.install }
+}
+
+/**
+ * The project a run is granted, checked where it is enforced: a real folder,
+ * and not one so broad that granting it means granting everything — the
+ * filesystem, the home directory or a folder above it, Lowerbeam's own state,
+ * or a folder of credentials. Picked in the interface, but a path is a path.
+ */
+export async function checkProjectRoot(projectRoot: string, own: string): Promise<void> {
+  const abs = resolve(projectRoot)
+  let info
+  try {
+    info = await stat(abs)
+  } catch {
+    throw new Error(`The project folder does not exist: ${projectRoot}`)
+  }
+  if (!info.isDirectory()) throw new Error(`The project is not a folder: ${projectRoot}`)
+  const broad = await tooBroad(abs, own)
+  if (broad === 'own') throw new Error(`${projectRoot} cannot be a project: Lowerbeam\u2019s own state lives there.`)
+  if (broad) throw new Error(`A project cannot be ${broad}; choose the project\u2019s own folder.`)
+  const real = await realpath(abs).catch(() => abs)
+  if (secretReason(real, real)) throw new Error(`${projectRoot} cannot be a project: it is a folder of credentials.`)
+}
+
+/**
+ * Why a folder is too broad to grant whole, or null: the filesystem, the home
+ * directory, a folder that holds the home directory, or anything that holds
+ * or sits inside Lowerbeam's own state (`'own'`). Checked as spelled and as
+ * resolved, since either can be the one that names home.
+ */
+async function tooBroad(abs: string, own: string): Promise<string | null> {
+  const real = await realpath(abs).catch(() => abs)
+  const home = homedir()
+  const homes = [home, await realpath(home).catch(() => home)]
+  const owns = [own, await realpath(own).catch(() => own)]
+  for (const p of [abs, real]) {
+    if (p === '/') return 'the whole filesystem'
+    if (homes.includes(p)) return 'the whole home directory'
+    if (homes.some((h) => h.startsWith(p + '/'))) return `${p}, which holds the home directory`
+    if (owns.some((o) => o === p || o.startsWith(p + '/') || p.startsWith(o + '/'))) return 'own'
+  }
+  return null
 }
 
 interface Rerun {

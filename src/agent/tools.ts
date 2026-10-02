@@ -179,7 +179,7 @@ async function listFiles(grant: Grant, dir: string): Promise<AgentToolResult> {
   } catch (err) {
     return { ok: false, content: `Could not list ${dir}: ${(err as Error).message}` }
   }
-  const visible = entries.filter((e) => Grant.visible(e.name)).sort((a, b) => a.name.localeCompare(b.name))
+  const visible = entries.filter((e) => Grant.visibleAt(join(resolved.path, e.name))).sort((a, b) => a.name.localeCompare(b.name))
   const lines = visible.slice(0, LIST_MAX).map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
   const more = visible.length > LIST_MAX ? `\n… and ${visible.length - LIST_MAX} more` : ''
   return { ok: true, content: `${resolved.relative}:\n${lines.join('\n')}${more}` }
@@ -203,8 +203,8 @@ async function search(grant: Grant, query: string, dir: string): Promise<AgentTo
       return
     }
     for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (!Grant.visible(e.name)) continue
       const child = join(abs, e.name)
+      if (!Grant.visibleAt(child)) continue
       if (e.isDirectory()) {
         await walk(child)
       } else if (e.isFile()) {

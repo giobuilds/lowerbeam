@@ -284,8 +284,14 @@ list, search and read inside one directory.
 **Ships:**
 
 - **Project selection** with a canonical granted root. Symlinks resolved,
-  traversal rejected, Lowerbeam's own state and credential directories
-  excluded from the grant by default.
+  traversal rejected. The filesystem, the home directory or a folder above
+  it, Lowerbeam's own state (or anything holding or inside it), and a
+  credentials folder are refused as a project, where the run starts.
+  Credentials are excluded from the grant at any depth and never copied
+  into a workspace: `.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`,
+  `.password-store`, `.env`, `.envrc` and `.env.*` (but not `.env.example`,
+  `.env.sample` or `.env.template`), and the desktop keyrings under
+  `~/.local/share/keyrings`.
 - **A job lifecycle in the main process** — `src/main/coding/` — with an
   append-only JSONL journal, sequence numbers on every event, and reconnect
   after a renderer reload. Cancellation stops the model call.
