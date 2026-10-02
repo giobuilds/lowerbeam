@@ -78,8 +78,19 @@ passage exactly once, and `write_file`, which overwrites only with the hash
 it was shown — against a copy of the project, never the project. The
 Changes panel shows what it did as diffs; apply writes each file back only if
 the project still holds what the copy started from, and anything you edited
-meanwhile is left alone and named. Undo restores what was applied. It cannot
-run anything; that is a later stage and a different boundary.
+meanwhile is left alone and named. Undo restores what was applied.
+
+A third mode, *edit and run*, adds `run_command`, so the model can run the
+tests on its change. Commands run in a bubblewrap box over the copy: the
+system and toolchain read-only, the copy writable, a private `/tmp`, no
+network, a time limit, and nothing left running when the command ends. The
+mode is offered only where the box can be built; without bubblewrap or
+unprivileged user namespaces the button says why, and the main process
+refuses the run anyway. Before a run you can grant it more — folders outside
+the project to read, the network, installs — and the run's header records
+what was granted. An Evidence panel compares the last test run after the
+last edit with the same command before any edit, and names any test file
+the run changed. The box is a second layer, not a VM: the kernel is shared.
 
 **MCP servers** — any program that speaks the Model Context Protocol over stdin
 and stdout can supply more tools. Give Lowerbeam its command and it starts it,
@@ -94,6 +105,8 @@ fastest. Sampler settings aren't here on purpose: they don't change throughput.
 
 - Node 20+ (developed on 24)
 - llama.cpp — either the unified `llama` CLI or the standalone `llama-server`
+- For *edit and run* only: bubblewrap (`bwrap`) and unprivileged user
+  namespaces. Without them the other coding modes still work.
 
 Lowerbeam finds both and prefers the unified CLI, since a stale distro build
 often sits in `/usr/bin` beside a current one. Override with the binary dropdown
@@ -179,7 +192,9 @@ Five documents, meant to be read in this order:
   reference loop, which stays.
 
 Stages 1 and 2 are built: the Coding tab, its journal, and edits in a copy
-that you review and apply. Stage 3, running commands in a sandbox, is not.
+that you review and apply. Stage 3 is built in first form: *edit and run*
+runs commands in a bubblewrap box with no network, offered only where the
+box can be built. It has not yet been checked on a clean RPM install.
 On Ornith-1.5-9B the reference loop passes 29 of 30 read-only tasks and
 completes 22 of 30 write tasks with its round cap lifted to 40; the app keeps
 a cap of 12 until the next matrix says whether the cap or folding older tool
