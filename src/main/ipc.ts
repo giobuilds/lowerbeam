@@ -69,10 +69,19 @@ import {
   codingStartSchema
 } from '@shared/schema.js'
 import type { SettingsStore } from './settings.js'
+import { isAppSender } from './sender.js'
 
-/** Wrap a handler so a thrown error becomes a typed failure instead of an opaque IPC rejection. */
+/** What a request from anywhere but the app's own page gets. Says nothing about the channel. */
+const NOT_THE_APP = 'This request did not come from Lowerbeam\u2019s own window.'
+
+/**
+ * Wrap a handler so a thrown error becomes a typed failure instead of an
+ * opaque IPC rejection — and so it serves only the app's own page, in its own
+ * window, as the top frame (see sender.ts).
+ */
 function handle<T>(channel: string, fn: (...args: unknown[]) => Promise<T> | T): void {
-  ipcMain.handle(channel, async (_event, ...args): Promise<IpcResponse<T>> => {
+  ipcMain.handle(channel, async (event, ...args): Promise<IpcResponse<T>> => {
+    if (!isAppSender(event)) return { ok: false, error: NOT_THE_APP }
     try {
       return { ok: true, value: await fn(...args) }
     } catch (err) {
@@ -84,6 +93,7 @@ function handle<T>(channel: string, fn: (...args: unknown[]) => Promise<T> | T):
 /** Same, for handlers that act on the window that asked rather than on the app. */
 function handleFrom<T>(channel: string, fn: (sender: WebContents, ...args: unknown[]) => T): void {
   ipcMain.handle(channel, async (event, ...args): Promise<IpcResponse<T>> => {
+    if (!isAppSender(event)) return { ok: false, error: NOT_THE_APP }
     try {
       return { ok: true, value: await fn(event.sender, ...args) }
     } catch (err) {

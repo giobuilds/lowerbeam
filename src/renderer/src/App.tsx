@@ -84,14 +84,18 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     const onClick = (event: MouseEvent): void => {
       const link = (event.target as HTMLElement | null)?.closest?.('a[href]')
-      const href = link?.getAttribute('href') ?? ''
-      if (!isWebUrl(href)) return
+      if (!link) return
+      const href = link.getAttribute('href') ?? ''
+      // Nothing in the app is a link to anywhere but the web. A relative or
+      // file: link in model markdown would otherwise navigate the window, and
+      // the main process would then have to be the only thing saying no.
       event.preventDefault()
+      if (!isWebUrl(href)) return
       // Holding a modifier means "not here", the same as it does in a browser.
       // Some links say so themselves: a repo or an issue tracker is worth
       // opening where you are signed in, not in a pane with an empty session.
       if (
-        link?.getAttribute('data-external') === 'true' ||
+        link.getAttribute('data-external') === 'true' ||
         event.ctrlKey ||
         event.metaKey ||
         event.button === 1

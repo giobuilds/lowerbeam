@@ -20,9 +20,10 @@ Measured or observed in this repo, so it is not rediscovered.
   fragmented `tool_calls` and reassembles them by index, and runs a bounded
   loop (four rounds). The transport in `chatClient.ts` is reusable; the loop
   in `chatStore.ts` is not, and now also owns compaction.
-- **The IPC wrapper does not validate the sender.** `handle()` ignores the
-  event; only the reader's `handleFrom()` binds to a window. A coding API
-  needs the second form throughout, plus a run identity per request.
+- **The IPC wrapper did not validate the sender.** `handle()` ignored the
+  event; only the reader's `handleFrom()` bound to a window. Since 0.9.19
+  both serve only the app's own page, in its own window, as the top frame
+  (`src/main/sender.ts`, #76). A run identity per request is still to come.
 - **MCP servers inherit the host environment and expose every tool.** Spawned
   with `{...process.env, ...config.env}`, detached, all discovered tools
   offered to chat. Acceptable for chat; a coding run must select per grant.
