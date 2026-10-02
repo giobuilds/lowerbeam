@@ -18,6 +18,7 @@ import { attachReader } from './reader.js'
 import { CodingSupervisor } from './coding/supervisor.js'
 import { isWebUrl } from '@shared/url.js'
 import { APP_INDEX_PATH, isAppUrl, trustWindow } from './sender.js'
+import { Updater } from './updater.js'
 import type { BinaryInfo } from '@shared/types.js'
 
 const dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -171,13 +172,15 @@ async function bootstrap(): Promise<void> {
   coding = new CodingSupervisor(join(app.getPath('userData'), 'coding'), () => supervisor)
   await coding.load()
 
-  registerIpc(supervisor, settings, conversations, profiles, mcp, downloads, coding, discovered)
-  wireEvents(supervisor, downloads, mcp, coding)
+  const updater = new Updater(() => settings.current.updateChecks)
+  registerIpc(supervisor, settings, conversations, profiles, mcp, downloads, coding, discovered, updater)
+  wireEvents(supervisor, downloads, mcp, coding, updater, settings)
   await supervisor.adoptOrReap()
 
   registerContextMenuCommands()
   buildAppMenu(() => supervisor)
   createWindow()
+  updater.start()
 }
 
 // A second instance would fight over the handoff file and spawn a rival server.

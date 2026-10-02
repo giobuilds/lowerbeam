@@ -104,6 +104,12 @@ from Lowerbeam's environment — `PATH`, `HOME`, the locale, `TMPDIR`, `XDG_*` �
 plus what you give it under *Environment*, so a token in your shell is not
 handed to every server.
 
+**Updates** — the AppImage checks GitHub releases at start and every six
+hours, downloads a new version in the background, and installs it when you
+restart; a banner says when one is waiting. An RPM is only told that a release
+exists, since installing it belongs to your package manager. Checks can be
+turned off in *About*.
+
 **Tuning** — benchmarks launch settings with `llama bench` and applies the
 fastest. Sampler settings aren't here on purpose: they don't change throughput.
 

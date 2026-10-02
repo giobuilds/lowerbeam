@@ -13,6 +13,7 @@ import { FlagReference } from './components/FlagReference.js'
 import { ContextMenu } from './components/ContextMenu.js'
 import { ToolSettings } from './components/ToolSettings.js'
 import { About } from './components/About.js'
+import { UpdateBanner } from './components/UpdateBanner.js'
 import { ReaderPanel } from './components/ReaderPanel.js'
 import { subscribeToReader, useReaderStore } from './state/readerStore.js'
 import { subscribeToCoding } from './state/codingStore.js'
@@ -174,6 +175,8 @@ export default function App(): React.JSX.Element {
           <StatusBadge phase={status?.phase ?? 'stopped'} />
         </div>
       </nav>
+
+      <UpdateBanner />
 
       <main className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1">
