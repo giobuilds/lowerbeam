@@ -26,6 +26,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   or the first N layers', in system RAM (`--cpu-moe`, `--n-cpu-moe`), with the
   VRAM estimate moving them out of the GPU's share. It is what makes a 30B-A3B
   usable on an 8 GB card. (#102)
+- Coding runs read the notes a project keeps for coding agents — `AGENTS.md`,
+  `CLAUDE.md`, `CONVENTIONS.md`, `.cursorrules` and the like — through the
+  grant, and give them with the task as facts about the project, never as
+  instructions. The journal records which were given. (#106)
 
 ### Fixed
 
