@@ -18,6 +18,11 @@ linux:
     - AppImage
     - rpm
   category: Development
+# One name for every version, so the file a shortcut points at is the file an
+# update replaces: electron-updater overwrites an AppImage in place when its
+# name carries no version, and renames it (breaking the shortcut) when it does.
+appImage:
+  artifactName: ${productName}.${ext}
   description: >-
     Launch, monitor and tune llama-server without a terminal: pick a GGUF, see
     what fits in VRAM, and chat with it.

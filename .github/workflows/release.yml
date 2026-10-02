@@ -1,0 +1,78 @@
+# A release: push a tag `vX.Y.Z` matching package.json's version, and this
+# checks it, builds the AppImage and RPM, and publishes them with
+# latest-linux.yml as a GitHub release — which is what a running AppImage
+# looks for (src/main/updater.ts).
+#
+# On a pull request that touches packaging, the same job builds without
+# publishing and keeps the packages as workflow artifacts, so the release
+# path is exercised before a tag ever depends on it.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/release.yml
+      - electron-builder.yml
+      - package.json
+      - package-lock.json
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # Creating the release and uploading its files.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: The tag is the version being released
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${version}"
+            exit 1
+          fi
+
+      # The same checks as CI: nothing is released that would not pass them.
+      # rpm is for electron-builder's RPM target; bubblewrap for the sandbox suites.
+      - name: Install rpm and bubblewrap
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx electron-vite build
+
+      - name: Package and publish
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --linux --publish always
+
+      - name: Package without publishing
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: npx electron-builder --linux --publish never
+
+      - name: Keep the packages from a dry run
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: |
+            dist/*.AppImage
+            dist/*.rpm
+            dist/latest-linux.yml
+          retention-days: 7

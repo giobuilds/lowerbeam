@@ -146,6 +146,21 @@ the AppImage still builds.
 sudo dnf install libxcrypt-compat
 ```
 
+## Releasing
+
+Bump `version` in `package.json`, merge, then tag that commit and push the tag:
+
+```bash
+git tag v0.9.25 && git push origin v0.9.25
+```
+
+The *Release* workflow checks that the tag matches the version, runs the same
+checks as CI, and publishes `Lowerbeam.AppImage`, the RPM and
+`latest-linux.yml` as a GitHub release. Running AppImages find it within six
+hours and install it on their next restart. The AppImage's name carries no
+version on purpose: an update replaces the file in place, so a shortcut to it
+keeps working.
+
 ## About the estimates
 
 VRAM: the KV cache figure is exact arithmetic and reproduces llama.cpp's own
