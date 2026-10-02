@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, readFile, writeFile, rm, stat, symlink } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, writeFile, rm, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Workspace } from '../../src/main/coding/workspace.js'
@@ -156,6 +156,55 @@ console.log('\na symlink in the copy is never followed')
   assert.match(result.conflicts[0]!.reason, /never applied/); ok('and the reason says why')
   assert.equal(await readFile(join(plain, 'z.txt'), 'utf8'), 'z\n'); ok('the project file is untouched')
   assert.equal(await stat(join(plain, 'key.txt')).then(() => true, () => false), false); ok('and no link is made in the project')
+}
+
+console.log('\nundo restores the original bytes, not a text reading of them')
+{
+  // Reproduced in #72: ff fe came back as two replacement characters.
+  const bin = join(base, 'bin')
+  await mkdir(bin)
+  const original = Buffer.from([0xff, 0xfe, 0x00, 0x01])
+  await writeFile(join(bin, 'blob.dat'), original)
+  const ws7 = await Workspace.create(bin, join(base, 'ws7'))
+  await writeFile(join(ws7.root, 'blob.dat'), Buffer.from([0x00, 0x01, 0x02]))
+  assert.deepEqual((await ws7.apply()).applied, ['blob.dat']); ok('a binary change is applied')
+  assert.deepEqual((await ws7.undo()).applied, ['blob.dat']); ok('and undone')
+  assert.ok((await readFile(join(bin, 'blob.dat'))).equals(original)); ok('to exactly the bytes it held')
+}
+
+console.log('\na file that cannot be written partway through is a conflict, and the rest can still be undone')
+{
+  // Reproduced in #70: one failure left earlier files applied with no undo record.
+  const part = join(base, 'part')
+  await mkdir(part)
+  for (const f of ['a.txt', 'b.txt', 'c.txt']) await writeFile(join(part, f), `${f} before\n`)
+  const ws8 = await Workspace.create(part, join(base, 'ws8'))
+  for (const f of ['a.txt', 'b.txt', 'c.txt']) await writeFile(join(ws8.root, f), `${f} after\n`)
+  await chmod(join(part, 'b.txt'), 0o444)
+  const result = await ws8.apply()
+  assert.deepEqual(result.applied, ['a.txt', 'c.txt']); ok('the files around the failure are applied')
+  assert.equal(result.conflicts[0]?.path, 'b.txt'); assert.match(result.conflicts[0]!.reason, /could not be applied: .*EACCES/); ok('the failure is returned as a conflict with its reason, not thrown')
+  assert.equal(await readFile(join(part, 'b.txt'), 'utf8'), 'b.txt before\n'); ok('and the file that failed is as it was')
+  const undone = await ws8.undo()
+  assert.deepEqual(undone.applied.sort(), ['a.txt', 'c.txt']); assert.deepEqual(undone.conflicts, []); ok('undo covers what was applied')
+  for (const f of ['a.txt', 'c.txt']) assert.equal(await readFile(join(part, f), 'utf8'), `${f} before\n`)
+  ok('and restores it')
+  await chmod(join(part, 'b.txt'), 0o644)
+}
+
+console.log('\nan undo record from before 0.9.21 still undoes')
+{
+  const old = join(base, 'old')
+  await mkdir(old)
+  await writeFile(join(old, 'x.txt'), 'x before\n')
+  const ws9 = await Workspace.create(old, join(base, 'ws9'))
+  await writeFile(join(old, 'x.txt'), 'x after\n')
+  await mkdir(join(ws9.root, '.lowerbeam-undo'))
+  const { createHash } = await import('node:crypto')
+  const appliedHash = createHash('sha256').update('x after\n').digest('hex')
+  await writeFile(join(ws9.root, '.lowerbeam-undo', 'record.json'), JSON.stringify({ at: 1, entries: { 'x.txt': { before: 'x before\n', appliedHash } } }))
+  assert.deepEqual((await ws9.undo()).applied, ['x.txt']); ok('the old shape is read')
+  assert.equal(await readFile(join(old, 'x.txt'), 'utf8'), 'x before\n'); ok('and the text it kept is restored')
 }
 
 await rm(base, { recursive: true, force: true })
