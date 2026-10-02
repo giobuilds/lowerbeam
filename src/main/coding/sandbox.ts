@@ -104,10 +104,14 @@ export async function runInSandbox(cmd: SandboxCommand): Promise<SandboxResult> 
 
   const args = await bwrapArgs(cmd.workspace, cmd.projectRoot, cmd.terms)
   const started = Date.now()
-  // pipefail, where the shell has it: `node tests/run.mjs x | head -50` is
-  // how a model keeps output short, and without it the exit code is head's —
-  // a failing suite reported as exit 0, and recorded that way.
-  const child = spawn('bwrap', [...args, '--', 'sh', '-c', `set -o pipefail 2>/dev/null; ${cmd.command}`], {
+  // pipefail: `node tests/run.mjs x | head -50` is how a model keeps output
+  // short, and without it the exit code is head's — a failing suite reported
+  // as exit 0, and recorded that way. bash has it everywhere; /bin/sh is dash
+  // on Debian and Ubuntu, where a bare `set -o pipefail` is an error in a
+  // special builtin and ends the shell with exit 2 before the command runs.
+  // So bash where there is one, and the option only where the shell takes it.
+  const shell = (await exists('/usr/bin/bash')) ? '/usr/bin/bash' : (await exists('/bin/bash')) ? '/bin/bash' : 'sh'
+  const child = spawn('bwrap', [...args, '--', shell, '-c', `(set -o pipefail) 2>/dev/null && set -o pipefail; ${cmd.command}`], {
     stdio: ['ignore', 'pipe', 'pipe'],
     // Its own group, so a timeout or a stop reaches the whole tree from
     // outside the box as well as inside it.

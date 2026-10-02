@@ -29,7 +29,7 @@ const opts = { workspace, projectRoot: project, timeoutMs: 20_000, maxOutputByte
 console.log('a command runs in the workspace')
 {
   const r = await runInSandbox({ ...opts, command: 'node hello.js && echo done' })
-  assert.equal(r.exitCode, 0); ok('and exits with its own code')
+  assert.equal(r.exitCode, 0, r.stderr); ok('and exits with its own code')
   assert.match(r.stdout, /hello from/); assert.match(r.stdout, /done/); ok('its output comes back')
   const r2 = await runInSandbox({ ...opts, command: 'exit 3' })
   assert.equal(r2.exitCode, 3); ok('a failing command reports its exit code')
