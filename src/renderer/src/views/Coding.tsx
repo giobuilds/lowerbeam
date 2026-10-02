@@ -579,7 +579,8 @@ function FailureList({ label, lines, colour }: { label: string; lines: string[];
 
 function FileDiff({ change }: { change: ChangeSet['files'][number] }): React.JSX.Element {
   const [open, setOpen] = useState(true)
-  const colour = change.kind === 'created' ? 'text-emerald-300' : change.kind === 'deleted' ? 'text-rose-300' : 'text-amber-200'
+  const colour =
+    change.kind === 'created' ? 'text-emerald-300' : change.kind === 'deleted' || change.kind === 'symlink' ? 'text-rose-300' : 'text-amber-200'
   const test = isTestPath(change.path)
   return (
     <li className="rounded border border-edge bg-panel">

@@ -132,5 +132,31 @@ console.log('\napply and undo never write through a symlink in the project')
   assert.equal(await readFile(join(outside, 'src', 'a.ts'), 'utf8'), 'a, changed\n'); ok('and the file it points at is untouched')
 }
 
+console.log('\na symlink in the copy is never followed')
+{
+  // A command in the box swaps a tracked file for a link to a host file the
+  // box cannot see. Reproduced in #71: the secret showed in the diff.
+  const host = join(base, 'host')
+  await mkdir(host)
+  await writeFile(join(host, 'id_ed25519'), 'SECRET KEY\n')
+  const plain = join(base, 'plain')
+  await mkdir(plain)
+  await writeFile(join(plain, 'z.txt'), 'z\n')
+  const ws6 = await Workspace.create(plain, join(base, 'ws6'))
+  await rm(join(ws6.root, 'z.txt'))
+  await symlink(join(host, 'id_ed25519'), join(ws6.root, 'z.txt'))
+  await symlink(join(host, 'id_ed25519'), join(ws6.root, 'key.txt'))
+  const changes = await ws6.changes()
+  const kinds = Object.fromEntries(changes.files.map((f) => [f.path, f.kind]))
+  assert.deepEqual(kinds, { 'z.txt': 'symlink', 'key.txt': 'symlink' }); ok('a file swapped for a link, and a new link, are each a symlink change')
+  assert.ok(!JSON.stringify(changes).includes('SECRET')); ok('and nothing they point at is read into Changes')
+  assert.equal(changes.files.find((f) => f.path === 'z.txt')!.diff, `symlink → ${join(host, 'id_ed25519')}`); ok('only the link text is shown')
+  const result = await ws6.apply()
+  assert.deepEqual(result.applied, []); assert.equal(result.conflicts.length, 2); ok('neither can be applied')
+  assert.match(result.conflicts[0]!.reason, /never applied/); ok('and the reason says why')
+  assert.equal(await readFile(join(plain, 'z.txt'), 'utf8'), 'z\n'); ok('the project file is untouched')
+  assert.equal(await stat(join(plain, 'key.txt')).then(() => true, () => false), false); ok('and no link is made in the project')
+}
+
 await rm(base, { recursive: true, force: true })
 console.log(`\n${n} assertions passed`)

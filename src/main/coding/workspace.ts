@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { cp, lstat, mkdir, readdir, readFile, realpath, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, readFile, readlink, realpath, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import { createTwoFilesPatch } from 'diff'
 import type { ApplyResult, ChangeSet, FileChange } from '@shared/coding.js'
@@ -20,7 +20,12 @@ const run = promisify(execFile)
  * when undo is asked for.
  *
  * Dirty state is copied, not discarded: the baseline is what the user sees,
- * uncommitted edits included. Nothing here reads git history; git is only
+ * uncommitted edits included.
+ *
+ * A symlink in the copy is never followed here. A command in the box can make
+ * one point at a host file the box cannot see; reading it on the run's behalf
+ * would show that file in Changes. A link is recorded by its text, compared by
+ * its text, shown by its text, and never applied. Nothing here reads git history; git is only
  * asked which files exist, so `.gitignore` is honoured, and a folder that is
  * not a repository is walked instead.
  */
@@ -30,7 +35,7 @@ const SKIP = new Set(['.git', 'node_modules', 'dist', 'out', '.build', '.lowerbe
 
 export interface Manifest {
   projectRoot: string
-  /** Relative path → sha256 of content at copy time. */
+  /** Relative path → sha256 of content at copy time, or `link:` and the link's text in the copy. */
   files: Record<string, string>
   createdAt: number
 }
@@ -50,7 +55,7 @@ export class Workspace {
       const to = join(dir, rel)
       await mkdir(dirname(to), { recursive: true })
       await cp(from, to, { dereference: false })
-      files[rel] = await hashFile(from)
+      files[rel] = (await lstat(to)).isSymbolicLink() ? LINK + (await readlink(to)) : await hashFile(from)
     }
     const manifest: Manifest = { projectRoot, files, createdAt: Date.now() }
     await writeFile(join(dir, '.lowerbeam-baseline.json'), JSON.stringify(manifest))
@@ -68,26 +73,32 @@ export class Workspace {
    * to — not re-listed, since git lists a project (tracked files under a
    * fixture's node_modules, symlinks) differently from the walk that lists
    * a copy, and the difference is not a change the run made. Then the copy
-   * is walked for what the baseline does not name.
+   * is walked for what the baseline does not name. A link the run made or
+   * changed is a `symlink` entry showing only where it points.
    */
   async changes(): Promise<ChangeSet> {
     const files: FileChange[] = []
     for (const rel of Object.keys(this.manifest.files).sort()) {
       const before = this.manifest.files[rel]!
       const path = join(this.root, rel)
-      const after = await hashFileOrNull(path)
-      if (after === null) {
-        // Gone, or a link whose target cannot be read from here: only the
-        // first is a deletion.
-        if (await linkExists(path)) continue
+      const st = await lstatOrNull(path)
+      if (st === null) {
         files.push({ path: rel, kind: 'deleted', diff: '' })
-      } else if (after !== before) {
-        files.push({ path: rel, kind: 'modified', diff: await this.diffFor(rel, rel) })
+      } else if (st.isSymbolicLink()) {
+        const text = await readlink(path)
+        if (before !== LINK + text) files.push({ path: rel, kind: 'symlink', diff: linkDiff(text) })
+      } else if (st.isFile()) {
+        if ((await hashFile(path)) !== before) files.push({ path: rel, kind: 'modified', diff: await this.diffFor(rel, rel) })
       }
     }
-    for (const rel of (await listProjectFiles(this.root)).sort()) {
+    const { files: made, links } = await walkCopy(this.root, this.root)
+    for (const rel of made.sort()) {
       if (rel in this.manifest.files || rel.startsWith('.lowerbeam-')) continue
       files.push({ path: rel, kind: 'created', diff: await this.diffFor(rel, null) })
+    }
+    for (const rel of links.sort()) {
+      if (rel in this.manifest.files) continue
+      files.push({ path: rel, kind: 'symlink', diff: linkDiff(await readlink(join(this.root, rel))) })
     }
     return { files, baselineAt: this.manifest.createdAt }
   }
@@ -113,9 +124,18 @@ export class Workspace {
 
     for (const change of changes.files) {
       const target = join(project, change.path)
+      if (change.kind === 'symlink') {
+        conflicts.push({ path: change.path, reason: 'the run left a symlink here, and a link is never applied' })
+        continue
+      }
       const unsafe = await unsafeTarget(project, change.path)
       if (unsafe) {
         conflicts.push({ path: change.path, reason: unsafe })
+        continue
+      }
+      const source = join(this.root, change.path)
+      if (change.kind !== 'deleted' && !(await lstatOrNull(source))?.isFile()) {
+        conflicts.push({ path: change.path, reason: 'the run’s copy no longer holds a plain file here' })
         continue
       }
       const baseline = this.manifest.files[change.path]
@@ -145,7 +165,7 @@ export class Workspace {
           conflicts.push({ path: change.path, reason: raced })
           continue
         }
-        await cp(join(this.root, change.path), target)
+        await cp(source, target)
       }
       applied.push(change.path)
     }
@@ -200,6 +220,7 @@ export class Workspace {
   private async diffFor(rel: string, baselineRel: string | null): Promise<string> {
     const after = await readTextOrNull(join(this.root, rel))
     const before = baselineRel ? await readTextOrNull(join(this.manifest.projectRoot, baselineRel)) : ''
+    if (after === LINKED || before === LINKED) return '(a symlink: not read)'
     if (after === null || before === null) return '(binary)'
     return createTwoFilesPatch(`a/${rel}`, `b/${rel}`, before, after, '', '', { context: 3 })
   }
@@ -233,6 +254,26 @@ export async function listProjectFiles(root: string): Promise<string[]> {
   } catch {
     return walk(root, root)
   }
+}
+
+/**
+ * A copy's plain files and its links, listed apart. The walk never descends
+ * through a link, so a link to a folder is one entry, not the folder.
+ */
+async function walkCopy(root: string, dir: string): Promise<{ files: string[]; links: string[] }> {
+  const out = { files: [] as string[], links: [] as string[] }
+  for (const e of await readdir(dir, { withFileTypes: true })) {
+    if (SKIP.has(e.name)) continue
+    const abs = join(dir, e.name)
+    const rel = relative(root, abs).split(sep).join('/')
+    if (e.isDirectory()) {
+      const inner = await walkCopy(root, abs)
+      out.files.push(...inner.files)
+      out.links.push(...inner.links)
+    } else if (e.isFile()) out.files.push(rel)
+    else if (e.isSymbolicLink()) out.links.push(rel)
+  }
+  return out
 }
 
 async function walk(root: string, dir: string): Promise<string[]> {
@@ -275,12 +316,18 @@ async function unsafeTarget(root: string, rel: string): Promise<string | null> {
   return null
 }
 
-async function linkExists(path: string): Promise<boolean> {
+/** The manifest's mark for a link, recorded by its text rather than by what it points at. */
+const LINK = 'link:'
+
+function linkDiff(text: string): string {
+  return `symlink → ${text}`
+}
+
+async function lstatOrNull(path: string): Promise<Awaited<ReturnType<typeof lstat>> | null> {
   try {
-    await lstat(path)
-    return true
+    return await lstat(path)
   } catch {
-    return false
+    return null
   }
 }
 
@@ -292,8 +339,12 @@ async function hashFileOrNull(path: string): Promise<string | null> {
   }
 }
 
-async function readTextOrNull(path: string): Promise<string | null> {
+/** What readTextOrNull returns for a link: it is not read. */
+const LINKED = Symbol('linked')
+
+async function readTextOrNull(path: string): Promise<string | null | typeof LINKED> {
   try {
+    if ((await lstat(path)).isSymbolicLink()) return LINKED
     const buf = await readFile(path)
     return buf.subarray(0, 8192).includes(0) ? null : buf.toString('utf8')
   } catch {
