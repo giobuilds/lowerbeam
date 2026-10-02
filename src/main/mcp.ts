@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { EventEmitter } from 'node:events'
 import type { McpServerConfig, McpServerState, ToolDefinition, ToolResult } from '@shared/types.js'
+import { serverEnv } from '@shared/mcpEnv.js'
 
 /**
  * A client for Model Context Protocol servers.
@@ -85,7 +86,9 @@ export class McpServer extends EventEmitter<McpEvents> {
 
     const child = spawn(this.config.command, this.config.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...this.config.env },
+      // Only what any program needs, then what this server's config names:
+      // not every secret in the environment Lowerbeam was started from.
+      env: serverEnv(process.env, this.config.env),
       detached: true
     })
     this.child = child

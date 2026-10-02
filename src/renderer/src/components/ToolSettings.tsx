@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { McpServerConfig, McpServerState, McpSnapshot } from '@shared/types.js'
 import { useChatStore } from '../state/chatStore.js'
 import { splitCommand, slug } from '@shared/command.js'
+import { INHERITED_ENV, envLines, parseEnvLines } from '@shared/mcpEnv.js'
 import { Field, inputClass } from './Field.js'
 
 /**
@@ -155,6 +156,8 @@ function McpServers({
   const remove = (id: string): void => {
     void onSave(configs.filter((c) => c.id !== id))
   }
+  const setEnv = (id: string, env: Record<string, string>): Promise<void> =>
+    onSave(configs.map((c) => (c.id === id ? { ...c, env } : c)))
 
   return (
     <section className="rounded border border-edge bg-ink/40 p-3">
@@ -176,6 +179,14 @@ function McpServers({
 
       {error && <p className="mt-2 text-[11px] text-rose-300">{error}</p>}
 
+      {configs.length > 0 && (
+        <p className="mt-2 text-[11px] leading-snug text-muted">
+          A server gets only {INHERITED_ENV.join(', ')} from Lowerbeam, and what its own environment names. Before
+          0.9.20 it got everything Lowerbeam was started with; a server that relied on a token from your shell, such
+          as GITHUB_TOKEN, needs it added under Environment.
+        </p>
+      )}
+
       {configs.length === 0 && !adding && (
         <p className="mt-2 text-[11px] text-muted">
           None configured. A server is any command that speaks MCP over stdin and stdout, such as{' '}
@@ -192,6 +203,7 @@ function McpServers({
             busy={busy}
             onToggle={() => toggle(config.id)}
             onRemove={() => remove(config.id)}
+            onSaveEnv={(env) => setEnv(config.id, env)}
           />
         ))}
       </ul>
@@ -215,15 +227,19 @@ function ServerRow({
   state,
   busy,
   onToggle,
-  onRemove
+  onRemove,
+  onSaveEnv
 }: {
   config: McpServerConfig
   state: McpServerState | undefined
   busy: boolean
   onToggle: () => void
   onRemove: () => void
+  onSaveEnv: (env: Record<string, string>) => Promise<void>
 }): React.JSX.Element {
   const [showLog, setShowLog] = useState(false)
+  const [editingEnv, setEditingEnv] = useState(false)
+  const own = Object.keys(config.env ?? {})
   const status = state?.status ?? 'stopped'
 
   return (
@@ -257,6 +273,22 @@ function ServerRow({
       <code className="mt-1 block truncate text-[11px] text-muted" title={commandLine(config)}>
         {commandLine(config)}
       </code>
+
+      <p className="mt-1 text-[11px] text-muted">
+        Environment: the basics{own.length > 0 ? `, and ${own.join(', ')}` : ', nothing of its own'}.{' '}
+        <button type="button" onClick={() => setEditingEnv(!editingEnv)} disabled={busy} className="hover:text-slate-200 disabled:opacity-50">
+          {editingEnv ? 'Close' : 'Edit'}
+        </button>
+      </p>
+      {editingEnv && (
+        <EnvEditor
+          initial={config.env}
+          onSave={async (env) => {
+            await onSaveEnv(env)
+            setEditingEnv(false)
+          }}
+        />
+      )}
 
       {state?.error && <p className="mt-1 text-[11px] text-rose-300">{state.error}</p>}
 
@@ -297,6 +329,7 @@ function AddServer({
 }): React.JSX.Element {
   const [name, setName] = useState('')
   const [command, setCommand] = useState('')
+  const [envText, setEnvText] = useState('')
   const [problem, setProblem] = useState('')
 
   const submit = (): void => {
@@ -305,7 +338,10 @@ function AddServer({
     if (!bin) return setProblem('Enter the command that starts the server.')
     if (!id) return setProblem('Give the server a name using letters or digits.')
     if (existing.some((c) => c.id === id)) return setProblem(`There is already a server called ${id}.`)
-    void onAdd({ id, name: name.trim() || bin, command: bin, args, enabled: true })
+    const parsed = parseEnvLines(envText)
+    if ('problem' in parsed) return setProblem(parsed.problem)
+    const env = Object.keys(parsed.env).length ? { env: parsed.env } : {}
+    void onAdd({ id, name: name.trim() || bin, command: bin, args, ...env, enabled: true })
   }
 
   return (
@@ -329,6 +365,16 @@ function AddServer({
           className={`${inputClass} font-mono text-xs`}
         />
       </Field>
+      <Field label="Environment" hint={`One NAME=value per line, for what the server needs beyond ${INHERITED_ENV.join(', ')}. Optional.`}>
+        <textarea
+          value={envText}
+          onChange={(e) => setEnvText(e.target.value)}
+          placeholder="GITHUB_TOKEN=…"
+          rows={2}
+          spellCheck={false}
+          className={`${inputClass} block w-full font-mono text-xs`}
+        />
+      </Field>
       {problem && <p className="text-[11px] text-rose-300">{problem}</p>}
       <div className="flex gap-2">
         <button
@@ -344,6 +390,36 @@ function AddServer({
           className="rounded border border-edge px-3 py-1 text-xs text-muted hover:text-slate-200"
         >
           Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** A server's own environment as NAME=value lines; saving restarts the server with it. */
+function EnvEditor({ initial, onSave }: { initial: Record<string, string> | undefined; onSave: (env: Record<string, string>) => Promise<void> }): React.JSX.Element {
+  const [text, setText] = useState(envLines(initial))
+  const [problem, setProblem] = useState('')
+  const save = (): void => {
+    const parsed = parseEnvLines(text)
+    if ('problem' in parsed) return setProblem(parsed.problem)
+    void onSave(parsed.env)
+  }
+  return (
+    <div className="mt-1 space-y-1">
+      <textarea
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="GITHUB_TOKEN=…"
+        rows={3}
+        spellCheck={false}
+        className={`${inputClass} block w-full font-mono text-xs`}
+      />
+      {problem && <p className="text-[11px] text-rose-300">{problem}</p>}
+      <div>
+        <button type="button" onClick={save} className="rounded bg-accent px-3 py-1 text-xs font-medium text-ink">
+          Save and restart
         </button>
       </div>
     </div>

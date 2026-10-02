@@ -24,9 +24,11 @@ Measured or observed in this repo, so it is not rediscovered.
   event; only the reader's `handleFrom()` bound to a window. Since 0.9.19
   both serve only the app's own page, in its own window, as the top frame
   (`src/main/sender.ts`, #76). A run identity per request is still to come.
-- **MCP servers inherit the host environment and expose every tool.** Spawned
-  with `{...process.env, ...config.env}`, detached, all discovered tools
-  offered to chat. Acceptable for chat; a coding run must select per grant.
+- **MCP servers expose every tool.** Since 0.9.20 they no longer inherit the
+  host environment: only `PATH`, `HOME`, the locale, `TMPDIR` and `XDG_*`,
+  plus what their config names (`src/shared/mcpEnv.ts`, #77). All discovered
+  tools are still offered to chat. Acceptable for chat; a coding run must
+  select per grant.
 - **A chat gets `--ctx-size ÷ --parallel`, and a coding run will feel it
   harder.** Ornith-1.5-9B on the 8 GB card: 7,424 tokens per chat at four
   slots, 38,912 at one. With `--mmproj` loaded, `--fit` falls back to 4,096
