@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { cp, lstat, mkdir, readdir, readFile, readlink, realpath, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, cp, lstat, mkdir, readdir, readFile, readlink, realpath, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import { createTwoFilesPatch } from 'diff'
 import type { ApplyResult, ChangeSet, FileChange } from '@shared/coding.js'
 import { secretReason } from '../../agent/grant.js'
+import { writeFileAtomic } from '../atomicWrite.js'
 
 const run = promisify(execFile)
 
@@ -108,20 +109,26 @@ export class Workspace {
    * Put the run's changes into the project — each file only if the project
    * still holds what the baseline held. A file the user edited since is a
    * conflict, reported and left alone; nothing is merged and nothing is
-   * guessed. What was overwritten is kept beside the workspace so undo has
-   * something to restore. A path that goes through a symlink in the project
-   * is a conflict too: the copy has no such link, so the run wrote to a
-   * plain folder, and following the link would put the file wherever it
-   * points.
+   * guessed. A path that goes through a symlink in the project is a conflict
+   * too: the copy has no such link, so the run wrote to a plain folder, and
+   * following the link would put the file wherever it points.
+   *
+   * Undo has to survive a failure partway. So before a file is touched its
+   * original is copied, byte for byte, beside the workspace, and the undo
+   * record naming it is saved; only then is the project written. A file that
+   * cannot be written is a conflict with the reason, the rest go on, and
+   * whatever did change can be undone. Applying again adds to the record
+   * rather than replacing it.
    */
   async apply(): Promise<ApplyResult> {
     const changes = await this.changes()
     const project = await realpath(this.manifest.projectRoot)
-    const undoDir = join(this.root, '.lowerbeam-undo')
-    await mkdir(undoDir, { recursive: true })
+    const undoDir = join(this.root, UNDO_DIR)
+    await mkdir(join(undoDir, 'originals'), { recursive: true })
+    const record = (await this.undoRecord()) ?? { at: Date.now(), entries: {} }
+    const save = (): Promise<void> => writeFileAtomic(join(undoDir, 'record.json'), JSON.stringify(record))
     const applied: string[] = []
     const conflicts: Array<{ path: string; reason: string }> = []
-    const originals: Record<string, string | null> = {}
 
     for (const change of changes.files) {
       const target = join(project, change.path)
@@ -154,45 +161,57 @@ export class Workspace {
         continue
       }
 
-      originals[change.path] = current === null ? null : await readFile(target, 'utf8')
-      if (change.kind === 'deleted') {
-        await unlink(target)
-      } else {
-        await mkdir(dirname(target), { recursive: true })
-        // Checked again now the folders exist, in case one appeared as a
-        // link in between. The run cannot do that: it writes only the copy.
-        const raced = await unsafeTarget(project, change.path)
-        if (raced) {
-          conflicts.push({ path: change.path, reason: raced })
-          continue
+      try {
+        let original: string | null = null
+        if (current !== null) {
+          original = `${Object.keys(record.entries).length}-${Date.now()}`
+          await copyFile(target, join(undoDir, 'originals', original))
         }
-        await cp(source, target)
+        // Saved before the project is written: what is there now, and what
+        // will be. Undo restores from either, so a crash between the two
+        // still leaves the file undoable.
+        record.entries[change.path] = { original, before: current, after: change.kind === 'deleted' ? null : await hashFile(source) }
+        await save()
+        if (change.kind === 'deleted') {
+          await unlink(target)
+        } else {
+          await mkdir(dirname(target), { recursive: true })
+          // Checked again now the folders exist, in case one appeared as a
+          // link in between. The run cannot do that: it writes only the copy.
+          const raced = await unsafeTarget(project, change.path)
+          if (raced) throw new Error(raced)
+          await copyFile(source, target)
+        }
+        record.entries[change.path]!.after = await hashFileOrNull(target)
+        await save()
+        applied.push(change.path)
+      } catch (err) {
+        conflicts.push({ path: change.path, reason: `could not be applied: ${(err as Error).message}` })
+        // Whatever is there now is what undo answers to; if nothing changed,
+        // there is nothing to undo for this file.
+        const entry = record.entries[change.path]
+        if (entry) {
+          const now = await hashFileOrNull(target)
+          if (now === entry.before) delete record.entries[change.path]
+          else entry.after = now
+          await save().catch(() => undefined)
+        }
       }
-      applied.push(change.path)
     }
-
-    // The undo record: what each applied path held before, keyed to what it holds now.
-    const record: UndoRecord = { at: Date.now(), entries: {} }
-    for (const path of applied) {
-      const target = join(project, path)
-      record.entries[path] = { before: originals[path] ?? null, appliedHash: await hashFileOrNull(target) }
-    }
-    await writeFile(join(undoDir, 'record.json'), JSON.stringify(record))
     return { applied, conflicts }
   }
 
   /**
    * Reverse an apply — for each file, only if the project still holds exactly
-   * what was applied. A file edited since is left alone and reported.
+   * what was applied. A file edited since is left alone, reported, and kept in
+   * the record. The original comes back byte for byte, and is checked against
+   * the hash it had before it is reported restored.
    */
   async undo(): Promise<ApplyResult> {
-    let record: UndoRecord
-    try {
-      record = JSON.parse(await readFile(join(this.root, '.lowerbeam-undo', 'record.json'), 'utf8')) as UndoRecord
-    } catch {
-      return { applied: [], conflicts: [] }
-    }
+    const record = await this.undoRecord()
+    if (!record) return { applied: [], conflicts: [] }
     const project = await realpath(this.manifest.projectRoot)
+    const undoDir = join(this.root, UNDO_DIR)
     const applied: string[] = []
     const conflicts: Array<{ path: string; reason: string }> = []
     for (const [path, entry] of Object.entries(record.entries)) {
@@ -202,16 +221,52 @@ export class Workspace {
         conflicts.push({ path, reason: unsafe })
         continue
       }
-      if ((await hashFileOrNull(target)) !== entry.appliedHash) {
+      const now = await hashFileOrNull(target)
+      if (now !== entry.after && now !== entry.before) {
         conflicts.push({ path, reason: 'the file was edited in the project after the change was applied' })
         continue
       }
-      if (entry.before === null) await unlink(target)
-      else await writeFile(target, entry.before)
-      applied.push(path)
+      try {
+        if (now !== entry.before) {
+          if (entry.before === null) await unlink(target)
+          else if (entry.original !== null) await copyFile(join(undoDir, 'originals', entry.original), target)
+          else await writeFile(target, entry.text ?? '')
+          const restored = await hashFileOrNull(target)
+          if (restored !== entry.before) throw new Error('what was restored does not match the original')
+        }
+        delete record.entries[path]
+        applied.push(path)
+      } catch (err) {
+        conflicts.push({ path, reason: `could not be restored: ${(err as Error).message}` })
+      }
     }
-    await rm(join(this.root, '.lowerbeam-undo'), { recursive: true, force: true })
+    if (Object.keys(record.entries).length === 0) await rm(undoDir, { recursive: true, force: true })
+    else await writeFileAtomic(join(undoDir, 'record.json'), JSON.stringify(record))
     return { applied, conflicts }
+  }
+
+  /**
+   * The undo record, or null when there is none. One written before 0.9.21
+   * kept each original as text and the applied file's hash; it is read into
+   * the same shape, with the original's hash taken from the baseline.
+   */
+  private async undoRecord(): Promise<UndoRecord | null> {
+    let raw: { at: number; entries: Record<string, Partial<UndoEntry> & { appliedHash?: string | null; before?: string | null }> }
+    try {
+      raw = JSON.parse(await readFile(join(this.root, UNDO_DIR, 'record.json'), 'utf8'))
+    } catch {
+      return null
+    }
+    const entries: Record<string, UndoEntry> = {}
+    for (const [path, e] of Object.entries(raw.entries)) {
+      if ('appliedHash' in e) {
+        const text = e.before ?? null
+        entries[path] = { original: null, text: text ?? undefined, before: text === null ? null : (this.manifest.files[path] ?? null), after: e.appliedHash ?? null }
+      } else {
+        entries[path] = e as UndoEntry
+      }
+    }
+    return { at: raw.at, entries }
   }
 
   async discard(): Promise<void> {
@@ -227,9 +282,23 @@ export class Workspace {
   }
 }
 
+/** Beside the workspace's files, never a change: the undo record and the originals it names. */
+const UNDO_DIR = '.lowerbeam-undo'
+
+interface UndoEntry {
+  /** The original's copy under `originals/`, or null when the path held nothing. */
+  original: string | null
+  /** Only in a record from before 0.9.21: the original as text. */
+  text?: string
+  /** The original's hash, or null when the path held nothing. */
+  before: string | null
+  /** The hash of what the project holds after the apply, or null when it holds nothing. */
+  after: string | null
+}
+
 interface UndoRecord {
   at: number
-  entries: Record<string, { before: string | null; appliedHash: string | null }>
+  entries: Record<string, UndoEntry>
 }
 
 /**
