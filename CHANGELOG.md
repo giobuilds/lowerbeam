@@ -20,6 +20,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- A local API for other programs — editors, agents, scripts — on the Server
+  tab: a port that stays the same across launches, an optional API key that
+  every client sends (the app's own included), copyable `/v1` URLs, and the
+  local network only when asked for and only with a key. A port already in
+  use is refused with a clear message, and the key is masked in the server
+  log. (#104)
+
 ## [0.10.0] - 2026-10-02
 
 ### Added

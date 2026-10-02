@@ -29,7 +29,10 @@ export const serverHandoffSchema = z.object({
   pid: z.number().int().positive(),
   port: z.number().int().min(1).max(65535),
   startedAt: z.number(),
-  config: launchConfigSchema
+  config: launchConfigSchema,
+  /** The key and binding it was launched with, so an adopted server is reached the same way. */
+  apiKey: z.string().nullable().default(null),
+  lan: z.boolean().default(false)
 })
 
 export type ServerHandoff = z.infer<typeof serverHandoffSchema>

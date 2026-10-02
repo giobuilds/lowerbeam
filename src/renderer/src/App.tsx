@@ -196,7 +196,7 @@ export default function App(): React.JSX.Element {
                 {status?.loadStage && <span className="text-amber-200">{status.loadStage}…</span>}
                 {status?.phase === 'ready' && status.port && (
                   <span>
-                    listening on <code className="text-slate-300">127.0.0.1:{status.port}</code>
+                    listening on <code className="text-slate-300">{status.lan ? 'every interface' : '127.0.0.1'}:{status.port}</code>
                   </span>
                 )}
                 {status?.pid && <span>pid {status.pid}</span>}

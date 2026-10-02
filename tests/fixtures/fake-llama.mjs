@@ -7,6 +7,8 @@ const get = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : un
 const port = Number(get('--port'))
 const model = get('--model')
 const loadMs = Number(process.env.FAKE_LOAD_MS ?? 1500)
+const host = get('--host') ?? '127.0.0.1'
+const apiKey = get('--api-key')
 
 let ready = false
 process.stderr.write(`srv    load_model: loading model '${model}'\n`)
@@ -16,8 +18,17 @@ createServer((req, res) => {
     else { res.writeHead(503, {'content-type':'application/json'}); res.end('{"error":{"code":503,"message":"Loading model"}}') }
     return
   }
+  // As llama-server does: with --api-key, everything but /health wants the key.
+  if (apiKey && req.headers.authorization !== `Bearer ${apiKey}`) {
+    res.writeHead(401, {'content-type':'application/json'}); res.end('{"error":{"code":401,"message":"Invalid API Key"}}')
+    return
+  }
+  if (req.url === '/props' && ready) {
+    res.writeHead(200, {'content-type':'application/json'}); res.end('{"default_generation_settings":{"n_ctx":4096}}')
+    return
+  }
   res.writeHead(404); res.end()
-}).listen(port, '127.0.0.1', () => {
+}).listen(port, host, () => {
   setTimeout(() => {
     process.stderr.write('main: model loaded\n')
     process.stderr.write(`main: HTTP server is listening, hostname: 127.0.0.1, port: ${port}, http threads: 4\n`)

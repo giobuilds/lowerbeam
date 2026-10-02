@@ -3,7 +3,8 @@ import type { Readable } from 'node:stream'
 import { EventEmitter } from 'node:events'
 import { createServer } from 'node:net'
 import { readFile, writeFile, rm } from 'node:fs/promises'
-import type { BinaryInfo, LaunchConfig, ServerPhase, ServerStatus } from '@shared/types.js'
+import { DEFAULT_LOCAL_API, type BinaryInfo, type LaunchConfig, type LocalApiSettings, type ServerPhase, type ServerStatus } from '@shared/types.js'
+import { authHeaders } from '@shared/chatClient.js'
 import { serverHandoffSchema, type ServerHandoff } from '@shared/schema.js'
 import { LogBuffer, LineSplitter } from './logBuffer.js'
 
@@ -65,6 +66,9 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
   private modalities: ServerStatus['modalities'] = null
   private supportsTools = false
   private contextPerSlot: number | null = null
+  /** The key and binding the running server was launched with. */
+  private apiKey: string | null = null
+  private lan = false
 
   private healthTimer: NodeJS.Timeout | null = null
   private healthFailures = 0
@@ -102,7 +106,9 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
       adopted: this.adopted,
       modalities: this.modalities,
       supportsTools: this.supportsTools,
-      contextPerSlot: this.contextPerSlot
+      contextPerSlot: this.contextPerSlot,
+      apiKey: this.apiKey,
+      lan: this.lan
     }
   }
 
@@ -122,14 +128,28 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
     this.emit('log')
   }
 
-  async start(config: LaunchConfig): Promise<void> {
+  async start(config: LaunchConfig, api: LocalApiSettings = DEFAULT_LOCAL_API): Promise<void> {
     if (this.child) throw new Error('A server is already running. Stop it first.')
 
     if (!this.binary.path) throw new Error('No llama.cpp binary selected.')
-    const port = await pickFreePort()
-    const args = buildArgs(config, port, this.binary)
+    // The local network only with a key: an open llama-server on the LAN is
+    // anyone's to use, and --slots and --props tell them what it holds.
+    if (api.lan && !api.apiKey) throw new Error('Listening on the local network needs an API key. Set one in Local API, or turn the network off.')
+    const host = api.lan ? '0.0.0.0' : '127.0.0.1'
+    let port: number
+    if (api.port) {
+      if (!(await portFree(api.port, host))) {
+        throw new Error(`Port ${api.port} is in use by another program. Choose another in Local API, or leave it empty for a free one each launch.`)
+      }
+      port = api.port
+    } else {
+      port = await pickFreePort()
+    }
+    const args = buildArgs(config, port, this.binary, { host, apiKey: api.apiKey || null })
 
     this.config = config
+    this.apiKey = api.apiKey || null
+    this.lan = api.lan
     this.port = port
     this.exitCode = null
     this.readyAt = null
@@ -137,7 +157,8 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
     this.healthFailures = 0
     this.startedAt = Date.now()
     this.setPhase('starting', { error: null, stage: 'Spawning process' })
-    this.appendLog('app', `$ ${this.binary.path} ${args.join(' ')}`)
+    // The log is on screen; the key is not shown in it.
+    this.appendLog('app', `$ ${this.binary.path} ${redactKey(args).join(' ')}`)
 
     const child = spawn(this.binary.path, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -178,7 +199,7 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
       }
     })
 
-    await this.writeHandoff({ pid: child.pid!, port, startedAt: this.startedAt, config })
+    await this.writeHandoff({ pid: child.pid!, port, startedAt: this.startedAt, config, apiKey: this.apiKey, lan: this.lan })
     this.startHealthPolling()
   }
 
@@ -287,7 +308,7 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
     const url = this.baseUrl
     if (!url) return
     try {
-      const res = await fetch(`${url}/props`, { signal: AbortSignal.timeout(5000) })
+      const res = await fetch(`${url}/props`, { headers: authHeaders(this.apiKey), signal: AbortSignal.timeout(5000) })
       if (!res.ok) return
       const props = (await res.json()) as {
         modalities?: { vision?: boolean; audio?: boolean; video?: boolean }
@@ -424,6 +445,8 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
       this.pid = handoff.pid
       this.port = handoff.port
       this.config = handoff.config
+      this.apiKey = handoff.apiKey
+      this.lan = handoff.lan
       this.startedAt = handoff.startedAt
       this.readyAt = Date.now()
       this.adopted = true
@@ -442,14 +465,19 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
  * installed: the unified CLI needs a `serve` subcommand, and its `--flash-attn`
  * takes an explicit on/off rather than being a bare boolean.
  */
-export function buildArgs(config: LaunchConfig, port: number, binary: BinaryInfo): string[] {
+export function buildArgs(
+  config: LaunchConfig,
+  port: number,
+  binary: BinaryInfo,
+  api: { host?: string; apiKey?: string | null } = {}
+): string[] {
   const canFit = binary.flags.includes('--fit')
   const autoFit = config.autoFit && canFit
 
   const args: string[] = [
     ...binary.argvPrefix,
     '--model', config.modelPath,
-    '--host', '127.0.0.1',
+    '--host', api.host ?? '127.0.0.1',
     '--port', String(port),
     '--parallel', String(config.parallel),
     '--cache-type-k', config.cacheTypeK,
@@ -479,6 +507,7 @@ export function buildArgs(config: LaunchConfig, port: number, binary: BinaryInfo
   } else if (config.flashAttn) {
     args.push('--flash-attn')
   }
+  if (api.apiKey) args.push('--api-key', api.apiKey)
   if (config.noWarmup) args.push('--no-warmup')
   if (config.threads > 0) args.push('--threads', String(config.threads))
   if (config.alias) args.push('--alias', config.alias)
@@ -487,6 +516,20 @@ export function buildArgs(config: LaunchConfig, port: number, binary: BinaryInfo
   const extra = config.extraArgs.trim()
   if (extra) args.push(...extra.split(/\s+/))
   return args
+}
+
+/** The argv with the value after --api-key masked, for anything a person might see or share. */
+export function redactKey(args: string[]): string[] {
+  return args.map((a, i) => (i > 0 && args[i - 1] === '--api-key' ? '••••' : a))
+}
+
+/** Whether a port can be bound on `host` right now: a fixed port someone else holds is refused before spawning. */
+export function portFree(port: number, host = '127.0.0.1'): Promise<boolean> {
+  return new Promise((resolve) => {
+    const srv = createServer()
+    srv.once('error', () => resolve(false))
+    srv.listen(port, host, () => srv.close(() => resolve(true)))
+  })
 }
 
 /** Bind :0, note what the OS handed us, release it. Avoids hardcoding 8080. */

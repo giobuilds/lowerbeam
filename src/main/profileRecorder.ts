@@ -1,6 +1,7 @@
 import { basename } from 'node:path'
 import type { ServerStatus } from '@shared/types.js'
 import type { ServerSupervisor } from './supervisor.js'
+import { authHeaders } from '@shared/chatClient.js'
 import { modelKey, type ProfileStore } from './profiles.js'
 
 /**
@@ -38,6 +39,7 @@ async function saveProfile(profiles: ProfileStore, status: ServerStatus): Promis
   try {
     if (status.port) {
       const res = await fetch(`http://127.0.0.1:${status.port}/props`, {
+        headers: authHeaders(status.apiKey),
         signal: AbortSignal.timeout(3000)
       })
       if (res.ok) {

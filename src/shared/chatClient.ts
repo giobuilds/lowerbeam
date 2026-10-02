@@ -127,8 +127,19 @@ interface StreamChunk {
   error?: { message?: string }
 }
 
+/** Where a llama-server is, and the key it wants. */
+export interface ServerEndpoint {
+  url: string
+  apiKey?: string | null
+}
+
+/** The Authorization header for a server's key, or nothing when it has none. */
+export function authHeaders(apiKey: string | null | undefined): Record<string, string> {
+  return apiKey ? { authorization: `Bearer ${apiKey}` } : {}
+}
+
 export async function streamChat(
-  baseUrl: string,
+  endpoint: string | ServerEndpoint,
   messages: ChatTurn[],
   settings: ChatSettingsView,
   signal: AbortSignal,
@@ -136,11 +147,12 @@ export async function streamChat(
   /** Sent only when tools are enabled; each definition costs tokens every time. */
   tools?: unknown[]
 ): Promise<void> {
+  const { url: baseUrl, apiKey } = typeof endpoint === 'string' ? { url: endpoint, apiKey: null } : endpoint
   let res: Response
   try {
     res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...authHeaders(apiKey) },
       signal,
       body: JSON.stringify({
         messages: messages.map(encodeTurn),

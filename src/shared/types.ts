@@ -139,7 +139,27 @@ export interface ServerStatus {
    * from the server rather than assumed.
    */
   supportsTools: boolean
+  /** The API key the running server was launched with; null when it has none. Every client sends it. */
+  apiKey: string | null
+  /** Whether the running server listens on the local network as well as this computer. */
+  lan: boolean
 }
+
+/**
+ * The server as an API for other programs — editors, agents, scripts: a port
+ * that stays put, a key, and the local network only when asked for and only
+ * with a key. Applies from the next launch.
+ */
+export interface LocalApiSettings {
+  /** A fixed port, or null for a free one each launch. */
+  port: number | null
+  /** Sent as a Bearer token by every client; empty for none. */
+  apiKey: string
+  /** Listen on every interface, not only loopback. Refused without a key. */
+  lan: boolean
+}
+
+export const DEFAULT_LOCAL_API: LocalApiSettings = { port: null, apiKey: '', lan: false }
 
 export type LogStream = 'stdout' | 'stderr' | 'app'
 

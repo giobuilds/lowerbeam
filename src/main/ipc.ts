@@ -2,6 +2,7 @@ import { app, ipcMain, dialog, BrowserWindow, type WebContents } from 'electron'
 import { createRequire } from 'node:module'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { networkInterfaces } from 'node:os'
 import { conversationMarkdown, exportFileName } from '@shared/chatExport.js'
 import { ZodError } from 'zod'
 import type {
@@ -11,6 +12,7 @@ import type {
   BinaryInfo,
   ConversationSummaryView,
   ConversationSearchHitView,
+  LocalApiSettings,
   PromptPreset,
   ConversationView,
   DownloadJob,
@@ -139,9 +141,19 @@ export function registerIpc(
   handle<ServerStatus>(IPC.serverStart, async (raw) => {
     // Renderer input reaches a process spawn, so it is validated, not trusted.
     const config = launchConfigSchema.parse(raw)
-    await supervisor.start(config)
+    await supervisor.start(config, settings.current.localApi)
     return supervisor.status
   })
+
+  handle<LocalApiSettings>(IPC.localApiGet, () => settings.current.localApi)
+  handle<LocalApiSettings>(IPC.localApiSet, async (raw) => (await settings.patch({ localApi: raw as LocalApiSettings })).localApi)
+  // Where another machine would reach this one: each non-internal IPv4 address.
+  handle<string[]>(IPC.lanAddresses, () =>
+    Object.values(networkInterfaces())
+      .flat()
+      .filter((a): a is NonNullable<typeof a> => Boolean(a) && a!.family === 'IPv4' && !a!.internal)
+      .map((a) => a.address)
+  )
 
   handle<ServerStatus>(IPC.serverStop, async () => {
     await supervisor.stop()

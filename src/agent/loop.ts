@@ -26,6 +26,8 @@ import { COMPACT_AT } from '@context/compact.js'
 
 export interface RunRequest {
   baseUrl: string
+  /** The server's API key, when it was launched with one. */
+  apiKey?: string | null
   model: string
   task: string
   grant: Grant
@@ -292,7 +294,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
     const t0 = Date.now()
 
     await streamChat(
-      req.baseUrl,
+      { url: req.baseUrl, apiKey: req.apiKey },
       sent,
       req.settings,
       deadline,

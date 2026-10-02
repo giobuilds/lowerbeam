@@ -33,6 +33,14 @@ const settingsSchema = z.object({
     .array(z.object({ id: z.string().min(1).max(64), name: z.string().min(1).max(80), text: z.string().max(20_000) }))
     .max(50)
     .default([]),
+  /** The server as an API for other programs: fixed port, key, local network. */
+  localApi: z
+    .object({
+      port: z.number().int().min(1024).max(65535).nullable().default(null),
+      apiKey: z.string().max(200).regex(/^[\x21-\x7e]*$/, 'printable characters, no spaces').default(''),
+      lan: z.boolean().default(false)
+    })
+    .default({ port: null, apiKey: '', lan: false }),
   /** Whether to look for a new release on GitHub. On unless turned off. */
   updateChecks: z.boolean().default(true),
   /** Extra directories to scan for GGUF files, beyond the defaults. */
@@ -72,6 +80,7 @@ const DEFAULTS: Settings = {
   mcpServers: [],
   searxngUrl: '',
   promptPresets: [],
+  localApi: { port: null, apiKey: '', lan: false },
   updateChecks: true
 }
 
