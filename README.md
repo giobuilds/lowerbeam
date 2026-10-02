@@ -172,12 +172,18 @@ Five documents, meant to be read in this order:
 - [Coding: the plan](docs/coding-plan.md) — what is actually committed to from
   the architecture, stage by stage, with the trial that picks the engine and
   the gates each stage has to pass.
-- [Stage 0 results](docs/stage0-results.md) — the first numbers: ten read-only
-  tasks, three local models, three runs each, and the mistake that invalidated
-  the first attempt.
+- [Stage 0 results](docs/stage0-results.md) — the numbers behind each
+  decision: read-only, write, recover and crossover tasks on local
+  models, the memory a task needs against what a launch supplies, a held-out
+  set for a fine-tune, and Pi and OpenCode run on the same tasks against the
+  reference loop, which stays.
 
-None of this is built yet; the reasoning and the measurements are written down
-so the work can start from something.
+Stages 1 and 2 are built: the Coding tab, its journal, and edits in a copy
+that you review and apply. Stage 3, running commands in a sandbox, is not.
+On Ornith-1.5-9B the reference loop passes 29 of 30 read-only tasks and
+completes 22 of 30 write tasks with its round cap lifted to 40; the app keeps
+a cap of 12 until the next matrix says whether the cap or folding older tool
+results is what holds it back.
 
 ## Licence
 
