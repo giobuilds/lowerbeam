@@ -178,10 +178,12 @@ timeline without a separate project.
 Two of its observations are still accurate after the work since 0.4.1 and are
 worth carrying forward as constraints:
 
-- The generic IPC wrapper does not validate the sender. Only the reader
-  handlers do. A coding API must bind requests to the authorised frame.
+- The generic IPC wrapper did not validate the sender; only the reader
+  handlers did. Since 0.9.19 every handler, and the context menu's
+  listener, serves only the app's own page in its own window as the top
+  frame (`src/main/sender.ts`, #76).
 - MCP servers start with the host's environment and expose every discovered
   tool. That is acceptable for chat and not for a coding run, which should
   select servers and tools per grant.
 
-Both are Stage 1 work.
+Both were Stage 1 work; the second is still open (#77).

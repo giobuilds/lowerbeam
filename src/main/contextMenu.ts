@@ -1,5 +1,6 @@
 import { clipboard, ipcMain, shell, type BrowserWindow } from 'electron'
 import { IPC } from '@shared/ipc.js'
+import { isAppSender } from './sender.js'
 import type { ContextMenuCommand, ContextMenuRequest } from '@shared/types.js'
 
 /**
@@ -36,6 +37,7 @@ export function attachContextMenu(win: BrowserWindow): void {
 /** Registered once; the window is found from the sender so it works per window. */
 export function registerContextMenuCommands(): void {
   ipcMain.on(IPC.contextMenuCommand, (event, raw: ContextMenuCommand) => {
+    if (!isAppSender(event)) return
     const contents = event.sender
     switch (raw?.type) {
       case 'replace-misspelling':

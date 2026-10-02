@@ -17,6 +17,7 @@ import { attachContextMenu, registerContextMenuCommands } from './contextMenu.js
 import { attachReader } from './reader.js'
 import { CodingSupervisor } from './coding/supervisor.js'
 import { isWebUrl } from '@shared/url.js'
+import { APP_INDEX_PATH, isAppUrl, trustWindow } from './sender.js'
 import type { BinaryInfo } from '@shared/types.js'
 
 const dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -47,6 +48,7 @@ function createWindow(): BrowserWindow {
   })
 
   win.once('ready-to-show', () => win.show())
+  trustWindow(win)
   attachContextMenu(win)
   const reader = attachReader(win)
 
@@ -69,19 +71,9 @@ function createWindow(): BrowserWindow {
   if (process.env['ELECTRON_RENDERER_URL']) {
     void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    void win.loadFile(join(dirname, '../renderer/index.html'))
+    void win.loadFile(APP_INDEX_PATH)
   }
   return win
-}
-
-/**
- * Whether a URL is the app itself: its own files in a build, or the dev server.
- * Anything else — including a reload of a page already navigated to — is not.
- */
-export function isAppUrl(url: string): boolean {
-  const dev = process.env['ELECTRON_RENDERER_URL']
-  if (dev) return url.startsWith(dev)
-  return url.startsWith('file://')
 }
 
 /**
