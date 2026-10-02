@@ -102,7 +102,11 @@ export const conversationSchema = z.object({
     .nullable()
     .default(null),
   /** Whether to compact on its own when the window is nearly full. */
-  autoCompact: z.boolean().default(true)
+  autoCompact: z.boolean().default(true),
+  /** What replies must be. The text of both constraints is kept, so switching back loses nothing. */
+  output: z
+    .object({ mode: z.enum(['text', 'json', 'grammar']), schema: z.string().max(50_000), grammar: z.string().max(50_000) })
+    .default({ mode: 'text', schema: '', grammar: '' })
 })
 
 export type ChatSettings = z.infer<typeof chatSettingsSchema>
@@ -227,7 +231,8 @@ export class ConversationStore {
       messages: [],
       settings: DEFAULT_CHAT_SETTINGS,
       compaction: null,
-      autoCompact: true
+      autoCompact: true,
+      output: { mode: 'text', schema: '', grammar: '' }
     })
   }
 

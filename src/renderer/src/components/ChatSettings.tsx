@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { PromptPreset } from '@shared/types.js'
+import { DEFAULT_OUTPUT, outputConstraint, type OutputMode } from '@shared/structuredOutput.js'
 import { activeConversation, useChatStore } from '../state/chatStore.js'
 import { useServerStore } from '../state/serverStore.js'
 
@@ -140,6 +141,8 @@ export function ChatSettings({
           />
         </label>
 
+        <OutputFormat />
+
         <div className="grid grid-cols-3 gap-3">
           <Slider label="Temperature" value={s.temperature} min={0} max={2} step={0.05}
             onChange={(v) => void setSettings({ temperature: v })} />
@@ -234,6 +237,60 @@ function Presets({ current, onApply }: { current: string; onApply: (text: string
         </button>
       )}
     </span>
+  )
+}
+
+const SCHEMA_EXAMPLE = '{\n  "type": "object",\n  "properties": { "answer": { "type": "string" }, "confidence": { "type": "number" } },\n  "required": ["answer"]\n}'
+const GRAMMAR_EXAMPLE = 'root ::= "yes" | "no"'
+
+/**
+ * What replies must be: free text, JSON matching a schema, or text matching a
+ * GBNF grammar. Checked as it is typed, and again before anything is sent.
+ * While a reply is constrained, tools are not offered: llama.cpp does not do
+ * both in one request.
+ */
+function OutputFormat(): React.JSX.Element | null {
+  const active = useChatStore(activeConversation)
+  const setOutput = useChatStore((s) => s.setOutput)
+  if (!active) return null
+  const output = { ...DEFAULT_OUTPUT, ...active.output }
+  const check = outputConstraint(output)
+  const text = output.mode === 'json' ? output.schema : output.grammar
+  return (
+    <div className="block">
+      <span className="flex items-center gap-2 text-[11px] font-medium text-muted">
+        Reply format
+        <select
+          value={output.mode}
+          onChange={(e) => void setOutput({ mode: e.target.value as OutputMode })}
+          className="rounded border border-edge bg-ink px-1 py-0.5 text-[11px] font-normal text-slate-200 outline-none"
+        >
+          <option value="text">Free text</option>
+          <option value="json">JSON matching a schema</option>
+          <option value="grammar">Text matching a grammar (GBNF)</option>
+        </select>
+        {output.mode !== 'text' && active.tools.length > 0 && <span className="font-normal text-amber-200/80">tools are not offered while the reply is constrained</span>}
+      </span>
+      {output.mode !== 'text' && (
+        <>
+          <textarea
+            value={text}
+            onChange={(e) => void setOutput(output.mode === 'json' ? { schema: e.target.value } : { grammar: e.target.value })}
+            rows={4}
+            spellCheck={false}
+            placeholder={output.mode === 'json' ? SCHEMA_EXAMPLE : GRAMMAR_EXAMPLE}
+            className="mt-1 w-full resize-y rounded border border-edge bg-ink px-2 py-1.5 font-mono text-[11px] outline-none focus:border-accent"
+          />
+          <span className={`text-[10px] ${check.ok ? 'text-muted/70' : 'text-rose-300'}`}>
+            {check.ok
+              ? output.mode === 'json'
+                ? 'The reply will be JSON that matches this schema.'
+                : 'The reply will match this grammar.'
+              : check.error}
+          </span>
+        </>
+      )}
+    </div>
   )
 }
 
