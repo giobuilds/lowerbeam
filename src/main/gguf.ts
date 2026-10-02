@@ -94,6 +94,29 @@ export interface GgufMetadata {
   expertCount: number | null
   expertUsedCount: number | null
   expertFeedForwardLength: number | null
+  /**
+   * Bytes of routed-expert tensors (`blk.N.ffn_*_exps`) in each block, read
+   * from the tensor table: what --cpu-moe moves to system RAM. Measured from
+   * the file because quantisations like Unsloth's UD keep experts at far
+   * fewer bits than attention, so their share of the parameters overstates
+   * their share of the bytes. Absent when the table was not read.
+   */
+  expertBytesPerBlock?: number[] | null
+  /**
+   * Bytes that stay in system RAM even at full offload, from the tensor table:
+   * the input embeddings. That is the token embedding when the model has a
+   * separate output tensor — when the two are tied, llama.cpp keeps it on the
+   * host and puts a copy on the GPU as the output, so nothing is saved — and a
+   * per-layer embedding table where there is one (Gemma 4: 2.6 GiB of a
+   * 6.3 GiB file). Null when the table was not read.
+   */
+  embeddingBytes?: number | null
+  /**
+   * Bytes of the next-token-prediction blocks, from the tensor table: the
+   * server reports them as unused tensors and does not load them (154 MiB on
+   * Ornith-1.5-9B).
+   */
+  unusedBytes?: number | null
 }
 
 class Cursor {
@@ -238,6 +261,10 @@ export interface GgufHeader {
   arrayLengths: Map<string, number>
   /** True when the buffer ran out before every key was read. */
   truncated: boolean
+  /** Each tensor's name and offset into the data section, when asked for. */
+  tensors?: Array<{ name: string; offset: number }>
+  /** Where the data section starts in the file, when the tensors were read. */
+  dataStart?: number
 }
 
 export interface ParseOptions {
@@ -251,6 +278,8 @@ export interface ParseOptions {
    * reach a vocabulary list that barely moves the estimate.
    */
   allowTruncated?: boolean
+  /** Also read the tensor table that follows the keys: names and data offsets, not the data. */
+  tensors?: boolean
 }
 
 export function parseGgufHeader(buf: Buffer, options: ParseOptions = {}): GgufHeader {
@@ -258,7 +287,7 @@ export function parseGgufHeader(buf: Buffer, options: ParseOptions = {}): GgufHe
   if (c.u32() !== GGUF_MAGIC) throw new Error('gguf: bad magic (not a GGUF file)')
   const version = c.u32()
   if (version < 2 || version > 3) throw new Error(`gguf: unsupported version ${version}`)
-  c.u64() // tensor count — not needed here
+  const tensorCount = c.u64()
   const kvCount = c.u64()
 
   const kv = new Map<string, GgufValue>()
@@ -284,7 +313,72 @@ export function parseGgufHeader(buf: Buffer, options: ParseOptions = {}): GgufHe
       throw err
     }
   }
-  return { kv, arrayLengths, truncated }
+  if (!options.tensors || truncated) return { kv, arrayLengths, truncated }
+
+  const tensors: Array<{ name: string; offset: number }> = []
+  for (let i = 0; i < tensorCount; i++) {
+    const name = c.str()
+    const dims = c.u32()
+    for (let d = 0; d < dims; d++) c.u64()
+    c.u32() // ggml type: the size comes from the offsets instead, which needs no type table
+    tensors.push({ name, offset: c.u64() })
+  }
+  const alignment = num(kv.get('general.alignment')) ?? 32
+  const dataStart = Math.ceil(c.offset / alignment) * alignment
+  return { kv, arrayLengths, truncated, tensors, dataStart }
+}
+
+/** Each tensor's size: the gap to the next one's offset, the last one's to the end of the file. */
+function tensorSizes(header: GgufHeader, fileSize: number): Map<string, number> {
+  const sizes = new Map<string, number>()
+  if (!header.tensors?.length || header.dataStart === undefined) return sizes
+  const sorted = [...header.tensors].sort((a, b) => a.offset - b.offset)
+  sorted.forEach((t, i) => {
+    const end = i + 1 < sorted.length ? sorted[i + 1]!.offset : fileSize - header.dataStart!
+    sizes.set(t.name, end - t.offset)
+  })
+  return sizes
+}
+
+/** Bytes of the blocks from `firstUnused` on: the next-token-prediction blocks the server skips. */
+export function unusedBlockBytes(header: GgufHeader, fileSize: number, firstUnused: number | null): number | null {
+  if (firstUnused === null) return null
+  const sizes = tensorSizes(header, fileSize)
+  if (sizes.size === 0) return null
+  let bytes = 0
+  for (const [name, size] of sizes) {
+    const m = name.match(/^blk\.(\d+)\./)
+    if (m && Number(m[1]) >= firstUnused) bytes += size
+  }
+  return bytes
+}
+
+/** The input embeddings' bytes, which stay on the host at full offload. */
+export function embeddingBytes(header: GgufHeader, fileSize: number): number | null {
+  const sizes = tensorSizes(header, fileSize)
+  if (sizes.size === 0) return null
+  const token = sizes.has('output.weight') ? (sizes.get('token_embd.weight') ?? 0) : 0
+  return token + (sizes.get('per_layer_token_embd.weight') ?? 0)
+}
+
+/**
+ * Bytes of routed-expert tensors in each block. A tensor's size is the gap to
+ * the next one's offset (the last one's, to the end of the file), which is
+ * exact up to alignment padding and needs no table of quantisation types.
+ */
+export function expertBytesPerBlock(header: GgufHeader, fileSize: number, blocks: number | null): number[] | null {
+  if (!blocks) return null
+  const bytes = new Array<number>(blocks).fill(0)
+  let found = false
+  for (const [name, size] of tensorSizes(header, fileSize)) {
+    const m = name.match(/^blk\.(\d+)\.ffn_\w*_exps\b/)
+    if (!m) continue
+    const block = Number(m[1])
+    if (block >= blocks) continue
+    bytes[block] = (bytes[block] ?? 0) + size
+    found = true
+  }
+  return found ? bytes : null
 }
 
 /** "630M" -> 630_000_000, "7B" -> 7_000_000_000. */
@@ -327,7 +421,7 @@ export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
       const buf = Buffer.alloc(Math.min(readSize, size))
       await fh.read(buf, 0, buf.length, 0)
       try {
-        header = parseGgufHeader(buf)
+        header = parseGgufHeader(buf, { tensors: true })
         break
       } catch (err) {
         lastErr = err
@@ -374,7 +468,14 @@ export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
       nextnLayers: num(kv.get(`${arch}.nextn_predict_layers`)),
       expertCount: num(kv.get(`${arch}.expert_count`)),
       expertUsedCount: num(kv.get(`${arch}.expert_used_count`)),
-      expertFeedForwardLength: num(kv.get(`${arch}.expert_feed_forward_length`))
+      expertFeedForwardLength: num(kv.get(`${arch}.expert_feed_forward_length`)),
+      expertBytesPerBlock: expertBytesPerBlock(header, size, num(kv.get(`${arch}.block_count`))),
+      embeddingBytes: embeddingBytes(header, size),
+      unusedBytes: (() => {
+        const blocks = num(kv.get(`${arch}.block_count`))
+        const nextn = num(kv.get(`${arch}.nextn_predict_layers`))
+        return blocks !== null && nextn ? unusedBlockBytes(header, size, blocks - nextn) : null
+      })()
     }
   } finally {
     await fh.close()

@@ -16,6 +16,7 @@ export const launchConfigSchema = z.object({
   cacheTypeV: z.enum(KV_CACHE_TYPES),
   parallel: z.number().int().min(1).max(64),
   threads: z.number().int().min(-1).max(1024),
+  cpuMoeLayers: z.number().int().min(-1).max(9999).default(0),
   mmprojPath: z.string().nullable(),
   alias: z.string().max(200).optional(),
   extraArgs: z.string().max(4000)
@@ -127,5 +128,6 @@ export const planRequestSchema = z.object({
   contextSize: z.number().int().min(1).max(1 << 22),
   cacheTypeK: z.enum(KV_CACHE_TYPES),
   cacheTypeV: z.enum(KV_CACHE_TYPES),
-  parallel: z.number().int().min(1).max(64)
+  parallel: z.number().int().min(1).max(64),
+  cpuMoeLayers: z.number().int().min(-1).max(9999).default(0)
 })

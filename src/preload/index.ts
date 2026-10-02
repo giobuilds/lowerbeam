@@ -87,6 +87,7 @@ const api = {
       cacheTypeK: string
       cacheTypeV: string
       parallel: number
+      cpuMoeLayers?: number
     }) => invoke<VramPlanView>(IPC.modelPlan, req)
   },
   downloads: {

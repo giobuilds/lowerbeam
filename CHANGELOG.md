@@ -20,6 +20,21 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- A launch option for mixture-of-experts models: keep every layer's experts,
+  or the first N layers', in system RAM (`--cpu-moe`, `--n-cpu-moe`), with the
+  VRAM estimate moving them out of the GPU's share. It is what makes a 30B-A3B
+  usable on an 8 GB card. (#102)
+
+### Fixed
+
+- VRAM estimates read exact tensor sizes from the model file: experts, input
+  embeddings that stay in system RAM, and blocks the server never loads. At
+  full offload Gemma-4-E4B was overestimated by 45% and Qwen2.5-VL-3B
+  underestimated by 10%; the four models checked are now within 0.4% of what
+  llama.cpp reports. (#102)
+
 ### Changed
 
 - Each GitHub release describes what is in it: its section of this changelog,

@@ -136,6 +136,16 @@ export function LaunchPanel(): React.JSX.Element {
 
       <HealthCheck disabled={live} />
 
+      {plan?.moeBlocks && supports('--n-cpu-moe') && (
+        <ExpertOffload
+          blocks={plan.moeBlocks}
+          value={draft.cpuMoeLayers}
+          onCpuMiB={plan.expertsOnCpuMiB}
+          disabled={live}
+          onChange={(cpuMoeLayers) => setDraft({ cpuMoeLayers })}
+        />
+      )}
+
       <div className={`grid grid-cols-2 gap-3 ${draft.autoFit ? 'opacity-50' : ''}`}>
         <Field label="GPU layers (-ngl)" hint="999 offloads everything that fits">
           <input
@@ -395,5 +405,57 @@ function ContextAdvice({ modelPath, current, disabled, onUse }: { modelPath: str
         Use it
       </button>
     </p>
+  )
+}
+
+/**
+ * Where a mixture-of-experts model keeps its experts. Shown only for such a
+ * model, and outside the manual-sizing grid because it applies under auto-fit
+ * too: --fit sizes what is left unset around it.
+ */
+function ExpertOffload({
+  blocks,
+  value,
+  onCpuMiB,
+  disabled,
+  onChange
+}: {
+  blocks: number
+  value: number
+  onCpuMiB: number
+  disabled: boolean
+  onChange: (cpuMoeLayers: number) => void
+}): React.JSX.Element {
+  const mode = value === -1 ? 'all' : value > 0 ? 'some' : 'off'
+  const hint =
+    mode === 'off'
+      ? 'Experts stay with their layers. Move them to system RAM when the model is too large for VRAM.'
+      : `${Math.round(onCpuMiB).toLocaleString()} MiB of experts in system RAM; attention stays on the GPU.`
+  return (
+    <Field label="MoE experts in system RAM (--cpu-moe)" hint={hint}>
+      <div className="flex gap-2">
+        <select
+          className={inputClass}
+          value={mode}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value === 'all' ? -1 : e.target.value === 'some' ? Math.max(1, Math.floor(blocks / 2)) : 0)}
+        >
+          <option value="off">Off</option>
+          <option value="all">All {blocks} layers</option>
+          <option value="some">The first N layers</option>
+        </select>
+        {mode === 'some' && (
+          <input
+            type="number"
+            min={1}
+            max={blocks}
+            className={inputClass}
+            value={value}
+            disabled={disabled}
+            onChange={(e) => onChange(Math.max(1, Math.min(blocks, Number(e.target.value) || 1)))}
+          />
+        )}
+      </div>
+    </Field>
   )
 }

@@ -76,6 +76,8 @@ export interface ActiveParams {
    * which is why it decides the speed of a hybrid placement.
    */
   activeExpert: number
+  /** All parameters held in expert blocks, used or not: what --cpu-moe moves out of VRAM. */
+  expert: number
 }
 
 /**
@@ -127,7 +129,7 @@ export function activeParameters(meta: GgufMetadata): ActiveParams | null {
   const active =
     blockCount * (attnPerLayer + densePerLayer + activeExpertsPerLayer) + outputProjection
   if (total <= 0) return null
-  return { active, total, moe, activeExpert: blockCount * activeExpertsPerLayer }
+  return { active, total, moe, activeExpert: blockCount * activeExpertsPerLayer, expert: blockCount * expertsPerLayer }
 }
 
 export function estimateSpeed(

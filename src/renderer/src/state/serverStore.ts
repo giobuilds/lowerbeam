@@ -169,7 +169,8 @@ export const useServerStore = create<ServerState>((set, get) => ({
           contextSize: draft.contextSize || 4096,
           cacheTypeK: draft.cacheTypeK,
           cacheTypeV: draft.cacheTypeV,
-          parallel: draft.parallel
+          parallel: draft.parallel,
+          cpuMoeLayers: draft.cpuMoeLayers
         })
       })
     } catch {
