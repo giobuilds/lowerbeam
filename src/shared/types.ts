@@ -632,6 +632,19 @@ export interface ConversationSummaryView {
   preview: string
 }
 
+/** A conversation a search found, with the line where it matched. */
+export interface ConversationSearchHitView extends ConversationSummaryView {
+  where: 'title' | 'message'
+  snippet: string
+}
+
+/** A saved system prompt, to start a conversation from. */
+export interface PromptPreset {
+  id: string
+  name: string
+  text: string
+}
+
 export interface IpcResult<T> {
   ok: true
   value: T

@@ -1,5 +1,8 @@
-import { ipcMain, dialog, BrowserWindow, type WebContents } from 'electron'
+import { app, ipcMain, dialog, BrowserWindow, type WebContents } from 'electron'
 import { createRequire } from 'node:module'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { conversationMarkdown, exportFileName } from '@shared/chatExport.js'
 import { ZodError } from 'zod'
 import type {
   BenchResult,
@@ -7,6 +10,8 @@ import type {
   MachineProfileView,
   BinaryInfo,
   ConversationSummaryView,
+  ConversationSearchHitView,
+  PromptPreset,
   ConversationView,
   DownloadJob,
   FitSuggestion,
@@ -614,6 +619,23 @@ export function registerIpc(
     await conversations.remove(String(id ?? ''))
     return null
   })
+  handle<ConversationSearchHitView[]>(IPC.chatSearch, (query) => conversations.search(String(query ?? '').slice(0, 200)))
+  // The user picks where it goes; nothing is written without that choice.
+  handle<string | null>(IPC.chatExport, async (id, format) => {
+    const conversation = await conversations.get(String(id ?? ''))
+    if (!conversation) throw new Error('That conversation no longer exists.')
+    const ext = format === 'json' ? 'json' : 'md'
+    const r = await dialog.showSaveDialog({
+      title: 'Export conversation',
+      defaultPath: join(app.getPath('documents'), exportFileName(conversation.title, ext)),
+      filters: ext === 'json' ? [{ name: 'JSON', extensions: ['json'] }] : [{ name: 'Markdown', extensions: ['md'] }]
+    })
+    if (r.canceled || !r.filePath) return null
+    await writeFile(r.filePath, ext === 'json' ? JSON.stringify(conversation, null, 2) : conversationMarkdown(conversation))
+    return r.filePath
+  })
+  handle<PromptPreset[]>(IPC.presetsList, () => settings.current.promptPresets)
+  handle<PromptPreset[]>(IPC.presetsSave, async (raw) => (await settings.patch({ promptPresets: raw as PromptPreset[] })).promptPresets)
 
   handle<string | null>(IPC.pickModelFile, async () => {
     const result = await dialog.showOpenDialog({

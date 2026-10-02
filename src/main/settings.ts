@@ -28,6 +28,11 @@ const settingsSchema = z.object({
    * A self-hosted one has no rate limit, which the default very much does.
    */
   searxngUrl: z.string().max(300).default(''),
+  /** Saved system prompts, to start or steer a conversation from. */
+  promptPresets: z
+    .array(z.object({ id: z.string().min(1).max(64), name: z.string().min(1).max(80), text: z.string().max(20_000) }))
+    .max(50)
+    .default([]),
   /** Whether to look for a new release on GitHub. On unless turned off. */
   updateChecks: z.boolean().default(true),
   /** Extra directories to scan for GGUF files, beyond the defaults. */
@@ -66,6 +71,7 @@ const DEFAULTS: Settings = {
   downloadHistory: [],
   mcpServers: [],
   searxngUrl: '',
+  promptPresets: [],
   updateChecks: true
 }
 

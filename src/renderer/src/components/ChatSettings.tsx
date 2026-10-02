@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+import type { PromptPreset } from '@shared/types.js'
 import { activeConversation, useChatStore } from '../state/chatStore.js'
 import { useServerStore } from '../state/serverStore.js'
 
@@ -125,7 +127,10 @@ export function ChatSettings({
         <CompactionToggle />
 
         <label className="block">
-          <span className="text-[11px] font-medium text-muted">System prompt</span>
+          <span className="flex items-center gap-2 text-[11px] font-medium text-muted">
+            System prompt
+            <Presets current={active.systemPrompt} onApply={(text) => void setSystemPrompt(text)} />
+          </span>
           <textarea
             value={active.systemPrompt}
             onChange={(e) => void setSystemPrompt(e.target.value)}
@@ -158,7 +163,93 @@ export function ChatSettings({
             <span className="text-[10px] text-muted/70">-1 = until the model stops</span>
           </label>
         </div>
+
+        <Export id={active.id} />
       </div>
+    </div>
+  )
+}
+
+/**
+ * Saved system prompts: apply one to this conversation, save the current one
+ * under a name, or delete the one applied. Kept in settings, so every
+ * conversation sees the same list.
+ */
+function Presets({ current, onApply }: { current: string; onApply: (text: string) => void }): React.JSX.Element {
+  const [presets, setPresets] = useState<PromptPreset[]>([])
+  const [naming, setNaming] = useState(false)
+  const [name, setName] = useState('')
+  useEffect(() => {
+    void window.llama.presets.list().then(setPresets)
+  }, [])
+  const applied = presets.find((p) => p.text === current && current.trim() !== '')
+  const save = async (list: PromptPreset[]): Promise<void> => setPresets(await window.llama.presets.save(list))
+
+  if (naming) {
+    return (
+      <span className="ml-auto flex items-center gap-1 font-normal">
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setNaming(false)
+            if (e.key === 'Enter' && name.trim()) {
+              void save([...presets.filter((p) => p.name !== name.trim()), { id: crypto.randomUUID(), name: name.trim(), text: current }])
+              setNaming(false)
+              setName('')
+            }
+          }}
+          placeholder="Name, then Enter"
+          className="w-36 rounded border border-edge bg-ink px-1.5 py-0.5 text-[11px] outline-none focus:border-accent"
+        />
+      </span>
+    )
+  }
+  return (
+    <span className="ml-auto flex items-center gap-2 font-normal">
+      {presets.length > 0 && (
+        <select
+          value={applied?.id ?? ''}
+          onChange={(e) => {
+            const p = presets.find((x) => x.id === e.target.value)
+            if (p) onApply(p.text)
+          }}
+          className="rounded border border-edge bg-ink px-1 py-0.5 text-[11px] text-slate-200 outline-none"
+        >
+          <option value="">{applied ? applied.name : 'Presets…'}</option>
+          {presets.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      )}
+      {current.trim() && !applied && (
+        <button type="button" onClick={() => setNaming(true)} className="text-[11px] text-accent hover:underline">
+          Save as preset
+        </button>
+      )}
+      {applied && (
+        <button type="button" onClick={() => void save(presets.filter((p) => p.id !== applied.id))} className="text-[11px] text-muted hover:text-rose-300">
+          Delete preset
+        </button>
+      )}
+    </span>
+  )
+}
+
+/** Export this conversation; the main process asks where to put it. */
+function Export({ id }: { id: string }): React.JSX.Element {
+  const [saved, setSaved] = useState<string | null>(null)
+  const run = async (format: 'md' | 'json'): Promise<void> => {
+    const path = await window.llama.chat.export(id, format).catch(() => null)
+    if (path) setSaved(path)
+  }
+  return (
+    <div className="flex items-center gap-3 text-[11px] text-muted">
+      <span>Export</span>
+      <button type="button" onClick={() => void run('md')} className="text-accent hover:underline">Markdown</button>
+      <button type="button" onClick={() => void run('json')} className="text-accent hover:underline">JSON</button>
+      {saved && <span className="truncate" title={saved}>saved to {saved}</span>}
     </div>
   )
 }

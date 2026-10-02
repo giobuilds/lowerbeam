@@ -33,7 +33,8 @@ can drive that yourself or hand sizing to llama.cpp's own `--fit`. Settings that
 worked for a model are remembered and reapplied next time.
 
 **Chat** — streaming replies as markdown with syntax-highlighted code, persisted
-conversations, stop/regenerate/edit, per-conversation system prompt and samplers,
+conversations you can search and export as Markdown or JSON,
+stop/regenerate/edit, per-conversation system prompt (with saved presets) and samplers,
 and images for models that can read them. llama.cpp decodes one sequence per
 slot, so several conversations can generate at once; switching away doesn't
 interrupt a reply.

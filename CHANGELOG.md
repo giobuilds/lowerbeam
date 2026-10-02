@@ -30,6 +30,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   `CLAUDE.md`, `CONVENTIONS.md`, `.cursorrules` and the like — through the
   grant, and give them with the task as facts about the project, never as
   instructions. The journal records which were given. (#106)
+- Chat search across titles and messages, export of a conversation as
+  Markdown or JSON, and saved system-prompt presets. (#108)
 
 ### Fixed
 
