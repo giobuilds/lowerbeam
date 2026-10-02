@@ -1,4 +1,6 @@
+import { realpathSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 /**
@@ -67,6 +69,8 @@ export class Grant {
     if (first && EXCLUDED.has(first)) {
       return { ok: false, denied: true, reason: `Not part of the grant: ${first}/` }
     }
+    const secret = secretReason(path, relative(this.realRoot, path))
+    if (secret) return { ok: false, denied: true, reason: secret }
     // An existing file could itself be a link out; resolve it if it is there.
     try {
       const real = await realpath(path)
@@ -108,6 +112,8 @@ export class Grant {
         const within = relative(extra.realRoot, real)
         const first = within.split(sep)[0]
         if (first && EXCLUDED.has(first)) return { ok: false, denied: true, reason: `Not part of the grant: ${first}/` }
+        const secret = secretReason(real, within)
+        if (secret) return { ok: false, denied: true, reason: secret }
         return { ok: true, path: real, relative: real }
       }
       // Say which kind of outside. A path that reads as inside the project and
@@ -130,6 +136,8 @@ export class Grant {
     if (first && EXCLUDED.has(first)) {
       return { ok: false, denied: true, reason: `Not part of the grant: ${first}/` }
     }
+    const secret = secretReason(real, rel)
+    if (secret) return { ok: false, denied: true, reason: secret }
 
     rel = rel || '.'
     return { ok: true, path: real, relative: rel }
@@ -139,9 +147,58 @@ export class Grant {
   static visible(name: string): boolean {
     return !EXCLUDED.has(name)
   }
+
+  /** Whether the entry at `abs` should be walked or listed: neither a build folder nor anything holding credentials. */
+  static visibleAt(abs: string): boolean {
+    return Grant.visible(basename(abs)) && secretReason(abs, basename(abs)) === null
+  }
 }
 
 const EXCLUDED = new Set(['.git', 'node_modules', 'dist', 'out', '.build'])
+
+/**
+ * Credentials, excluded from every grant at any depth and never copied into
+ * a workspace: a project that keeps a key or a `.env` beside its code has not
+ * thereby given it to a model. Templates — `.env.example` and the like — are
+ * what a task reads to learn the settings, and hold no secrets by convention.
+ * Beyond names, the folder under the home directory where the desktop keeps
+ * its keyrings. Lowerbeam's own state is not listed here: a run's workspace
+ * lives in it. It is kept out by refusing it, and anything holding it, as a
+ * project or an extra root.
+ */
+const SECRET_DIRS = new Set(['.ssh', '.gnupg', '.aws', '.azure', '.kube', '.password-store'])
+const ENV_TEMPLATES = new Set(['.env.example', '.env.sample', '.env.template'])
+
+function secretName(name: string): boolean {
+  if (SECRET_DIRS.has(name)) return true
+  return (name === '.env' || name === '.envrc' || name.startsWith('.env.')) && !ENV_TEMPLATES.has(name)
+}
+
+const SECRET_ROOTS = (() => {
+  const homes = [homedir()]
+  try {
+    const real = realpathSync(homedir())
+    if (real !== homes[0]) homes.push(real)
+  } catch {
+    /* no home: nothing anchored to it */
+  }
+  return homes.map((h) => join(h, '.local', 'share', 'keyrings'))
+})()
+
+/**
+ * Why a path holds credentials and is not part of any grant, or null. `abs`
+ * is the path; `rel` the part of it inside the granted root, whose every name
+ * is checked.
+ */
+export function secretReason(abs: string, rel: string): string | null {
+  for (const part of rel.split(/[\\/]/)) {
+    if (part && secretName(part)) return `Not part of the grant: ${part} holds credentials.`
+  }
+  for (const root of SECRET_ROOTS) {
+    if (abs === root || abs.startsWith(root + sep)) return `Not part of the grant: ${abs} holds credentials.`
+  }
+  return null
+}
 
 async function exists(path: string): Promise<boolean> {
   try {

@@ -5,6 +5,7 @@ import { cp, lstat, mkdir, readdir, readFile, readlink, realpath, rm, stat, unli
 import { dirname, join, relative, sep } from 'node:path'
 import { createTwoFilesPatch } from 'diff'
 import type { ApplyResult, ChangeSet, FileChange } from '@shared/coding.js'
+import { secretReason } from '../../agent/grant.js'
 
 const run = promisify(execFile)
 
@@ -234,8 +235,14 @@ interface UndoRecord {
 /**
  * The files a project consists of: what git tracks or would track when
  * there is a repository, otherwise a walk that skips the usual dead weight.
+ * Credentials are never among them, tracked or not: what the grant would
+ * refuse to read is not copied for a run to find.
  */
 export async function listProjectFiles(root: string): Promise<string[]> {
+  return (await listAll(root)).filter((rel) => secretReason(join(root, rel), rel) === null)
+}
+
+async function listAll(root: string): Promise<string[]> {
   try {
     await stat(join(root, '.git'))
     const { stdout } = await run('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
