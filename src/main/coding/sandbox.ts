@@ -263,7 +263,7 @@ export async function maskSecrets(root: string, at = root): Promise<Masking> {
     for (const e of entries) {
       if (++seen > MASK_LIMIT.entries) throw tooMuch()
       const inner = join(rel, e.name)
-      if (secretReason(join(real, inner), e.name)) {
+      if (secretReason(join(real, inner), inner)) {
         if (e.isDirectory()) out.args.push('--tmpfs', join(at, inner))
         else if (e.isFile()) out.args.push('--ro-bind', '/dev/null', join(at, inner))
         else continue

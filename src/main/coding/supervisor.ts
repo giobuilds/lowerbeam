@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { realpath, stat } from 'node:fs/promises'
 import { DEFAULT_TERMS, type CodingRunSummary, type CodingStartRequest, type GrantTerms, type JournalEvent } from '@shared/coding.js'
@@ -437,7 +437,8 @@ export async function checkProjectRoot(projectRoot: string, own: string): Promis
 
 /**
  * Why a folder is too broad to grant whole, or null: the filesystem, the home
- * directory, a folder that holds the home directory, or anything that holds
+ * directory, a folder that holds the home directory, a dot-folder directly in
+ * it (`~/.config`, `~/.local`: every program's settings), or anything that holds
  * or sits inside Lowerbeam's own state (`'own'`). Checked as spelled and as
  * resolved, since either can be the one that names home.
  */
@@ -450,6 +451,7 @@ async function tooBroad(abs: string, own: string): Promise<string | null> {
     if (p === '/') return 'the whole filesystem'
     if (homes.includes(p)) return 'the whole home directory'
     if (homes.some((h) => h.startsWith(p + '/'))) return `${p}, which holds the home directory`
+    if (homes.includes(dirname(p)) && basename(p).startsWith('.')) return `${p}, a settings folder directly in the home directory`
     if (owns.some((o) => o === p || o.startsWith(p + '/') || p.startsWith(o + '/'))) return 'own'
   }
   return null

@@ -150,7 +150,8 @@ export class Grant {
 
   /** Whether the entry at `abs` should be walked or listed: neither a build folder nor anything holding credentials. */
   static visibleAt(abs: string): boolean {
-    return Grant.visible(basename(abs)) && secretReason(abs, basename(abs)) === null
+    // With its parent's name, so a nested rule (`.config/gh`) holds in a walk too.
+    return Grant.visible(basename(abs)) && secretReason(abs, join(basename(dirname(abs)), basename(abs))) === null
   }
 }
 
@@ -161,17 +162,45 @@ const EXCLUDED = new Set(['.git', 'node_modules', 'dist', 'out', '.build'])
  * a workspace: a project that keeps a key or a `.env` beside its code has not
  * thereby given it to a model. Templates — `.env.example` and the like — are
  * what a task reads to learn the settings, and hold no secrets by convention.
+ * Some names are kept out by their shape alone (`*.pem`, `id_rsa*`), which
+ * catches test fixtures too; the refusal says so, so a missing file has a
+ * visible reason.
  * Beyond names, the folder under the home directory where the desktop keeps
  * its keyrings. Lowerbeam's own state is not listed here: a run's workspace
  * lives in it. It is kept out by refusing it, and anything holding it, as a
  * project or an extra root.
  */
-const SECRET_DIRS = new Set(['.ssh', '.gnupg', '.aws', '.azure', '.kube', '.password-store'])
-const ENV_TEMPLATES = new Set(['.env.example', '.env.sample', '.env.template'])
+const SECRET_DIRS = new Set(['.ssh', '.gnupg', '.aws', '.azure', '.kube', '.password-store', '.docker'])
+/** Folders that hold credentials only under their own parent: `.config/gh`, not every `gh`. */
+const SECRET_NESTED = new Set(['.config/gh', '.config/gcloud'])
+/** Package-manager and git settings files, which carry tokens as often as settings. */
+const SECRET_FILES = new Set(['.npmrc', '.yarnrc.yml', '.netrc', '.git-credentials', '.pypirc'])
+/**
+ * Names that read as keys or credentials wherever they are. `secrets.*` is
+ * the data formats only: a `secrets.ts` that loads them is code, and a task
+ * may need it.
+ */
+const SECRET_PATTERNS: Array<[RegExp, string]> = [
+  [/^id_(rsa|ed25519|ecdsa|dsa)/, 'id_rsa*'],
+  [/\.(pem|key|p12|pfx)$/i, '*.pem, *.key, *.p12 or *.pfx'],
+  [/credentials.*\.json$/i, '*credentials*.json'],
+  [/^secrets\.(json|ya?ml|toml|ini|env|txt|conf|cfg|properties|xml)$/i, 'secrets.*']
+]
 
-function secretName(name: string): boolean {
-  if (SECRET_DIRS.has(name)) return true
-  return (name === '.env' || name === '.envrc' || name.startsWith('.env.')) && !ENV_TEMPLATES.has(name)
+/** A template — `.env.example`, `secrets.sample.json` — holds the settings' names, not their values. */
+function template(name: string): boolean {
+  return /\.(example|sample|template)(\.|$)/i.test(name)
+}
+
+/** Why a name holds credentials, in words, or null. `parent` is the name of the folder it is in, when known. */
+function secretName(name: string, parent?: string): string | null {
+  if (SECRET_DIRS.has(name) || (parent !== undefined && SECRET_NESTED.has(`${parent}/${name}`))) return `${name} holds credentials`
+  if (template(name)) return null
+  if (SECRET_FILES.has(name) || name === '.env' || name === '.envrc' || name.startsWith('.env.')) return `${name} holds credentials`
+  for (const [pattern, shape] of SECRET_PATTERNS) {
+    if (pattern.test(name)) return `${name} is named like a key or credentials file (${shape}) and is kept out by name, test fixtures included`
+  }
+  return null
 }
 
 const SECRET_ROOTS = (() => {
@@ -191,8 +220,10 @@ const SECRET_ROOTS = (() => {
  * is checked.
  */
 export function secretReason(abs: string, rel: string): string | null {
-  for (const part of rel.split(/[\\/]/)) {
-    if (part && secretName(part)) return `Not part of the grant: ${part} holds credentials.`
+  const parts = rel.split(/[\\/]/)
+  for (let i = 0; i < parts.length; i++) {
+    const why = parts[i] ? secretName(parts[i]!, i > 0 ? parts[i - 1] : undefined) : null
+    if (why) return `Not part of the grant: ${why}.`
   }
   for (const root of SECRET_ROOTS) {
     if (abs === root || abs.startsWith(root + sep)) return `Not part of the grant: ${abs} holds credentials.`
