@@ -1,5 +1,7 @@
 # Every push to main and every pull request: types, the unit tier, a build,
-# and an audit of what ships. Integration suites need a llama.cpp binary, a
+# and an audit of what ships, on the oldest Node the tooling supports and on
+# the one it is developed on. Weekly as well, so a new advisory surfaces
+# without waiting for a change. Integration suites need a llama.cpp binary, a
 # model or the network, and stay manual (`npm run test:all`).
 name: CI
 
@@ -8,6 +10,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '17 6 * * 1'
 
 permissions:
   contents: read
@@ -18,6 +22,12 @@ concurrency:
 
 jobs:
   check:
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor is package.json's engines field: Electron 44's tooling and Vite 7 need 22.12.
+        node: ['22.12', '24']
+    name: check (node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -28,7 +38,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: npm
 
       # The sandbox suites run commands in bubblewrap. Ubuntu's runners ship
@@ -45,4 +55,6 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npx electron-vite build
-      - run: npm audit --omit=dev --audit-level=high
+      # Both trees: --omit=dev alone never sees Electron, which ships. See the script for what blocks.
+      - run: npm run audit:deps
+        if: matrix.node == '24'
