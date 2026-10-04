@@ -20,6 +20,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- Run mode no longer lets a command read credentials in an extra read folder
+  or in the project's lent `node_modules`: `.env` files, `.ssh`, `.aws` and the
+  rest of what the grant refuses are masked inside the box, the run header says
+  how many were hidden, and a folder too large to check is refused. A folder
+  of credentials can no longer be named as an extra read folder at all. (#93)
+
 ## [0.11.0] - 2026-10-02
 
 ### Added

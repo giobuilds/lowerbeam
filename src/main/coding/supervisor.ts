@@ -10,7 +10,7 @@ import { runTask } from '../../agent/loop.js'
 import type { ServerSupervisor } from '../supervisor.js'
 import { Journal } from './journal.js'
 import { Workspace } from './workspace.js'
-import { probeSandbox, runInSandbox } from './sandbox.js'
+import { maskedFor, probeSandbox, runInSandbox } from './sandbox.js'
 import { ModelIdentifier } from './capability.js'
 import { verdictFor, type CapabilityStatus } from '@shared/capability.js'
 import { evidenceFrom, withRerun, type Evidence } from '@shared/evidence.js'
@@ -99,6 +99,9 @@ export class CodingSupervisor extends EventEmitter<{
       const probe = await probeSandbox()
       if (!probe.ok) throw new Error(`Commands cannot be run on this machine: ${probe.reason}`)
     }
+    // What the box will hide, walked now so a folder too large to check
+    // refuses the run before it starts, and the header can say so.
+    const masked = req.mode === 'run' ? await maskedFor(req.projectRoot, terms) : []
     if (req.mode === 'edit' || req.mode === 'run') {
       workspace = await Workspace.create((await Grant.open(req.projectRoot)).root, this.workspaceDir(id))
       this.workspaces.set(id, workspace)
@@ -124,7 +127,8 @@ export class CodingSupervisor extends EventEmitter<{
       answer: '',
       rounds: 0,
       denials: 0,
-      grant: terms
+      grant: terms,
+      ...(masked.length ? { masked } : {})
     }
     this.runs.set(id, summary)
     this.emit('runs', this.list())
@@ -403,6 +407,7 @@ export async function checkTerms(terms: GrantTerms, mode: CodingStartRequest['mo
     const broad = await tooBroad(abs, own)
     if (broad === 'own') throw new Error(`The grant cannot name ${dir}: Lowerbeam\u2019s own state lives there.`)
     if (broad) throw new Error(`The grant cannot name ${broad}; choose the folder the task needs.`)
+    if (secretReason(real, real)) throw new Error(`The grant cannot name ${dir}: it is a folder of credentials.`)
     if (!alsoRead.includes(abs)) alsoRead.push(abs)
   }
   return { alsoRead, network: mode === 'run' && terms.network, install: mode === 'run' && terms.install }

@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process'
 import { DEFAULT_TERMS, type GrantTerms } from '@shared/coding.js'
+import { secretReason } from '../../agent/grant.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdir, mkdtemp, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
@@ -172,6 +173,8 @@ export async function runInSandbox(cmd: SandboxCommand): Promise<SandboxResult> 
  * project has and the project's tree is never written. Where the kernel
  * will not mount an overlay unprivileged, the project's tree is not lent
  * and the copy's own, which starts empty, is what an install writes.
+ * Whatever is lent from outside the copy has its credentials masked over,
+ * so a command cannot read what the grant refuses to.
  */
 export async function bwrapArgs(workspace: string, projectRoot: string, terms: GrantTerms = DEFAULT_TERMS): Promise<string[]> {
   const args = [
@@ -207,7 +210,7 @@ export async function bwrapArgs(workspace: string, projectRoot: string, terms: G
   args.push('--bind', workspace, workspace)
   const deps = join(projectRoot, 'node_modules')
   if (await exists(deps)) {
-    if (!terms.install) args.push('--ro-bind', deps, join(workspace, 'node_modules'))
+    if (!terms.install) args.push('--ro-bind', deps, join(workspace, 'node_modules'), ...(await maskSecrets(deps, join(workspace, 'node_modules'))).args)
     else if (await overlaySupported()) {
       // Writes go beside the copy's files, not among them, so a change
       // listing never walks an installed tree.
@@ -216,11 +219,69 @@ export async function bwrapArgs(workspace: string, projectRoot: string, terms: G
       await mkdir(upper, { recursive: true })
       await mkdir(work, { recursive: true })
       args.push('--overlay-src', deps, '--overlay', upper, work, join(workspace, 'node_modules'))
+      args.push(...(await maskSecrets(deps, join(workspace, 'node_modules'))).args)
     }
   }
-  for (const dir of terms.alsoRead) if (await exists(dir)) args.push('--ro-bind', dir, dir)
+  for (const dir of terms.alsoRead) if (await exists(dir)) args.push('--ro-bind', dir, dir, ...(await maskSecrets(dir)).args)
   args.push('--chdir', workspace)
   return args
+}
+
+/** How far a walk for credentials goes before it gives up and refuses the folder. */
+export const MASK_LIMIT = { entries: 250_000, depth: 32 }
+
+export interface Masking {
+  /** Mounts that hide each credential, to follow the folder's own bind. */
+  args: string[]
+  /** What they hide, as paths outside the box. */
+  masked: string[]
+}
+
+/**
+ * What hides the credentials under `root` once it is bound at `at`: by the
+ * grant's own rules, a folder of them becomes an empty tmpfs and a file
+ * becomes /dev/null. A link is left alone — bubblewrap mounts through it,
+ * not over it — and what it points to is masked wherever that is lent. A
+ * folder too large or too deep to walk is refused rather than lent with
+ * whatever the walk did not reach.
+ */
+export async function maskSecrets(root: string, at = root): Promise<Masking> {
+  const real = await realpath(root).catch(() => root)
+  if (secretReason(real, real)) throw new Error(`${root} cannot be lent to a command: it is a folder of credentials.`)
+  const out: Masking = { args: [], masked: [] }
+  let seen = 0
+  const tooMuch = (): Error =>
+    new Error(`${root} is too large to check for credentials (over ${MASK_LIMIT.entries.toLocaleString('en')} entries or ${MASK_LIMIT.depth} levels deep), so it is not lent to commands.`)
+  const visit = async (rel: string, depth: number): Promise<void> => {
+    if (depth > MASK_LIMIT.depth) throw tooMuch()
+    let entries
+    try {
+      entries = await readdir(join(root, rel), { withFileTypes: true })
+    } catch {
+      return // unreadable here, and so unreadable inside the box
+    }
+    for (const e of entries) {
+      if (++seen > MASK_LIMIT.entries) throw tooMuch()
+      const inner = join(rel, e.name)
+      if (secretReason(join(real, inner), e.name)) {
+        if (e.isDirectory()) out.args.push('--tmpfs', join(at, inner))
+        else if (e.isFile()) out.args.push('--ro-bind', '/dev/null', join(at, inner))
+        else continue
+        out.masked.push(join(root, inner))
+      } else if (e.isDirectory()) await visit(inner, depth + 1)
+    }
+  }
+  await visit('', 0)
+  return out
+}
+
+/** What a run's box will mask, for its header: credentials in the lent dependency tree and in every extra root. */
+export async function maskedFor(projectRoot: string, terms: GrantTerms): Promise<string[]> {
+  const masked: string[] = []
+  const deps = join(projectRoot, 'node_modules')
+  if (await exists(deps)) masked.push(...(await maskSecrets(deps)).masked)
+  for (const dir of terms.alsoRead) if (await exists(dir)) masked.push(...(await maskSecrets(dir)).masked)
+  return masked
 }
 
 /** Where an install's writes are kept, beside the copy's own files. Never a change. */

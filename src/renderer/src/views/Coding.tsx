@@ -323,17 +323,22 @@ function Empty({ hasProject, hasModel }: { hasProject: boolean; hasModel: boolea
 
 const NO_EVENTS: JournalEvent[] = []
 
-/** What a run could reach beyond its mode, as recorded. Nothing shown for the defaults. */
-function TermsHeld({ terms }: { terms: GrantTerms }): React.JSX.Element | null {
-  if (sameTerms(terms, DEFAULT_TERMS)) return null
+/** What a run could reach beyond its mode, as recorded, and what its box hid. Nothing shown for the defaults. */
+function TermsHeld({ terms, masked }: { terms: GrantTerms; masked: string[] }): React.JSX.Element | null {
+  if (sameTerms(terms, DEFAULT_TERMS) && masked.length === 0) return null
   return (
     <p className="mb-2 flex flex-wrap gap-1 text-[11px] text-muted">
-      <span>Granted beyond the project:</span>
+      {!sameTerms(terms, DEFAULT_TERMS) && <span>Granted beyond the project:</span>}
       {terms.alsoRead.map((d) => (
         <span key={d} className="rounded bg-ink px-1.5 font-mono text-[10px] text-amber-200" title={d}>reads {d}</span>
       ))}
       {terms.network && <span className="rounded bg-ink px-1.5 text-[10px] text-amber-200">network</span>}
       {terms.install && <span className="rounded bg-ink px-1.5 text-[10px] text-amber-200">install</span>}
+      {masked.length > 0 && (
+        <span className="rounded bg-ink px-1.5 text-[10px] text-emerald-300" title={masked.join('\n')}>
+          {masked.length} credential path{masked.length === 1 ? '' : 's'} hidden from commands
+        </span>
+      )}
     </p>
   )
 }
@@ -379,7 +384,7 @@ function Run({ run }: { run: CodingRunSummary }): React.JSX.Element {
           )}
         </span>
       </div>
-      <TermsHeld terms={run.grant} />
+      <TermsHeld terms={run.grant} masked={run.masked ?? []} />
       <Refused run={run} events={events} />
 
       <ol className="space-y-1 rounded border border-edge bg-panel p-3 font-mono text-[11px] leading-snug">
