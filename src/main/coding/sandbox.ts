@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdir, mkdtemp, readdir, readlink, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 const run = promisify(execFile)
 
@@ -64,10 +64,8 @@ export async function probeSandbox(): Promise<SandboxProbe> {
     : !userNamespaces
       ? 'unprivileged user namespaces are disabled, so bubblewrap cannot run without root.'
       : null
-  const node = await findNode()
-  const toolchain = node
-    ? (await lendNode(node, await realHome())).note
-    : 'No node was found on PATH, so commands run with the system’s tools only.'
+  const found = await findNode()
+  const toolchain = found.node ? (await lendNode(found.node, await realHome())).note : found.note
   cachedProbe = { ok: reason === null, bubblewrap, userNamespaces, landlock, reason, toolchain }
   return cachedProbe
 }
@@ -199,7 +197,8 @@ export async function bwrapArgs(workspace: string, projectRoot: string, terms: G
 
   // The toolchain: whatever node this process would run.
   const path: string[] = ['/usr/local/bin', '/usr/bin', '/bin']
-  const node = await findNode()
+  // From the project, so a version manager picks the version the project pins.
+  const { node } = await findNode(process.env['PATH'], projectRoot)
   if (node) {
     const loan = await lendNode(node, await realHome())
     args.push(...loan.args)
@@ -324,9 +323,10 @@ export interface NodeLoan {
 }
 
 /**
- * How to make `node` (a resolved path) visible in the box without the home
- * folder. Its install root — `…/bin/node` → `…` — is bound whole when that
- * is an install of its own: nvm, fnm, volta, /usr/local, /opt. When the root
+ * How to make `node` (the binary itself, as findNode gives it) visible in the
+ * box without the home folder. Its install root — `…/bin/node` → `…` — is
+ * bound whole when that is an install of its own: nvm, fnm, a version under
+ * Volta's, asdf's or mise's tools, /usr/local, /opt. When the root
  * is the home folder, an ancestor of it, or a folder directly in it — node in
  * `~/bin` or `~/.local/bin` — binding it would lend the home folder or
  * `~/.local`, keyrings and all. Then the binary is lent alone, with npm and
@@ -339,6 +339,8 @@ export async function lendNode(node: string, home: string): Promise<NodeLoan> {
   if (!holdsHome(root, home)) return { args: ['--ro-bind', root, root], bin, note: `Node is lent from its install, ${root}.` }
 
   const args = ['--ro-bind', node, node]
+  // A binary under another name is still `node` on PATH.
+  if (basename(node) !== 'node') args.push('--symlink', node, join(bin, 'node'))
   const modules = join(root, 'lib', 'node_modules')
   const lent = new Set<string>()
   for (const tool of ['npm', 'npx']) {
@@ -374,19 +376,55 @@ async function realHome(): Promise<string> {
   return realpath(homedir()).catch(() => homedir())
 }
 
-/** The node the user's shell would run, not necessarily the one Electron embeds. */
-async function findNode(): Promise<string | null> {
-  for (const dir of (process.env['PATH'] ?? '').split(':')) {
-    const candidate = join(dir, 'node')
-    if (await exists(candidate)) {
-      try {
-        return await realpath(candidate)
-      } catch {
-        return candidate
-      }
+export interface FoundNode {
+  /** The node binary itself, resolved, or null when there is none to lend. */
+  node: string | null
+  /** Why there is none, in words, when there is none. */
+  note: string
+}
+
+/**
+ * The node the user's shell would run, not necessarily the one Electron
+ * embeds — and the binary itself, not what PATH names. Version managers put
+ * a shim there: Volta's `node` is a link to `volta-shim`, asdf's a script,
+ * mise's a link to `mise`. Lending the shim lends nothing that runs (its
+ * tools are under a home the box does not have), and the box would fall
+ * back to whatever node /usr has. So the first `node` on PATH is asked where
+ * it really is, run from `cwd` so a shim resolves the version pinned there.
+ * Remembered per folder: the answer does not change while the app runs.
+ */
+export function findNode(path = process.env['PATH'] ?? '', cwd?: string): Promise<FoundNode> {
+  const key = `${path}\0${cwd ?? ''}`
+  let found = nodeCache.get(key)
+  if (!found) {
+    found = locateNode(path, cwd)
+    nodeCache.set(key, found)
+  }
+  return found
+}
+const nodeCache = new Map<string, Promise<FoundNode>>()
+
+async function locateNode(path: string, cwd?: string): Promise<FoundNode> {
+  let candidate: string | null = null
+  for (const dir of path.split(':')) {
+    if (dir && (await exists(join(dir, 'node')))) {
+      candidate = join(dir, 'node')
+      break
     }
   }
-  return null
+  if (!candidate) return { node: null, note: 'No node was found on PATH, so commands run with the system’s tools only.' }
+  try {
+    const { stdout } = await run(candidate, ['-p', 'process.execPath'], { cwd: cwd ?? homedir(), timeout: 20_000, env: { ...process.env, PATH: path } })
+    return { node: await realpath(stdout.trim()), note: '' }
+  } catch (e) {
+    const target = await realpath(candidate).catch(() => candidate)
+    const shim = target !== candidate && basename(target) !== 'node' ? ` (a link to ${basename(target)}, a version manager’s shim)` : ''
+    const why = (e as { stderr?: string }).stderr?.trim().split('\n')[0] || (e as Error).message
+    return {
+      node: null,
+      note: `The node on PATH, ${candidate}${shim}, did not say which node it runs (${why}), so none is lent: commands run with the system’s tools only.`
+    }
+  }
 }
 
 async function exists(path: string): Promise<boolean> {

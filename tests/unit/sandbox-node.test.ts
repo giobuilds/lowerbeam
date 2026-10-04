@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { copyFile, mkdtemp, mkdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdtemp, mkdir, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { lendNode, probeSandbox } from '../../src/main/coding/sandbox.js'
+import { findNode, lendNode, probeSandbox } from '../../src/main/coding/sandbox.js'
 
 let n = 0; const ok = (m: string) => { n++; console.log('  ok', m) }
 
@@ -76,6 +76,58 @@ console.log('\nin a real box, node in ~/bin runs and the home folder is not ther
     const inside = (cmd: string): string => execFileSync('bwrap', [...args, ...loan.args, '--', 'sh', '-c', cmd], { encoding: 'utf8' }).trim()
     assert.equal(inside(`${node} -e 'console.log(process.version)'`), process.version); ok('node runs from the binary alone')
     assert.equal(inside(`test -e ${join(box, 'secret.txt')} && echo there || echo gone`), 'gone'); ok('and a file beside it in the home folder does not exist')
+  }
+}
+
+console.log('\na version manager\u2019s shim is followed to the node it runs')
+{
+  // Volta's layout (#97): ~/.volta/bin/node -> volta-shim, which runs a
+  // version under ~/.volta/tools/image. The shim here is a script that does
+  // the same; what matters is that the shim is never what is lent.
+  const volta = join(home, '.volta')
+  const image = join(volta, 'tools', 'image', 'node', '24.0.0')
+  await mkdir(join(image, 'bin'), { recursive: true })
+  await copyFile(process.execPath, join(image, 'bin', 'node'))
+  const shim = await file(join(volta, 'bin', 'volta-shim'), `#!/bin/sh\nexec ${join(image, 'bin', 'node')} "$@"\n`)
+  await chmod(shim, 0o755)
+  await symlink('volta-shim', join(volta, 'bin', 'node'))
+  const found = await findNode(`${join(volta, 'bin')}:/usr/bin:/bin`, base)
+  assert.equal(found.node, join(image, 'bin', 'node')); ok('findNode names the image\u2019s binary, not the shim')
+  const loan = await lendNode(found.node!, home)
+  assert.deepEqual(bound(loan.args), [image]); ok('and the image\u2019s root is what is lent, not ~/.volta')
+  assert.equal(loan.bin, join(image, 'bin')); ok('with its bin first on PATH')
+
+  const broken = join(base, 'broken')
+  await file(join(broken, 'volta-shim'), '#!/bin/sh\necho "volta: no default node version" >&2\nexit 1\n')
+  await chmod(join(broken, 'volta-shim'), 0o755)
+  await symlink('volta-shim', join(broken, 'node'))
+  const none = await findNode(`${broken}:/usr/bin:/bin`, base)
+  assert.equal(none.node, null); ok('a shim that names no node lends nothing')
+  assert.match(none.note, /volta-shim, a version manager.s shim.*no default node version.*system.s tools only/); ok('and the note says so, with the shim\u2019s own words')
+  const empty = await findNode(join(base, 'nowhere'), base)
+  assert.match(empty.note, /No node was found on PATH/); ok('no node on PATH at all says that')
+}
+
+console.log('\na binary under another name is still node')
+{
+  const renamed = await file(join(home, 'bin', 'node-24'))
+  const loan = await lendNode(renamed, home)
+  const k = loan.args.indexOf('--symlink')
+  assert.deepEqual(loan.args.slice(k, k + 3), ['--symlink', renamed, join(home, 'bin', 'node')]); ok('it is linked as node beside itself')
+}
+
+console.log('\nin a real box, the Volta image\u2019s node is the one that runs')
+{
+  const probe = await probeSandbox()
+  if (!probe.ok) console.log(`  skipped: ${probe.reason}`)
+  else {
+    const found = await findNode(`${join(home, '.volta', 'bin')}:/usr/bin:/bin`, base)
+    const loan = await lendNode(found.node!, home)
+    const args = ['--ro-bind', '/usr', '/usr', '--dev', '/dev', '--proc', '/proc', '--tmpfs', '/tmp', '--unshare-all', '--die-with-parent']
+    for (const dir of ['/lib64', '/lib', '/bin']) if (await stat(dir).then(() => true, () => false)) args.push('--ro-bind', dir, dir)
+    const out = execFileSync('bwrap', [...args, ...loan.args, '--setenv', 'PATH', `${loan.bin}:/usr/bin:/bin`, '--', 'sh', '-c', 'command -v node; node --version'], { encoding: 'utf8' }).trim().split('\n')
+    assert.equal(out[0], join(loan.bin, 'node')); ok('`node` on PATH inside is the image\u2019s, not /usr/bin/node')
+    assert.equal(out[1], process.version); ok('and its version is the host\u2019s')
   }
 }
 

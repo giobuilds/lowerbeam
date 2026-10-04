@@ -36,6 +36,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
   (`~/.config`, `~/.local`) can no longer be a project or an extra read
   folder. (#94)
 
+### Fixed
+
+- In run mode, a Node installed through Volta (or asdf or mise) is the one
+  commands run with. Before, only the version manager's shim was lent, so
+  commands silently ran the system's Node, or none. When the shim names no
+  Node, the run mode option says so. (#97)
+
 ## [0.11.0] - 2026-10-02
 
 ### Added
