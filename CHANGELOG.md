@@ -27,6 +27,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
   rest of what the grant refuses are masked inside the box, the run header says
   how many were hidden, and a folder too large to check is refused. A folder
   of credentials can no longer be named as an extra read folder at all. (#93)
+- More credentials are kept from runs: `.npmrc`, `.yarnrc.yml`, `.netrc`,
+  `.git-credentials`, `.pypirc`, `.docker`, `.config/gh`, `.config/gcloud`, SSH
+  keys (`id_rsa*` and the like), `*.pem`, `*.key`, `*.p12`, `*.pfx`,
+  `*credentials*.json` and `secrets.json`/`.yaml`/… are not read, listed,
+  searched, copied or visible to commands. Names refused by their shape say
+  so, since test fixtures are caught too. A dot-folder directly in home
+  (`~/.config`, `~/.local`) can no longer be a project or an extra read
+  folder. (#94)
 
 ## [0.11.0] - 2026-10-02
 
