@@ -11,7 +11,8 @@ import { hostOf } from '@shared/url.js'
  * where that hole is.
  */
 export function ReaderPanel(): React.JSX.Element | null {
-  const { open, url, title, loading, canGoBack, error, hidden, width } = useReaderStore()
+  const { open, url, title, loading, canGoBack, error, held, hidden, width } = useReaderStore()
+  const decideHeld = useReaderStore((s) => s.decideHeld)
   const close = useReaderStore((s) => s.close)
   const back = useReaderStore((s) => s.back)
   const openExternal = useReaderStore((s) => s.openExternal)
@@ -42,7 +43,8 @@ export function ReaderPanel(): React.JSX.Element | null {
       observer.disconnect()
       window.removeEventListener('resize', report)
     }
-  }, [open, report])
+    // The hole comes and goes with a held page or an error: watch the new one, or report none.
+  }, [open, report, held, error])
 
   useEffect(() => {
     // Closing is the main process's job; this only stops it drawing over a modal.
@@ -108,7 +110,43 @@ export function ReaderPanel(): React.JSX.Element | null {
         </button>
       </header>
 
-      {error ? (
+      {held ? (
+        <div className="p-4 text-xs text-slate-300">
+          <p>
+            This link goes to <span className="font-mono text-amber-200">{hostOf(held.url)}</span>, which is {held.why}.
+          </p>
+          <p className="mt-2 text-muted">
+            A page there is a router, a printer or a server on this computer, not the web. A link from a model or a page
+            should not open one unasked.
+          </p>
+          <p className="mt-1 truncate font-mono text-[10px] text-muted" title={held.url}>
+            {held.url}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void decideHeld(true)}
+              className="rounded border border-edge px-2 py-1 text-[11px] text-muted hover:text-slate-200"
+            >
+              Open it here
+            </button>
+            <button
+              type="button"
+              onClick={openExternal}
+              className="rounded border border-edge px-2 py-1 text-[11px] text-muted hover:text-slate-200"
+            >
+              Open in your browser
+            </button>
+            <button
+              type="button"
+              onClick={() => void decideHeld(false)}
+              className="rounded px-2 py-1 text-[11px] text-muted hover:text-slate-200"
+            >
+              Don’t open
+            </button>
+          </div>
+        </div>
+      ) : error ? (
         <div className="p-4 text-xs text-rose-300">
           <p>{error}</p>
           <button

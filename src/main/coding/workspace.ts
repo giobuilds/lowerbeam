@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { copyFile, cp, lstat, mkdir, readdir, readFile, readlink, realpath, rm, stat, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, cp, lstat, mkdir, readdir, readFile, readlink, realpath, rename, rm, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, sep } from 'node:path'
 import { createTwoFilesPatch } from 'diff'
 import type { ApplyResult, ChangeSet, FileChange } from '@shared/coding.js'
@@ -175,6 +175,13 @@ export class Workspace {
         if (change.kind === 'deleted') {
           await unlink(target)
         } else {
+          // The folders this creates are recorded first, so undo can take
+          // them away again once they are empty.
+          const made = await missingFolders(project, dirname(change.path))
+          if (made.length) {
+            record.dirs = [...new Set([...(record.dirs ?? []), ...made])]
+            await save()
+          }
           await mkdir(dirname(target), { recursive: true })
           // Checked again now the folders exist, in case one appeared as a
           // link in between. The run cannot do that: it writes only the copy.
@@ -206,8 +213,12 @@ export class Workspace {
   /**
    * Reverse an apply — for each file, only if the project still holds exactly
    * what was applied. A file edited since is left alone, reported, and kept in
-   * the record. The original comes back byte for byte, and is checked against
-   * the hash it had before it is reported restored.
+   * the record. The original comes back byte for byte: it is written beside
+   * the file, checked against the hash it had, and only then renamed into
+   * place, so a mismatch never replaces anything. A record from before
+   * 0.9.21 kept originals as text; one whose text does not hash to the
+   * original (a binary file, read as text) is reported, not written. Folders
+   * the apply created go too, once they are empty.
    */
   async undo(): Promise<ApplyResult> {
     const record = await this.undoRecord()
@@ -231,10 +242,23 @@ export class Workspace {
       try {
         if (now !== entry.before) {
           if (entry.before === null) await unlink(target)
-          else if (entry.original !== null) await copyFile(join(undoDir, 'originals', entry.original), target)
-          else await writeFile(target, entry.text ?? '')
-          const restored = await hashFileOrNull(target)
-          if (restored !== entry.before) throw new Error('what was restored does not match the original')
+          else {
+            const staged = `${target}.lowerbeam-undo-${randomUUID()}`
+            try {
+              if (entry.original !== null) await copyFile(join(undoDir, 'originals', entry.original), staged)
+              else await writeFile(staged, entry.text ?? '')
+              if ((await hashFile(staged)) !== entry.before) {
+                throw new Error(
+                  entry.original === null
+                    ? 'this undo record is from before 0.9.21, which kept the original as text, and the text is not the original’s bytes (a binary file?); the file was left as it is'
+                    : 'what would be restored does not match the original; the file was left as it is'
+                )
+              }
+              await rename(staged, target)
+            } finally {
+              await rm(staged, { force: true })
+            }
+          }
         }
         delete record.entries[path]
         applied.push(path)
@@ -242,6 +266,23 @@ export class Workspace {
         conflicts.push({ path, reason: `could not be restored: ${(err as Error).message}` })
       }
     }
+    // Deepest first, so a folder emptied by removing its child goes too. One
+    // that holds anything, or is no longer a plain folder, stays.
+    const kept: string[] = []
+    for (const dir of [...(record.dirs ?? [])].sort((a, b) => b.split('/').length - a.split('/').length)) {
+      if (Object.keys(record.entries).some((p) => p.startsWith(dir + '/'))) {
+        kept.push(dir)
+        continue
+      }
+      if (await unsafeTarget(project, dir)) continue
+      try {
+        await rmdir(join(project, dir))
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') kept.push(dir)
+      }
+    }
+    if (kept.length) record.dirs = kept
+    else delete record.dirs
     if (Object.keys(record.entries).length === 0) await rm(undoDir, { recursive: true, force: true })
     else await writeFileAtomic(join(undoDir, 'record.json'), JSON.stringify(record))
     return { applied, conflicts }
@@ -253,7 +294,7 @@ export class Workspace {
    * the same shape, with the original's hash taken from the baseline.
    */
   private async undoRecord(): Promise<UndoRecord | null> {
-    let raw: { at: number; entries: Record<string, Partial<UndoEntry> & { appliedHash?: string | null; before?: string | null }> }
+    let raw: { at: number; entries: Record<string, Partial<UndoEntry> & { appliedHash?: string | null; before?: string | null }>; dirs?: string[] }
     try {
       raw = JSON.parse(await readFile(join(this.root, UNDO_DIR, 'record.json'), 'utf8'))
     } catch {
@@ -268,7 +309,7 @@ export class Workspace {
         entries[path] = e as UndoEntry
       }
     }
-    return { at: raw.at, entries }
+    return { at: raw.at, entries, ...(raw.dirs ? { dirs: raw.dirs } : {}) }
   }
 
   async discard(): Promise<void> {
@@ -301,6 +342,8 @@ interface UndoEntry {
 interface UndoRecord {
   at: number
   entries: Record<string, UndoEntry>
+  /** Folders an apply created in the project, relative to it; undo removes them once empty. */
+  dirs?: string[]
 }
 
 /**
@@ -376,6 +419,16 @@ export async function hashFile(path: string): Promise<string> {
  * made at a different path from the one it would land on. What does not exist
  * yet is created by apply as plain folders. `root` is already resolved.
  */
+/** The folders on the way to `relDir` (relative to `root`) that do not exist yet, outermost first. */
+async function missingFolders(root: string, relDir: string): Promise<string[]> {
+  const missing: string[] = []
+  for (let dir = relDir; dir && dir !== '.'; dir = dirname(dir)) {
+    if (await lstatOrNull(join(root, dir))) break
+    missing.unshift(dir.split(sep).join('/'))
+  }
+  return missing
+}
+
 async function unsafeTarget(root: string, rel: string): Promise<string | null> {
   const parts = rel.split('/')
   if (parts.some((p) => p === '' || p === '.' || p === '..')) return 'the path does not stay inside the project'

@@ -65,6 +65,7 @@ export const IPC = {
   readerBack: 'reader:back',
   readerBounds: 'reader:bounds',
   readerExternal: 'reader:external',
+  readerHeld: 'reader:held',
   readerChanged: 'reader:changed',
   mcpList: 'mcp:list',
   mcpSave: 'mcp:save',

@@ -39,6 +39,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
   devDependency and was never audited, and runs weekly. A fixable
   high-severity advisory in the packaging tooling (`http-cache-semantics`)
   is updated. (#95)
+- The reading pane no longer opens a page on this computer or the local
+  network unasked: a link to `192.168.1.1` or `127.0.0.1:<port>` is held
+  with "Open it here", "Open in your browser" and "Don't open", and a page's
+  own requests there (an image aimed at a router) are cancelled. Page fetches
+  also check the IPv4 address inside NAT64 and 6to4 addresses. (#98)
 
 ### Fixed
 
@@ -48,6 +53,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   Node, the run mode option says so. (#97)
 - The README and `package.json` give the real minimum Node for building,
   22.12 (Electron 44's tooling and Vite 7 need it), and CI checks it. (#96)
+- Undo checks a restored file before putting it in place, so a mismatch never
+  replaces what the project holds; an undo record from before 0.9.21 whose
+  text is not the original's bytes is reported instead of written; and
+  folders an apply created are removed again once empty. (#98)
 
 ## [0.11.0] - 2026-10-02
 

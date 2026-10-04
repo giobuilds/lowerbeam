@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { chmod, mkdtemp, mkdir, readFile, writeFile, rm, stat, symlink } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readdir, readFile, writeFile, rm, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Workspace } from '../../src/main/coding/workspace.js'
@@ -205,6 +205,64 @@ console.log('\nan undo record from before 0.9.21 still undoes')
   await writeFile(join(ws9.root, '.lowerbeam-undo', 'record.json'), JSON.stringify({ at: 1, entries: { 'x.txt': { before: 'x before\n', appliedHash } } }))
   assert.deepEqual((await ws9.undo()).applied, ['x.txt']); ok('the old shape is read')
   assert.equal(await readFile(join(old, 'x.txt'), 'utf8'), 'x before\n'); ok('and the text it kept is restored')
+}
+
+console.log('\nan old record whose text is not the original\u2019s bytes is reported, not written')
+{
+  // #98: a binary original kept as text by a version before 0.9.21.
+  const legacy = join(base, 'legacy')
+  await mkdir(legacy)
+  const original = Buffer.from([0xff, 0xfe, 0x00, 0x01])
+  await writeFile(join(legacy, 'blob.dat'), original)
+  const ws10 = await Workspace.create(legacy, join(base, 'ws10'))
+  await writeFile(join(legacy, 'blob.dat'), 'applied\n')
+  await mkdir(join(ws10.root, '.lowerbeam-undo'))
+  const { createHash } = await import('node:crypto')
+  const appliedHash = createHash('sha256').update('applied\n').digest('hex')
+  await writeFile(join(ws10.root, '.lowerbeam-undo', 'record.json'), JSON.stringify({ at: 1, entries: { 'blob.dat': { before: original.toString('utf8'), appliedHash } } }))
+  const undone = await ws10.undo()
+  assert.deepEqual(undone.applied, []); assert.match(undone.conflicts[0]?.reason ?? '', /before 0\.9\.21.*not the original.s bytes/); ok('it is a conflict that says why')
+  assert.equal(await readFile(join(legacy, 'blob.dat'), 'utf8'), 'applied\n'); ok('and the file keeps what it has, not a text reading of the original')
+  assert.deepEqual((await readdir(legacy)).sort(), ['blob.dat']); ok('with nothing left beside it')
+}
+
+console.log('\na restore that does not match is never put in place')
+{
+  // #98: the check came after the write, so a mismatch stayed in the project.
+  const tampered = join(base, 'tampered')
+  await mkdir(tampered)
+  await writeFile(join(tampered, 't.txt'), 't before\n')
+  const ws11 = await Workspace.create(tampered, join(base, 'ws11'))
+  await writeFile(join(ws11.root, 't.txt'), 't after\n')
+  assert.deepEqual((await ws11.apply()).applied, ['t.txt'])
+  const originals = join(ws11.root, '.lowerbeam-undo', 'originals')
+  const [kept] = await readdir(originals)
+  await writeFile(join(originals, kept!), 'damaged\n')
+  const undone = await ws11.undo()
+  assert.deepEqual(undone.applied, []); assert.match(undone.conflicts[0]?.reason ?? '', /does not match the original; the file was left as it is/); ok('a damaged original is a conflict')
+  assert.equal(await readFile(join(tampered, 't.txt'), 'utf8'), 't after\n'); ok('and the project still holds what was applied, not the damaged copy')
+  assert.deepEqual((await readdir(tampered)).sort(), ['t.txt']); ok('with no staged file left beside it')
+}
+
+console.log('\nundo takes away the folders apply made')
+{
+  // #98: apply made folders with mkdir -p; undo removed the files and left them.
+  const tree = join(base, 'tree')
+  await mkdir(join(tree, 'src'), { recursive: true })
+  await writeFile(join(tree, 'src', 'a.ts'), 'a\n')
+  const ws12 = await Workspace.create(tree, join(base, 'ws12'))
+  await mkdir(join(ws12.root, 'src', 'deep', 'er'), { recursive: true })
+  await mkdir(join(ws12.root, 'docs'), { recursive: true })
+  await writeFile(join(ws12.root, 'src', 'deep', 'er', 'new.ts'), 'new\n')
+  await writeFile(join(ws12.root, 'src', 'deep', 'side.ts'), 'side\n')
+  await writeFile(join(ws12.root, 'docs', 'note.md'), 'note\n')
+  assert.deepEqual((await ws12.apply()).applied.sort(), ['docs/note.md', 'src/deep/er/new.ts', 'src/deep/side.ts'])
+  await writeFile(join(tree, 'docs', 'mine.md'), 'the person\u2019s own\n')
+  const undone = await ws12.undo()
+  assert.equal(undone.applied.length, 3); ok('the files are undone')
+  assert.equal(await stat(join(tree, 'src', 'deep')).then(() => true, () => false), false); ok('the folders apply made are gone, nested ones included')
+  assert.equal(await stat(join(tree, 'src')).then(() => true, () => false), true); ok('a folder that was there before stays')
+  assert.equal(await readFile(join(tree, 'docs', 'mine.md'), 'utf8'), 'the person\u2019s own\n'); ok('and one that holds something since is kept, with what it holds')
 }
 
 await rm(base, { recursive: true, force: true })

@@ -177,6 +177,8 @@ const api = {
     setBounds: (bounds: { x: number; y: number; width: number; height: number } | null) =>
       invoke<null>(IPC.readerBounds, bounds),
     openExternal: (url: string) => invoke<null>(IPC.readerExternal, url),
+    /** Open the held private page after all (true), or let it go (false). */
+    decideHeld: (open: boolean) => invoke<ReaderState | null>(IPC.readerHeld, open),
     onChanged: (cb: (state: ReaderState) => void) => subscribe<ReaderState>(IPC.readerChanged, cb)
   },
   mcp: {

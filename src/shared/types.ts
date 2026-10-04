@@ -389,6 +389,8 @@ export interface ReaderState {
   loading: boolean
   canGoBack: boolean
   error: string
+  /** A page on this computer or the local network the reader was sent to and is holding until the person says. */
+  held: { url: string; why: string } | null
 }
 
 /** Configuration and live state together, so the editor never shows one without the other. */
