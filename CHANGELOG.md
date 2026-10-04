@@ -20,6 +20,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-10-04
+
 ### Security
 
 - Run mode no longer lets a command read credentials in an extra read folder
