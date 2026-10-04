@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
-import { probeSandbox, runInSandbox, bwrapArgs, overlaySupported, DEPS_DIR } from '../../src/main/coding/sandbox.js'
+import { probeSandbox, runInSandbox, bwrapArgs, overlaySupported, maskSecrets, maskedFor, MASK_LIMIT, DEPS_DIR } from '../../src/main/coding/sandbox.js'
 import { execFileSync, spawn } from 'node:child_process'
 
 let n = 0; const ok = (m: string) => { n++; console.log('  ok', m) }
@@ -119,6 +119,38 @@ console.log('\nthe box\u2019s shape follows the terms of the grant')
   assert.equal(seen.exitCode, 0); assert.ok(seen.stdout.includes('dep')); ok('and a command can read it')
   const wr = await runInSandbox({ ...opts, command: `touch ${join(project, 'marker')}`, terms: { alsoRead: [project], network: false, install: false } })
   assert.notEqual(wr.exitCode, 0); ok('and cannot write it')
+}
+
+console.log('\nwhat the grant refuses to read stays unreadable inside the box')
+{
+  const extra = join(base, 'extra')
+  await mkdir(join(extra, 'deep', '.ssh'), { recursive: true })
+  await mkdir(join(extra, '.aws'), { recursive: true })
+  await writeFile(join(extra, '.env'), 'KEY=sekrit-env\n')
+  await writeFile(join(extra, '.env.example'), 'KEY=\n')
+  await writeFile(join(extra, 'deep', '.ssh', 'id_ed25519'), 'sekrit-ssh\n')
+  await writeFile(join(extra, '.aws', 'credentials'), 'sekrit-aws\n')
+  await writeFile(join(extra, 'notes.md'), 'plain\n')
+  await writeFile(join(project, 'node_modules', 'dep', '.env'), 'sekrit-dep\n')
+  const terms = { alsoRead: [extra], network: false, install: false }
+  const r = await runInSandbox({ ...opts, terms, command: `cat ${extra}/.env ${extra}/deep/.ssh/id_ed25519 ${extra}/.aws/credentials node_modules/dep/.env 2>&1; ls -A ${extra}/deep/.ssh ${extra}/.aws` })
+  assert.ok(!r.stdout.includes('sekrit'), r.stdout); ok('cat of .env, .ssh/* and .aws/* under an extra root shows nothing, nor a .env in the lent node_modules')
+  const plain = await runInSandbox({ ...opts, terms, command: `cat ${extra}/notes.md ${extra}/.env.example` })
+  assert.equal(plain.exitCode, 0); assert.match(plain.stdout, /plain/); ok('the rest of the root, templates included, still reads')
+  const m = await maskSecrets(extra)
+  assert.deepEqual(m.masked.sort(), [join(extra, '.aws'), join(extra, '.env'), join(extra, 'deep', '.ssh')]); ok('the masks are exactly the credentials')
+  const listed = await maskedFor(project, terms)
+  assert.ok(listed.includes(join(project, 'node_modules', 'dep', '.env')) && listed.includes(join(extra, '.env'))); ok('and the run header lists them, dependency tree included')
+  const inst = await runInSandbox({ ...opts, terms: { ...terms, install: true }, command: 'cat node_modules/dep/.env 2>&1; cat node_modules/dep/index.js' })
+  assert.ok(!inst.stdout.includes('sekrit') && inst.stdout.includes('dep'), inst.stdout + inst.stderr); ok('with install, too, the tree is there and its .env is not')
+  await rm(join(project, 'node_modules', 'dep', '.env'))
+
+  await assert.rejects(maskSecrets(join(extra, '.aws')), /folder of credentials/); ok('a folder of credentials is never lent whole')
+  const big = join(base, 'big')
+  let d = big
+  for (let i = 0; i <= MASK_LIMIT.depth + 1; i++) d = join(d, 'x')
+  await mkdir(d, { recursive: true })
+  await assert.rejects(bwrapArgs(workspace, project, { alsoRead: [big], network: false, install: false }), /too large to check/); ok('a folder too deep to check is refused, not bound unmasked')
 }
 
 await rm(base, { recursive: true, force: true })

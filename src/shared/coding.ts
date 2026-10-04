@@ -238,6 +238,8 @@ export interface CodingRunSummary {
   denials: number
   /** The terms the run had beyond its mode. */
   grant: GrantTerms
+  /** Credentials in what the box lends from outside the copy, masked inside it. Run mode only; absent when none. */
+  masked?: string[]
 }
 
 export interface CodingStartRequest {
