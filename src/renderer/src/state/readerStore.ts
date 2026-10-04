@@ -9,6 +9,8 @@ interface ReaderStore extends ReaderState {
   close: () => Promise<void>
   back: () => Promise<void>
   openExternal: () => void
+  /** Open the held private page here after all, or let it go. */
+  decideHeld: (open: boolean) => Promise<void>
   setHidden: (hidden: boolean) => void
   setWidth: (width: number) => void
 }
@@ -19,7 +21,8 @@ const EMPTY: ReaderState = {
   title: '',
   loading: false,
   canGoBack: false,
-  error: ''
+  error: '',
+  held: null
 }
 
 /** A cramped column is the difference between reading a page and squinting at it. */
@@ -44,8 +47,14 @@ export const useReaderStore = create<ReaderStore>((set, get) => ({
     await window.llama.reader.back()
   },
   openExternal() {
-    const { url } = get()
-    if (url) void window.llama.reader.openExternal(url)
+    // A held page is the one the person is looking at, though nothing loaded.
+    const { url, held } = get()
+    const target = held?.url ?? url
+    if (target) void window.llama.reader.openExternal(target)
+  },
+  async decideHeld(open) {
+    const state = await window.llama.reader.decideHeld(open)
+    set(state ?? EMPTY)
   },
   setHidden(hidden) {
     set({ hidden })

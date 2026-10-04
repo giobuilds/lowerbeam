@@ -585,6 +585,11 @@ export function registerIpc(
     readerFor(sender)?.setBounds(raw === null ? null : readerBoundsSchema.parse(raw))
     return null
   })
+  handleFrom<ReaderState | null>(IPC.readerHeld, (sender, open) => {
+    const reader = readerFor(sender)
+    reader?.decideHeld(open === true)
+    return reader?.state ?? null
+  })
   handle<null>(IPC.readerExternal, (url) => {
     openExternally(String(url ?? ''))
     return null

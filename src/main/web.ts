@@ -339,7 +339,78 @@ export function blockedAddress(ip: string): string | null {
   const family = isIP(ip) === 6 ? 'ipv6' : isIP(ip) === 4 ? 'ipv4' : null
   if (!family) return 'not an address'
   for (const [why, list] of RANGES) if (list.check(ip, family)) return why
+  // NAT64 (64:ff9b::/96) and 6to4 (2002::/16) carry an IPv4 address inside,
+  // which a gateway on the way unwraps and connects to. Blocking the prefixes
+  // whole would refuse every page on an IPv6-only network behind NAT64, so
+  // the address inside is what is checked.
+  const inner = family === 'ipv6' ? embeddedIPv4(ip) : null
+  return inner ? blockedAddress(inner) : null
+}
+
+/**
+ * Why a URL's host is somewhere a page should not take the reader unasked —
+ * this computer or the local network — or null. A literal address is checked
+ * as it is; `localhost` and its subdomains are this computer whatever DNS
+ * says; any other name is resolved and refused if any address it has is. A
+ * name that does not resolve is not private: the load will fail on its own.
+ */
+export async function privateHostReason(
+  url: string,
+  resolve: (host: string) => Promise<string[]> = resolveAll
+): Promise<string | null> {
+  let host: string
+  try {
+    host = new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase()
+  } catch {
+    return null
+  }
+  if (!host) return null
+  if (isIP(host)) return blockedAddress(host)
+  if (host === 'localhost' || host.endsWith('.localhost')) return 'on this computer'
+  let addresses: string[]
+  try {
+    addresses = await resolve(host)
+  } catch {
+    return null
+  }
+  for (const address of addresses) {
+    const why = blockedAddress(address)
+    if (why) return why
+  }
   return null
+}
+
+function resolveAll(host: string): Promise<string[]> {
+  return new Promise((resolve, reject) =>
+    dnsLookup(host, { all: true }, (err, addresses: LookupAddress[]) => (err ? reject(err) : resolve(addresses.map((a) => a.address))))
+  )
+}
+
+/** The IPv4 address a NAT64 or 6to4 address carries, or null for any other IPv6 address. */
+export function embeddedIPv4(ip: string): string | null {
+  const words = ipv6Words(ip)
+  if (!words) return null
+  const quad = (hi: number, lo: number): string => [hi >> 8, hi & 255, lo >> 8, lo & 255].join('.')
+  if (words[0] === 0x64 && words[1] === 0xff9b && words.slice(2, 6).every((w) => w === 0)) return quad(words[6]!, words[7]!)
+  if (words[0] === 0x2002) return quad(words[1]!, words[2]!)
+  return null
+}
+
+/** An IPv6 address as its eight 16-bit words, `::` and a trailing dotted quad expanded. */
+function ipv6Words(ip: string): number[] | null {
+  let text = ip.replace(/%.*$/, '')
+  const dotted = text.match(/(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(1).map(Number) as [number, number, number, number]
+    text = text.slice(0, dotted.index) + `${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`
+  }
+  const halves = text.split('::')
+  if (halves.length > 2) return null
+  const head = halves[0] ? halves[0].split(':') : []
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : []
+  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0
+  const words = [...head, ...Array(fill).fill('0'), ...tail].map((w) => parseInt(w, 16))
+  return words.length === 8 && words.every((w) => w >= 0 && w <= 0xffff) ? words : null
 }
 
 const RANGES: Array<[string, BlockList]> = (
