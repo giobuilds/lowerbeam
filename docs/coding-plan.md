@@ -402,8 +402,9 @@ and failing before but not now. A test file among the run's changes is
 named in the panel and badged in the Changes list, since a pass that
 came from editing the tests is not a pass. Each command's full output is
 kept beside the journal, numbered in the order the journal has them.
-Verified by the unit suite, including a rerun in the sandbox; not yet
-in the running app.
+Verified by the unit suite, including a rerun in the sandbox, and seen
+working in the running app on 0.9.8 (2026-09-14), which is where the
+baseline comparison bug fixed in #55 turned up.
 
 **Toward a fine-tune.** The journals are a training set now
 (`tests/harness/dataset.mjs`, 139 examples that replayed faithfully and
@@ -451,7 +452,8 @@ filesystem or the home directory, never the app's own state; network and
 install dropped outside run mode so the record never claims them. What a
 run asked for and was refused is listed under its header, with the
 change that would allow it next time. Verified by the unit suite, in the
-sandbox; not yet in the running app.
+sandbox, and seen working in the running app on 0.9.8 (2026-09-14); the
+overlay that followed (#56) is covered by the sandbox suite.
 
 **Gates.** Recover, on the 9B, three runs each: 3 of 4 tasks by majority
 (7/12 runs), every pass verified by a test run after the edit, unwanted

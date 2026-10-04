@@ -125,7 +125,7 @@ fastest. Sampler settings aren't here on purpose: they don't change throughput.
 
 ## Requirements
 
-- Node 20+ (developed on 24)
+- Node 22.12+ (developed on 24)
 - llama.cpp — either the unified `llama` CLI or the standalone `llama-server`
 - For *edit and run* only: bubblewrap (`bwrap`) and unprivileged user
   namespaces. Without them the other coding modes still work.
@@ -215,8 +215,10 @@ npm run test:all    # adds integration suites
 ```
 
 CI runs the type check, the unit tier (bubblewrap included, so the sandbox
-suites run), a build and an audit of the shipped dependencies on every push
-to `main` and every pull request; see `.github/workflows/ci.yml`.
+suites run) and a build on Node 22.12 and 24, on every push to `main`, every
+pull request and weekly. It also audits the dependencies, Electron included
+although it is a devDependency (`npm run audit:deps`; see `scripts/audit.mjs`
+for what blocks); see `.github/workflows/ci.yml`.
 
 No framework: suites import the app's own modules, are bundled with esbuild and
 run as scripts, and print what they checked. Unit suites cover argument

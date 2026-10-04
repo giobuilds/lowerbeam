@@ -35,6 +35,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   so, since test fixtures are caught too. A dot-folder directly in home
   (`~/.config`, `~/.local`) can no longer be a project or an extra read
   folder. (#94)
+- CI's dependency audit now covers Electron, which ships but is a
+  devDependency and was never audited, and runs weekly. A fixable
+  high-severity advisory in the packaging tooling (`http-cache-semantics`)
+  is updated. (#95)
 
 ### Fixed
 
@@ -42,6 +46,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
   commands run with. Before, only the version manager's shim was lent, so
   commands silently ran the system's Node, or none. When the shim names no
   Node, the run mode option says so. (#97)
+- The README and `package.json` give the real minimum Node for building,
+  22.12 (Electron 44's tooling and Vite 7 need it), and CI checks it. (#96)
 
 ## [0.11.0] - 2026-10-02
 
