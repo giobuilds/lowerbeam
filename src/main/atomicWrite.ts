@@ -1,5 +1,6 @@
 import { writeFile, rename, mkdir } from 'node:fs/promises'
 import { dirname, basename, join } from 'node:path'
+import { PRIVATE_DIR, PRIVATE_FILE } from './private.js'
 
 /**
  * Write a file so it is never observed half-written.
@@ -16,10 +17,11 @@ import { dirname, basename, join } from 'node:path'
  */
 export async function writeFileAtomic(path: string, contents: string): Promise<void> {
   const directory = dirname(path)
-  await mkdir(directory, { recursive: true })
+  // Everything written this way is the app's own data: its user's alone.
+  await mkdir(directory, { recursive: true, mode: PRIVATE_DIR })
   // Same directory, so the rename cannot cross a filesystem boundary.
   const temporary = join(directory, `.${basename(path)}.${process.pid}.tmp`)
-  await writeFile(temporary, contents, 'utf8')
+  await writeFile(temporary, contents, { encoding: 'utf8', mode: PRIVATE_FILE })
   await rename(temporary, path)
 }
 

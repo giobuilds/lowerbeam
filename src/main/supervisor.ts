@@ -9,6 +9,7 @@ import { routerIds, servedModel } from '@shared/served.js'
 import { authHeaders } from '@shared/chatClient.js'
 import { serverHandoffSchema, type ServerHandoff } from '@shared/schema.js'
 import { LogBuffer, LineSplitter } from './logBuffer.js'
+import { PRIVATE_DIR, PRIVATE_FILE } from './private.js'
 
 /** stdin is 'ignore', so the child has no writable stdin. */
 type LlamaChild = ChildProcessByStdio<null, Readable, Readable>
@@ -143,7 +144,7 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
 
   async start(config: LaunchConfig, api: LocalApiSettings = DEFAULT_LOCAL_API): Promise<void> {
     const { host, port } = await this.prepare(api)
-    await this.spawnServer(buildArgs(config, port, this.binary, { host, apiKey: api.apiKey || null }), port, api, config, null)
+    await this.spawnServer(buildArgs(config, port, this.binary, { host }), port, api, config, null)
   }
 
   /**
@@ -157,19 +158,18 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
     if (launch.modelsMax < 1) throw new Error('At least one model has to be allowed to load.')
     const { host, port } = await this.prepare(api)
     const presetPath = join(dirname(this.handoffPath), 'router-presets.ini')
-    await writeFile(presetPath, routerPreset(launch, this.binary), 'utf8')
+    await writeFile(presetPath, routerPreset(launch, this.binary), { encoding: 'utf8', mode: PRIVATE_FILE })
     // A router also offers every model in the Hugging Face cache, under
     // llama.cpp's defaults, to any client that names one. Pointed at an
     // empty cache it offers only the models chosen here; those load by path.
     const emptyCache = join(dirname(this.handoffPath), 'router-cache')
-    await mkdir(emptyCache, { recursive: true })
+    await mkdir(emptyCache, { recursive: true, mode: PRIVATE_DIR })
     const args = [
       ...this.binary.argvPrefix,
       '--models-preset', presetPath,
       '--models-max', String(launch.modelsMax),
       '--host', host,
-      '--port', String(port),
-      ...(api.apiKey ? ['--api-key', api.apiKey] : [])
+      '--port', String(port)
     ]
     await this.spawnServer(args, port, api, null, launch, { HF_HUB_CACHE: emptyCache, HUGGINGFACE_HUB_CACHE: emptyCache, LLAMA_CACHE: emptyCache })
   }
@@ -220,7 +220,7 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
 
     const child = spawn(this.binary.path, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, ...env },
+      env: serverEnv(process.env, api.apiKey || null, env),
       // Own process group, so a SIGKILL escalation can take down anything it forked.
       detached: true
     })
@@ -540,7 +540,8 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
 
   private async writeHandoff(handoff: ServerHandoff): Promise<void> {
     try {
-      await writeFile(this.handoffPath, JSON.stringify(handoff), 'utf8')
+      // It holds the key, so an adopted server can be reached the same way.
+      await writeFile(this.handoffPath, JSON.stringify(handoff), { encoding: 'utf8', mode: PRIVATE_FILE })
     } catch (err) {
       this.appendLog('app', `could not write handoff file: ${(err as Error).message}`)
     }
@@ -600,7 +601,7 @@ export function buildArgs(
   config: LaunchConfig,
   port: number,
   binary: BinaryInfo,
-  api: { host?: string; apiKey?: string | null } = {}
+  api: { host?: string } = {}
 ): string[] {
   const canFit = binary.flags.includes('--fit')
   const autoFit = config.autoFit && canFit
@@ -638,7 +639,6 @@ export function buildArgs(
   } else if (config.flashAttn) {
     args.push('--flash-attn')
   }
-  if (api.apiKey) args.push('--api-key', api.apiKey)
   if (config.noWarmup) args.push('--no-warmup')
   if (config.threads > 0) args.push('--threads', String(config.threads))
   if (config.alias) args.push('--alias', config.alias)
@@ -716,6 +716,20 @@ export function routerPreset(launch: RouterLaunch, binary: BinaryInfo): string {
     return `[${ids[i]}]\n${lines.join('\n')}\n`
   })
   return sections.join('\n')
+}
+
+/**
+ * The server's environment. The key goes here, as LLAMA_API_KEY, and never
+ * on the command line: argv is readable by every account on the machine
+ * through ps and /proc, while a process's environment is its owner's. One
+ * inherited from the shell that started the app is dropped when no key is
+ * set, so a server is never locked by a key nobody chose here.
+ */
+export function serverEnv(base: NodeJS.ProcessEnv, apiKey: string | null, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, ...extra }
+  delete env['LLAMA_API_KEY']
+  if (apiKey) env['LLAMA_API_KEY'] = apiKey
+  return env
 }
 
 /** The argv with the value after --api-key masked, for anything a person might see or share. */
