@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc.js'
-import type { ApplyResult, ChangeSet, CodingRunSummary, CodingStartRequest, JournalEvent } from '@shared/coding.js'
+import type { ApplyOptions, ApplyResult, ChangeSet, CodingRunSummary, CodingStartRequest, GitState, JournalEvent } from '@shared/coding.js'
 import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
 import type {
@@ -169,7 +169,8 @@ const api = {
     get: (runId: string) => invoke<JournalEvent[]>(IPC.codingGet, runId),
     /** An edit run's changes against its baseline; null for an inspect run. */
     changes: (runId: string) => invoke<ChangeSet | null>(IPC.codingChanges, runId),
-    apply: (runId: string) => invoke<ApplyResult>(IPC.codingApply, runId),
+    apply: (runId: string, options?: ApplyOptions) => invoke<ApplyResult>(IPC.codingApply, runId, options ?? {}),
+    git: (runId: string) => invoke<GitState | null>(IPC.codingGit, runId),
     undo: (runId: string) => invoke<ApplyResult>(IPC.codingUndo, runId),
     discard: (runId: string) => invoke<null>(IPC.codingDiscard, runId),
     /** Whether commands can be run on this machine, with the reason when not. */

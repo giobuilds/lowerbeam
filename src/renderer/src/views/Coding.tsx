@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { DEFAULT_TERMS, sameTerms, type ChangeSet, type CodingRunSummary, type GrantTerms, type JournalEvent } from '@shared/coding.js'
+import { DEFAULT_TERMS, sameTerms, type ChangeSet, type CodingRunSummary, type GitState, type GrantTerms, type JournalEvent } from '@shared/coding.js'
 import { useCodingStore } from '../state/codingStore.js'
 import { verdictFor, type CapabilityStatus } from '@shared/capability.js'
 import { isTestPath, type CommandEvidence } from '@shared/evidence.js'
@@ -501,15 +501,22 @@ function Changes({ run }: { run: CodingRunSummary }): React.JSX.Element {
   const apply = useCodingStore((s) => s.apply)
   const undo = useCodingStore((s) => s.undo)
   const discard = useCodingStore((s) => s.discard)
+  const [commitPlan, setCommitPlan] = useState({ on: false, message: '', branch: '' })
+  const git = useGit(run.id, run.appliedAt)
 
   useEffect(() => {
     if (!changes) void loadChanges(run.id)
   }, [changes, loadChanges, run.id])
+  // The message a commit would have, until the person writes their own.
+  useEffect(() => {
+    setCommitPlan((p) => (p.message ? p : { ...p, message: commitMessage(run.task) }))
+  }, [run.task])
 
   if (!changes) return <p className="mt-4 text-[11px] text-muted">Comparing with the baseline…</p>
 
   return (
     <div className="mt-4">
+      <GitLine run={run} changes={changes} />
       <div className="mb-1 flex items-baseline gap-3">
         <p className="text-[11px] font-medium text-muted">
           Changes{changes.files.length ? ` · ${changes.files.length} file${changes.files.length === 1 ? '' : 's'}` : ''}
@@ -522,8 +529,13 @@ function Changes({ run }: { run: CodingRunSummary }): React.JSX.Element {
             </button>
           ) : (
             changes.files.length > 0 && (
-              <button type="button" disabled={busy} onClick={() => void apply(run.id)} className="rounded bg-accent px-2.5 py-0.5 text-[11px] font-medium text-ink disabled:opacity-50">
-                Apply to project
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void apply(run.id, commitPlan.on ? { commit: { message: commitPlan.message, ...(commitPlan.branch.trim() ? { branch: commitPlan.branch.trim() } : {}) } } : {})}
+                className="rounded bg-accent px-2.5 py-0.5 text-[11px] font-medium text-ink disabled:opacity-50"
+              >
+                {commitPlan.on ? 'Apply and commit' : 'Apply to project'}
               </button>
             )
           )}
@@ -535,9 +547,48 @@ function Changes({ run }: { run: CodingRunSummary }): React.JSX.Element {
 
       {changes.files.length === 0 && <p className="text-[11px] text-muted">The run changed nothing.</p>}
 
+      {git?.repo && !run.appliedAt && changes.files.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
+          <label className="flex items-center gap-1 text-slate-200">
+            <input type="checkbox" checked={commitPlan.on} disabled={busy} onChange={(e) => setCommitPlan({ ...commitPlan, on: e.target.checked })} />
+            Commit the applied files
+          </label>
+          {commitPlan.on && (
+            <>
+              <input
+                value={commitPlan.message}
+                onChange={(e) => setCommitPlan({ ...commitPlan, message: e.target.value })}
+                className="min-w-0 flex-1 rounded border border-edge bg-ink px-1.5 py-0.5 text-[11px]"
+                placeholder="Commit message"
+              />
+              <input
+                value={commitPlan.branch}
+                onChange={(e) => setCommitPlan({ ...commitPlan, branch: e.target.value })}
+                className="w-48 rounded border border-edge bg-ink px-1.5 py-0.5 font-mono text-[11px]"
+                placeholder={`on ${git.branch ?? 'HEAD'}, or a new branch`}
+                title="Leave empty to commit on the current branch. A name here starts a new branch from it first."
+              />
+              <span className="basis-full text-muted">
+                Only the files this applies go in the commit; anything else you have staged stays staged. Git hooks are not run for it: the run may have changed them.
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       {result && (
         <div className="mb-2 rounded border border-edge bg-panel p-2 text-[11px]">
           {result.applied.length > 0 && <p className="text-emerald-300">{result.applied.length} file{result.applied.length === 1 ? '' : 's'}: {result.applied.join(', ')}</p>}
+          {result.commit && 'sha' in result.commit && (
+            <p className="text-emerald-300">
+              committed {result.commit.sha.slice(0, 7)}
+              {result.commit.branch ? ` on ${result.commit.branch}` : ''}
+            </p>
+          )}
+          {result.commit && 'error' in result.commit && <p className="text-amber-300">{result.commit.error}</p>}
+          {result.reverted && result.reverted.length > 0 && (
+            <p className="text-muted">reverted {result.reverted.map((s) => s.slice(0, 7)).join(', ')} with a revert commit</p>
+          )}
           {result.conflicts.map((c) => (
             <p key={c.path} className="text-amber-300">
               {c.path} left alone — {c.reason}
@@ -552,6 +603,53 @@ function Changes({ run }: { run: CodingRunSummary }): React.JSX.Element {
         ))}
       </ul>
     </div>
+  )
+}
+
+/** The first line of the task, as a commit subject. */
+function commitMessage(task: string): string {
+  const line = task.trim().split('\n')[0] ?? ''
+  return `Lowerbeam: ${line.length > 64 ? `${line.slice(0, 63)}…` : line}`
+}
+
+/** The project's git as it is now; read again after an apply or undo, which may have committed. */
+function useGit(runId: string, appliedAt: number | null): GitState | null {
+  const [git, setGit] = useState<GitState | null>(null)
+  useEffect(() => {
+    let stale = false
+    void window.llama.coding
+      .git(runId)
+      .then((g) => {
+        if (!stale) setGit(g)
+      })
+      .catch(() => undefined)
+    return () => {
+      stale = true
+    }
+  }, [runId, appliedAt])
+  return git
+}
+
+/** Where the project stands in git: branch and what is uncommitted, so an apply lands knowingly. */
+function GitLine({ run, changes }: { run: CodingRunSummary; changes: ChangeSet }): React.JSX.Element | null {
+  const git = useGit(run.id, run.appliedAt)
+  if (!git) return null
+  if (!git.repo) return <p className="mb-1 text-[11px] text-muted">The project is not a git repository: Apply writes the files, and Undo restores them.</p>
+  const dirty = git.changed + git.untracked
+  return (
+    <p className="mb-1 text-[11px] text-muted" title={git.top ?? ''}>
+      git: <span className="font-mono text-slate-300">{git.branch ?? `detached at ${git.head ?? '?'}`}</span>
+      {git.head && <span className="font-mono"> @ {git.head}</span>}
+      {' · '}
+      {dirty === 0 ? (
+        <span className="text-emerald-300/80">nothing uncommitted</span>
+      ) : (
+        <span className="text-amber-200/80">
+          {git.changed} changed and {git.untracked} untracked file{dirty === 1 ? '' : 's'} not committed
+        </span>
+      )}
+      {changes.files.length > 0 && !run.appliedAt && ' · applying adds the run’s changes to the working tree'}
+    </p>
   )
 }
 

@@ -20,6 +20,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Apply as a commit**: in a git project, a coding run's Changes panel shows
+  the branch and what is uncommitted, and Apply can commit the files it
+  writes, optionally on a new branch. Only those files go in the commit,
+  anything else staged stays staged, git hooks are not run for it, and it is
+  refused when one of the files has an uncommitted edit of yours. Undo
+  restores the files and records a revert commit (#109).
+
 ## [0.12.0] - 2026-10-07
 
 ### Added

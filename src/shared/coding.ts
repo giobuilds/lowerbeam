@@ -140,12 +140,16 @@ export type JournalEvent =
       type: 'applied'
       files: Array<{ path: string; sha256: string | null }>
       conflicts: Array<{ path: string; reason: string }>
+      /** The commit the apply made, when it was asked to make one. */
+      commit?: { sha: string; branch: string | null }
     })
   | (Base & {
       /** An apply taken back: the files restored, and any that could not be. */
       type: 'undone'
       files: string[]
       conflicts: Array<{ path: string; reason: string }>
+      /** Commits an apply made that this undo reverted, with a revert commit each. */
+      reverted?: string[]
     })
   | (Base & {
       type: 'run.finished'
@@ -235,6 +239,27 @@ export interface ApplyResult {
   applied: string[]
   /** Files left alone, and why. Nothing is merged and nothing is guessed. */
   conflicts: Array<{ path: string; reason: string }>
+  /** When the apply was asked to commit: the commit made, or why there is none. Undo: the commits reverted. */
+  commit?: { sha: string; branch: string | null } | { error: string }
+  reverted?: string[]
+}
+
+/** How to apply: as plain file writes, or as a commit, optionally on a new branch. */
+export interface ApplyOptions {
+  commit?: { message: string; branch?: string }
+}
+
+/** The project's git, as the Changes panel shows it. */
+export interface GitState {
+  repo: boolean
+  /** The repository's top folder, which may be above the project. */
+  top: string | null
+  branch: string | null
+  /** Short hash of HEAD; null in a repository with no commit yet. */
+  head: string | null
+  /** Tracked files with uncommitted changes, and untracked files. */
+  changed: number
+  untracked: number
 }
 
 /** What the interface needs to list runs and show one, without the whole journal. */

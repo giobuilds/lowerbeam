@@ -55,6 +55,7 @@ export const IPC = {
   codingChanges: 'coding:changes',
   codingApply: 'coding:apply',
   codingUndo: 'coding:undo',
+  codingGit: 'coding:git',
   codingDiscard: 'coding:discard',
   codingSandbox: 'coding:sandbox',
   codingCapability: 'coding:capability',

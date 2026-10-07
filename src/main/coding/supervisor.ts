@@ -20,7 +20,8 @@ import { evidenceFrom, withRerun, type Evidence } from '@shared/evidence.js'
 import { hashFile } from './workspace.js'
 import { appendFile, writeFile } from 'node:fs/promises'
 import { RUN_FILE } from '../appData.js'
-import type { ApplyResult, ChangeSet } from '@shared/coding.js'
+import type { ApplyOptions, ApplyResult, ChangeSet, GitState } from '@shared/coding.js'
+import { checkNewBranch, checkRevertable, commitInfo, commitPaths, gitState, revertMessage, switchToNewBranch, uncommitted } from './git.js'
 import { PRIVATE_DIR, PRIVATE_FILE } from '../private.js'
 
 /** What every coding run is given, and so what a measurement measures. */
@@ -486,11 +487,46 @@ export class CodingSupervisor extends EventEmitter<{
     return ws ? ws.changes() : null
   }
 
-  async apply(id: string): Promise<ApplyResult> {
+  /** The project's git: branch and what is uncommitted, for the Changes panel. */
+  async git(id: string): Promise<GitState | null> {
+    const ws = await this.workspace(id)
+    return ws ? gitState(ws.manifest.projectRoot) : null
+  }
+
+  async apply(id: string, options: ApplyOptions = {}): Promise<ApplyResult> {
     const ws = await this.workspace(id)
     if (!ws) throw new Error('This run has no workspace to apply.')
     if (this.live.has(id)) throw new Error('Wait for the run to finish, or stop it, before applying.')
-    const result = await ws.apply()
+    const project = ws.manifest.projectRoot
+    const commit = options.commit
+    if (commit) {
+      // Checked before anything is written, so a refusal changes nothing.
+      if (!commit.message.trim()) throw new Error('A commit needs a message.')
+      if (!(await gitState(project)).repo) throw new Error('The project is not a git repository, so there is nothing to commit to.')
+      const paths = (await ws.changes()).files.filter((f) => f.kind !== 'symlink').map((f) => f.path)
+      // The commit is to hold the run's changes and nothing of the person's:
+      // a file they have edited and not committed would go in with it.
+      const theirs = await uncommitted(project, paths)
+      if (theirs.length) {
+        throw new Error(
+          `These files have changes in the project that are not committed, and a commit would include them: ${theirs.join(', ')}. Commit or stash them first, or apply without a commit.`
+        )
+      }
+      if (commit.branch) {
+        const bad = await checkNewBranch(project, commit.branch)
+        if (bad) throw new Error(bad)
+        await switchToNewBranch(project, commit.branch)
+      }
+    }
+    const result: ApplyResult = await ws.apply()
+    if (commit && result.applied.length) {
+      try {
+        result.commit = await commitPaths(project, result.applied, commit.message.trim())
+      } catch (err) {
+        // The files are written either way, and undo restores them by file.
+        result.commit = { error: `the files were applied but not committed: ${(err as Error).message.split('\n')[0]}` }
+      }
+    }
     // The journal is the run's record, and writing into the project is the
     // most consequential thing a run leads to: it is recorded there, with
     // what was written, so a restart and an audit both see it.
@@ -498,7 +534,8 @@ export class CodingSupervisor extends EventEmitter<{
       const files = await Promise.all(
         result.applied.map(async (path) => ({ path, sha256: await hashFile(join(ws.root, path)).catch(() => null) }))
       )
-      const event = await this.record(id, { type: 'applied', files, conflicts: result.conflicts })
+      const made = result.commit && 'sha' in result.commit ? result.commit : null
+      const event = await this.record(id, { type: 'applied', files, conflicts: result.conflicts, ...(made ? { commit: made } : {}) })
       const summary = this.runs.get(id)
       if (summary && result.applied.length) {
         summary.appliedAt = event.ts
@@ -511,8 +548,33 @@ export class CodingSupervisor extends EventEmitter<{
   async undo(id: string): Promise<ApplyResult> {
     const ws = await this.workspace(id)
     if (!ws) throw new Error('This run has no workspace.')
-    const result = await ws.undo()
-    if (result.applied.length || result.conflicts.length) await this.record(id, { type: 'undone', files: result.applied, conflicts: result.conflicts })
+    // Commits the applies made are undone with a commit of their own: their
+    // files restored by the undo below, then committed alone, as a revert.
+    // Each must be on the branch the project is on now, or nothing is done.
+    const project = ws.manifest.projectRoot
+    const commits = pendingCommits(await this.events(id))
+    for (const sha of commits) {
+      const reason = await checkRevertable(project, sha)
+      if (reason) return { applied: [], conflicts: [{ path: '(commit)', reason }] }
+    }
+    const infos = await Promise.all(commits.map(async (sha) => ({ sha, ...(await commitInfo(project, sha)) })))
+    const result: ApplyResult = await ws.undo()
+    const restored = new Set(result.applied)
+    // A commit is reverted when every file it holds came back; one with a
+    // file left alone stays pending, and the commit says only what it undid.
+    const done = infos.filter((c) => c.paths.every((p) => restored.has(p) || !result.conflicts.some((x) => x.path === p)))
+    const paths = [...new Set(done.flatMap((c) => c.paths))].filter((p) => restored.has(p))
+    if (done.length && paths.length) {
+      try {
+        await commitPaths(project, paths, revertMessage(done))
+        result.reverted = done.map((c) => c.sha)
+      } catch (err) {
+        result.conflicts.push({ path: '(commit)', reason: `the files were restored, but the revert was not committed: ${(err as Error).message.split('\n')[0]}` })
+      }
+    }
+    if (result.applied.length || result.conflicts.length || result.reverted?.length) {
+      await this.record(id, { type: 'undone', files: result.applied, conflicts: result.conflicts, ...(result.reverted?.length ? { reverted: result.reverted } : {}) })
+    }
     const summary = this.runs.get(id)
     if (summary && result.conflicts.length === 0) {
       summary.appliedAt = null
@@ -717,6 +779,21 @@ interface Rerun {
 
 function describe(mode: CodingStartRequest['mode']): string {
   return mode === 'run' ? 'edit and run commands' : mode === 'edit' ? 'edit' : 'inspect'
+}
+
+/** Commits applies of this run made that no undo has reverted yet, oldest first. */
+export function pendingCommits(events: JournalEvent[]): string[] {
+  const pending: string[] = []
+  for (const e of events) {
+    if (e.type === 'applied' && e.commit) pending.push(e.commit.sha)
+    else if (e.type === 'undone') {
+      for (const sha of e.reverted ?? []) {
+        const at = pending.indexOf(sha)
+        if (at >= 0) pending.splice(at, 1)
+      }
+    }
+  }
+  return pending
 }
 
 /** When the run's changes were last applied and not taken back, from the journal; null if they are not in the project. */
