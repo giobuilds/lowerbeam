@@ -20,6 +20,7 @@ import { evidenceFrom, withRerun, type Evidence } from '@shared/evidence.js'
 import { hashFile } from './workspace.js'
 import { appendFile, writeFile } from 'node:fs/promises'
 import type { ApplyResult, ChangeSet } from '@shared/coding.js'
+import { PRIVATE_DIR, PRIVATE_FILE } from '../private.js'
 
 /** What every coding run is given, and so what a measurement measures. */
 const RUN_SETTINGS = { temperature: 0.2, topP: 0.95, topK: 40, minP: 0.05, repeatPenalty: 1.1, maxTokens: -1 }
@@ -67,7 +68,7 @@ export class CodingSupervisor extends EventEmitter<{
 
   /** Rebuild the list from what is on disk, oldest first. */
   async load(): Promise<void> {
-    await mkdir(this.dir, { recursive: true })
+    await mkdir(this.dir, { recursive: true, mode: PRIVATE_DIR })
     for (const name of await readdir(this.dir)) {
       if (!name.endsWith('.jsonl')) continue
       const summary = summarise(await Journal.read(join(this.dir, name)))
@@ -224,7 +225,7 @@ export class CodingSupervisor extends EventEmitter<{
                 // person can see all of it.
                 const output = r.stdout + (r.stderr ? (r.stdout ? '\n' : '') + r.stderr : '')
                 commands += 1
-                await writeFile(join(this.dir, `${id}.cmd-${commands}.txt`), `$ ${command}\n${output}`)
+                await writeFile(join(this.dir, `${id}.cmd-${commands}.txt`), `$ ${command}\n${output}`, { mode: PRIVATE_FILE })
                 return {
                   exitCode: r.exitCode,
                   output,
@@ -241,7 +242,7 @@ export class CodingSupervisor extends EventEmitter<{
         },
         // The model's own words, beside the journal: what a run rebuilt as
         // a training example needs and the record only measures.
-        keep: (round, words) => appendFile(join(this.dir, `${id}.words.jsonl`), JSON.stringify({ round, ...words }) + '\n')
+        keep: (round, words) => appendFile(join(this.dir, `${id}.words.jsonl`), JSON.stringify({ round, ...words }) + '\n', { mode: PRIVATE_FILE })
       })
       Object.assign(summary, {
         finishedAt: Date.now(),
@@ -352,7 +353,7 @@ export class CodingSupervisor extends EventEmitter<{
       this.emit('measure', { ...progress, tasks: [...progress.tasks] })
     }
     try {
-      await mkdir(outDir, { recursive: true })
+      await mkdir(outDir, { recursive: true, mode: PRIVATE_DIR })
       if (!on.supportsTools) {
         await this.local.put(noToolsEntry(entryArgs))
       } else {
@@ -471,7 +472,7 @@ export class CodingSupervisor extends EventEmitter<{
       const r = await runInSandbox({ workspace: copy.root, projectRoot: ws.manifest.projectRoot, command, timeoutMs: 120_000, maxOutputBytes: 512 * 1024, terms: this.runs.get(id)?.grant ?? DEFAULT_TERMS })
       const output = r.stdout + (r.stderr ? (r.stdout ? '\n' : '') + r.stderr : '')
       const rerun: Rerun = { command, exitCode: r.exitCode, timedOut: r.timedOut, output, drifted: drifted.sort(), at: Date.now() }
-      await writeFile(join(this.dir, `${id}.baseline.json`), JSON.stringify(rerun))
+      await writeFile(join(this.dir, `${id}.baseline.json`), JSON.stringify(rerun), { mode: PRIVATE_FILE })
       return withRerun(evidence, rerun)
     } finally {
       await copy.discard()
