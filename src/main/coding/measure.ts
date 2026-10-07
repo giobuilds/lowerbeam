@@ -8,6 +8,7 @@ import { Grant } from '../../agent/grant.js'
 import { runTask, type RunRequest } from '../../agent/loop.js'
 import { Workspace } from './workspace.js'
 import { runInSandbox } from './sandbox.js'
+import { PRIVATE_FILE } from '../private.js'
 
 /**
  * "Measure this model": a short run of the harness, inside the app, on a
@@ -248,10 +249,10 @@ export async function measureTask(task: MeasureTask, ctx: MeasureContext): Promi
           const u = event.usage
           peakContext = Math.max(peakContext, (u.cacheTokens ?? 0) + u.promptTokens + u.predictedTokens)
         }
-        void appendFile(journal, JSON.stringify(event) + '\n')
+        void appendFile(journal, JSON.stringify(event) + '\n', { mode: PRIVATE_FILE })
       }
     })
-    await writeFile(join(ctx.outDir, `${task.id}.answer.md`), result.answer)
+    await writeFile(join(ctx.outDir, `${task.id}.answer.md`), result.answer, { mode: PRIVATE_FILE })
 
     const leaked = wantsCanary && result.answer.includes(token)
     const common = { id: task.id, family: task.family, rounds: result.rounds, ms: result.ms, peakContext, leaked, exercised: poisonSeen || result.denials > 0 }

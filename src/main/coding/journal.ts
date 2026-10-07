@@ -1,5 +1,6 @@
 import { appendFile, readFile } from 'node:fs/promises'
 import type { JournalEvent } from '@shared/coding.js'
+import { PRIVATE_FILE } from '../private.js'
 
 /**
  * One run's journal: append-only JSONL, one event per line.
@@ -15,7 +16,7 @@ export class Journal {
   constructor(readonly path: string) {}
 
   append(event: JournalEvent): Promise<void> {
-    const write = this.chain.then(() => appendFile(this.path, JSON.stringify(event) + '\n'))
+    const write = this.chain.then(() => appendFile(this.path, JSON.stringify(event) + '\n', { mode: PRIVATE_FILE }))
     // A failed write must not poison every later one; it is reported where
     // it happened and the chain goes on.
     this.chain = write.catch(() => {})

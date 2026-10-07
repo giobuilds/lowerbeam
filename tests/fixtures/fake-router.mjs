@@ -15,7 +15,7 @@ const arg = (name) => {
 }
 const port = Number(arg('--port'))
 const max = Number(arg('--models-max') ?? 4)
-const key = arg('--api-key')
+const key = arg('--api-key') ?? process.env.LLAMA_API_KEY
 const presetText = readFileSync(arg('--models-preset'), 'utf8')
 const presets = new Map()
 let current = null

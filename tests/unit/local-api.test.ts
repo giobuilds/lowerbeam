@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { createServer, type Server } from 'node:net'
-import { rm } from 'node:fs/promises'
+import { readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { ServerSupervisor, buildArgs, isAlive, pickFreePort, portFree, redactKey } from '../../src/main/supervisor.js'
+import { serverEnv, ServerSupervisor, buildArgs, isAlive, pickFreePort, portFree, redactKey } from '../../src/main/supervisor.js'
 import { DEFAULT_LAUNCH_CONFIG, type ServerPhase } from '@shared/types.js'
 import { authHeaders } from '@shared/chatClient.js'
 
@@ -26,10 +26,14 @@ console.log('the launch carries the binding and the key')
 {
   const plain = buildArgs(cfg, 1234, bin)
   assert.equal(plain[plain.indexOf('--host') + 1], '127.0.0.1'); assert.ok(!plain.includes('--api-key')); ok('by default: loopback, no key')
-  const lan = buildArgs(cfg, 1234, bin, { host: '0.0.0.0', apiKey: 'secret' })
-  assert.equal(lan[lan.indexOf('--host') + 1], '0.0.0.0'); assert.equal(lan[lan.indexOf('--api-key') + 1], 'secret'); ok('with the network and a key: every interface, and the key')
+  const lan = buildArgs(cfg, 1234, bin, { host: '0.0.0.0' })
+  assert.equal(lan[lan.indexOf('--host') + 1], '0.0.0.0'); assert.ok(!lan.includes('--api-key')); ok('with the network: every interface, and still no key on the command line')
+  // #129: argv is every account's to read through ps; the environment is the owner's.
+  const env = serverEnv({ PATH: '/bin', LLAMA_API_KEY: 'from-the-shell' }, 'secret', { EXTRA: '1' })
+  assert.equal(env['LLAMA_API_KEY'], 'secret'); assert.equal(env['PATH'], '/bin'); assert.equal(env['EXTRA'], '1'); ok('the key goes in the environment, as LLAMA_API_KEY')
+  assert.equal(serverEnv({ LLAMA_API_KEY: 'from-the-shell' }, null)['LLAMA_API_KEY'], undefined); ok('one inherited from the shell is dropped when no key is set here')
   assert.deepEqual(authHeaders('k'), { authorization: 'Bearer k' }); assert.deepEqual(authHeaders(null), {}); ok('clients send it as a Bearer token, or nothing')
-  assert.ok(!redactKey(lan).includes('secret') && redactKey(lan).includes('--api-key')); ok('the logged command line masks the key')
+  assert.deepEqual(redactKey(['--api-key', 'x', '--port', '1']), ['--api-key', '••••', '--port', '1']); ok('a key someone puts in extra flags is still masked in the log')
 }
 
 console.log('\na fixed port, checked before spawning')
@@ -53,6 +57,9 @@ console.log('\na server launched with a fixed port and a key')
   assert.equal(await waitFor(sup, ['ready', 'crashed']), 'ready'); ok('starts')
   assert.equal(sup.status.port, port); assert.equal(sup.status.apiKey, 'test-key-123'); assert.equal(sup.status.lan, false); ok('on the port asked for, and the status carries the key for the app’s own clients')
   assert.ok(sup.logs.since(0).every((l) => !l.text.includes('test-key-123'))); ok('and the server log never shows it')
+  const cmdline = await readFile(`/proc/${sup.status.pid}/cmdline`, 'utf8')
+  assert.ok(!cmdline.includes('test-key-123') && !cmdline.includes('--api-key')); ok('nor does the command line every account can read')
+  assert.equal((await stat(HANDOFF)).mode & 0o777, 0o600); ok('the handoff, which holds the key, is its owner’s alone')
   const without = await fetch(`http://127.0.0.1:${port}/props`)
   assert.equal(without.status, 401); ok('the server refuses a request without the key')
   const withKey = await fetch(`http://127.0.0.1:${port}/props`, { headers: authHeaders('test-key-123') })
