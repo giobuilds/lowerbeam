@@ -20,6 +20,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-07
+
 ### Added
 
 - **Apply as a commit**: in a git project, a coding run's Changes panel shows
