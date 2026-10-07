@@ -39,6 +39,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   kept for that model file as an indicative entry that clears, refuses or
   leaves open each mode, and never overrides the curated record (#103).
 
+### Fixed
+
+- Applying a coding run's changes, and undoing them, are now recorded in the
+  run's journal with the files, their hashes and anything left alone, so a
+  run still shows as applied after the app restarts (#134).
+
 ### Security
 
 - The Local API key no longer appears on llama-server's command line, where
