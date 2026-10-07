@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { matchConversation } from '@shared/chatExport.js'
 import { z } from 'zod'
+import { PRIVATE_DIR } from './private.js'
 
 /**
  * Conversation storage.
@@ -137,7 +138,7 @@ export class ConversationStore {
   }
 
   async init(): Promise<void> {
-    await mkdir(this.dir, { recursive: true })
+    await mkdir(this.dir, { recursive: true, mode: PRIVATE_DIR })
   }
 
   async list(): Promise<ConversationSummary[]> {

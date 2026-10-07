@@ -297,6 +297,13 @@ completes 22 of 30 write tasks with its round cap lifted to 40; the app keeps
 a cap of 12 until the next matrix says whether the cap or folding older tool
 results is what holds it back.
 
+## Security
+
+To report a vulnerability, use GitHub's private reporting — the
+repository's **Security** tab, **Report a vulnerability** — rather than a
+public issue. [SECURITY.md](SECURITY.md) says which versions get fixes, what
+is in scope and how long a reply takes.
+
 ## Licence
 
 MIT — see [LICENSE](LICENSE).

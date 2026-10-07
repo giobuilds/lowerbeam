@@ -8,7 +8,7 @@ const port = Number(get('--port'))
 const model = get('--model')
 const loadMs = Number(process.env.FAKE_LOAD_MS ?? 1500)
 const host = get('--host') ?? '127.0.0.1'
-const apiKey = get('--api-key')
+const apiKey = get('--api-key') ?? process.env.LLAMA_API_KEY // as llama-server: the flag, or the environment
 
 let ready = false
 process.stderr.write(`srv    load_model: loading model '${model}'\n`)

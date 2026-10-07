@@ -7,6 +7,7 @@ import { createTwoFilesPatch } from 'diff'
 import type { ApplyResult, ChangeSet, FileChange } from '@shared/coding.js'
 import { secretReason } from '../../agent/grant.js'
 import { writeFileAtomic } from '../atomicWrite.js'
+import { PRIVATE_DIR, PRIVATE_FILE } from '../private.js'
 
 const run = promisify(execFile)
 
@@ -50,7 +51,8 @@ export class Workspace {
 
   /** Copy the project into `dir` and record what was copied. */
   static async create(projectRoot: string, dir: string): Promise<Workspace> {
-    await mkdir(dir, { recursive: true })
+    // A copy of the user's project in the app's data: its user's alone.
+    await mkdir(dir, { recursive: true, mode: PRIVATE_DIR })
     const files: Record<string, string> = {}
     for (const rel of await listProjectFiles(projectRoot)) {
       const from = join(projectRoot, rel)
@@ -60,7 +62,7 @@ export class Workspace {
       files[rel] = (await lstat(to)).isSymbolicLink() ? LINK + (await readlink(to)) : await hashFile(from)
     }
     const manifest: Manifest = { projectRoot, files, createdAt: Date.now() }
-    await writeFile(join(dir, '.lowerbeam-baseline.json'), JSON.stringify(manifest))
+    await writeFile(join(dir, '.lowerbeam-baseline.json'), JSON.stringify(manifest), { mode: PRIVATE_FILE })
     return new Workspace(dir, manifest)
   }
 

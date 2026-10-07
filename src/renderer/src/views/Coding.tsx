@@ -746,6 +746,20 @@ function Line({ event }: { event: JournalEvent }): React.JSX.Element | null {
           reminded that nothing has changed · after {event.record.rounds} rounds · {event.record.read.length} file{event.record.read.length === 1 ? '' : 's'} read
         </li>
       )
+    case 'applied':
+      return (
+        <li className={event.conflicts.length ? 'text-amber-300' : 'text-emerald-300/80'} title={event.conflicts.map((c) => `${c.path}: ${c.reason}`).join('\n')}>
+          applied to the project · {event.files.length} file{event.files.length === 1 ? '' : 's'}
+          {event.conflicts.length > 0 && ` · ${event.conflicts.length} left alone`}
+        </li>
+      )
+    case 'undone':
+      return (
+        <li className={event.conflicts.length ? 'text-amber-300' : 'text-muted'} title={event.conflicts.map((c) => `${c.path}: ${c.reason}`).join('\n')}>
+          undone · {event.files.length} file{event.files.length === 1 ? '' : 's'} restored
+          {event.conflicts.length > 0 && ` · ${event.conflicts.length} could not be`}
+        </li>
+      )
     case 'run.finished':
       return (
         <li className="text-muted">

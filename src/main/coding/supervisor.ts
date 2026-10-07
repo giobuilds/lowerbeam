@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { realpath, stat } from 'node:fs/promises'
-import { DEFAULT_TERMS, type CodingRunSummary, type CodingStartRequest, type GrantTerms, type JournalEvent } from '@shared/coding.js'
+import { DEFAULT_TERMS, JOURNAL_VERSION, type CodingRunSummary, type CodingStartRequest, type GrantTerms, type JournalEvent } from '@shared/coding.js'
 import { Grant, secretReason } from '../../agent/grant.js'
 import { runTask } from '../../agent/loop.js'
 import type { ServerSupervisor } from '../supervisor.js'
@@ -20,6 +20,7 @@ import { evidenceFrom, withRerun, type Evidence } from '@shared/evidence.js'
 import { hashFile } from './workspace.js'
 import { appendFile, writeFile } from 'node:fs/promises'
 import type { ApplyResult, ChangeSet } from '@shared/coding.js'
+import { PRIVATE_DIR, PRIVATE_FILE } from '../private.js'
 
 /** What every coding run is given, and so what a measurement measures. */
 const RUN_SETTINGS = { temperature: 0.2, topP: 0.95, topK: 40, minP: 0.05, repeatPenalty: 1.1, maxTokens: -1 }
@@ -67,7 +68,7 @@ export class CodingSupervisor extends EventEmitter<{
 
   /** Rebuild the list from what is on disk, oldest first. */
   async load(): Promise<void> {
-    await mkdir(this.dir, { recursive: true })
+    await mkdir(this.dir, { recursive: true, mode: PRIVATE_DIR })
     for (const name of await readdir(this.dir)) {
       if (!name.endsWith('.jsonl')) continue
       const summary = summarise(await Journal.read(join(this.dir, name)))
@@ -224,7 +225,7 @@ export class CodingSupervisor extends EventEmitter<{
                 // person can see all of it.
                 const output = r.stdout + (r.stderr ? (r.stdout ? '\n' : '') + r.stderr : '')
                 commands += 1
-                await writeFile(join(this.dir, `${id}.cmd-${commands}.txt`), `$ ${command}\n${output}`)
+                await writeFile(join(this.dir, `${id}.cmd-${commands}.txt`), `$ ${command}\n${output}`, { mode: PRIVATE_FILE })
                 return {
                   exitCode: r.exitCode,
                   output,
@@ -241,7 +242,7 @@ export class CodingSupervisor extends EventEmitter<{
         },
         // The model's own words, beside the journal: what a run rebuilt as
         // a training example needs and the record only measures.
-        keep: (round, words) => appendFile(join(this.dir, `${id}.words.jsonl`), JSON.stringify({ round, ...words }) + '\n')
+        keep: (round, words) => appendFile(join(this.dir, `${id}.words.jsonl`), JSON.stringify({ round, ...words }) + '\n', { mode: PRIVATE_FILE })
       })
       Object.assign(summary, {
         finishedAt: Date.now(),
@@ -352,7 +353,7 @@ export class CodingSupervisor extends EventEmitter<{
       this.emit('measure', { ...progress, tasks: [...progress.tasks] })
     }
     try {
-      await mkdir(outDir, { recursive: true })
+      await mkdir(outDir, { recursive: true, mode: PRIVATE_DIR })
       if (!on.supportsTools) {
         await this.local.put(noToolsEntry(entryArgs))
       } else {
@@ -471,7 +472,7 @@ export class CodingSupervisor extends EventEmitter<{
       const r = await runInSandbox({ workspace: copy.root, projectRoot: ws.manifest.projectRoot, command, timeoutMs: 120_000, maxOutputBytes: 512 * 1024, terms: this.runs.get(id)?.grant ?? DEFAULT_TERMS })
       const output = r.stdout + (r.stderr ? (r.stdout ? '\n' : '') + r.stderr : '')
       const rerun: Rerun = { command, exitCode: r.exitCode, timedOut: r.timedOut, output, drifted: drifted.sort(), at: Date.now() }
-      await writeFile(join(this.dir, `${id}.baseline.json`), JSON.stringify(rerun))
+      await writeFile(join(this.dir, `${id}.baseline.json`), JSON.stringify(rerun), { mode: PRIVATE_FILE })
       return withRerun(evidence, rerun)
     } finally {
       await copy.discard()
@@ -489,10 +490,19 @@ export class CodingSupervisor extends EventEmitter<{
     if (!ws) throw new Error('This run has no workspace to apply.')
     if (this.live.has(id)) throw new Error('Wait for the run to finish, or stop it, before applying.')
     const result = await ws.apply()
-    const summary = this.runs.get(id)
-    if (summary && result.applied.length) {
-      summary.appliedAt = Date.now()
-      this.emit('runs', this.list())
+    // The journal is the run's record, and writing into the project is the
+    // most consequential thing a run leads to: it is recorded there, with
+    // what was written, so a restart and an audit both see it.
+    if (result.applied.length || result.conflicts.length) {
+      const files = await Promise.all(
+        result.applied.map(async (path) => ({ path, sha256: await hashFile(join(ws.root, path)).catch(() => null) }))
+      )
+      const event = await this.record(id, { type: 'applied', files, conflicts: result.conflicts })
+      const summary = this.runs.get(id)
+      if (summary && result.applied.length) {
+        summary.appliedAt = event.ts
+        this.emit('runs', this.list())
+      }
     }
     return result
   }
@@ -501,12 +511,23 @@ export class CodingSupervisor extends EventEmitter<{
     const ws = await this.workspace(id)
     if (!ws) throw new Error('This run has no workspace.')
     const result = await ws.undo()
+    if (result.applied.length || result.conflicts.length) await this.record(id, { type: 'undone', files: result.applied, conflicts: result.conflicts })
     const summary = this.runs.get(id)
     if (summary && result.conflicts.length === 0) {
       summary.appliedAt = null
       this.emit('runs', this.list())
     }
     return result
+  }
+
+  /** Append an event to a finished run's journal, after its last, and pass it on as the loop's events are. */
+  private async record(id: string, event: { type: 'applied' | 'undone' } & Record<string, unknown>): Promise<JournalEvent> {
+    const journal = new Journal(this.file(id))
+    const last = (await journal.read()).at(-1)
+    const full = { v: JOURNAL_VERSION, run: id, seq: (last?.seq ?? -1) + 1, ts: Date.now(), ...event } as JournalEvent
+    await journal.append(full)
+    this.emit('event', full)
+    return full
   }
 
   async discard(id: string): Promise<void> {
@@ -653,6 +674,16 @@ function describe(mode: CodingStartRequest['mode']): string {
   return mode === 'run' ? 'edit and run commands' : mode === 'edit' ? 'edit' : 'inspect'
 }
 
+/** When the run's changes were last applied and not taken back, from the journal; null if they are not in the project. */
+export function appliedFrom(events: JournalEvent[]): number | null {
+  let at: number | null = null
+  for (const e of events) {
+    if (e.type === 'applied' && e.files.length > 0) at = e.ts
+    else if (e.type === 'undone' && e.conflicts.length === 0) at = null
+  }
+  return at
+}
+
 /**
  * A summary from a journal alone. A run with a start and no finish was cut
  * off — by a crash or a quit — and is reported as exactly that, never as a
@@ -664,13 +695,14 @@ export function summarise(events: JournalEvent[]): CodingRunSummary | null {
   const finished = events.find((e) => e.type === 'run.finished')
   const denials = events.filter((e) => e.type === 'tool.result' && e.denied).length
   const mode = started.mode ?? 'inspect'
+  const appliedAt = appliedFrom(events)
   if (finished && finished.type === 'run.finished') {
     return {
       id: started.run,
       task: started.task,
       projectRoot: started.grantRoot,
       mode,
-      appliedAt: null,
+      appliedAt,
       model: started.model,
       startedAt: started.ts,
       finishedAt: finished.ts,
@@ -693,7 +725,7 @@ export function summarise(events: JournalEvent[]): CodingRunSummary | null {
     task: started.task,
     projectRoot: started.grantRoot,
     mode,
-    appliedAt: null,
+    appliedAt,
     model: started.model,
     startedAt: started.ts,
     finishedAt: events[events.length - 1]?.ts ?? started.ts,

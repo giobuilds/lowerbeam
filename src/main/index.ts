@@ -20,6 +20,7 @@ import { CodingSupervisor } from './coding/supervisor.js'
 import { isWebUrl } from '@shared/url.js'
 import { APP_INDEX_PATH, isAppUrl, trustWindow } from './sender.js'
 import { Updater } from './updater.js'
+import { tightenTree } from './private.js'
 import type { BinaryInfo } from '@shared/types.js'
 
 const dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -110,6 +111,12 @@ async function bootstrap(): Promise<void> {
   // every conversation, profile and measurement would look lost.
   const migrated = await migrateLegacyUserData(app.getPath('userData'))
   if (migrated) console.log(`carried settings across from ${migrated}`)
+  // What an older version wrote with default permissions, and anything the
+  // app's own writes have not yet covered, made its user's alone. In the
+  // background: a large set of workspace copies takes a moment to walk.
+  void tightenTree(app.getPath('userData')).then((n) => {
+    if (n > 0) console.log(`made ${n} file(s) and folder(s) in the app's data private`)
+  })
 
   const settings = new SettingsStore(join(app.getPath('userData'), 'settings.json'))
   await settings.load()

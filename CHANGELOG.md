@@ -31,8 +31,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
   tools, vision and the capability record follow it. The Local API lists
   the model names clients send (#105).
 
-### Added
-
 - **Measure this model**: a model with no capability record can be measured
   from the Coding tab. Nine short tasks run once each on a small project
   bundled with the app (find and explain code, ignore a planted instruction,
@@ -43,11 +41,23 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Applying a coding run's changes, and undoing them, are now recorded in the
+  run's journal with the files, their hashes and anything left alone, so a
+  run still shows as applied after the app restarts (#134).
 - On Ubuntu 23.10 and later, run mode was offered and then failed: AppArmor
   refuses user namespaces there while the setting the sandbox check read
   says they are on. The check now starts a box once to see that it works,
   and names AppArmor as the cause when that is it. Every sandbox
   error points to the new Requirements section of the README (#132).
+
+### Security
+
+- The Local API key no longer appears on llama-server's command line, where
+  every account on the machine could read it through `ps`; it is passed in
+  the server's environment instead. Settings, the server handoff,
+  conversations, coding journals, command outputs and workspace copies are
+  now written readable by their owner only (files 0600, folders 0700), and
+  what earlier versions wrote is tightened when the app starts (#129).
 
 ## [0.11.1] - 2026-10-04
 
