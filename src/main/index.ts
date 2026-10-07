@@ -1,5 +1,6 @@
 import { app, BrowserWindow, session } from 'electron'
 import { join } from 'node:path'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { ServerSupervisor } from './supervisor.js'
 import { probeAll } from './probe.js'
@@ -169,7 +170,10 @@ async function bootstrap(): Promise<void> {
   })
   setSearxngUrl(settings.current.searxngUrl)
   void mcp.apply(settings.current.mcpServers)
-  coding = new CodingSupervisor(join(app.getPath('userData'), 'coding'), () => supervisor)
+  // The project "Measure this model" runs on: beside the app in a package,
+  // in the repository when run from source.
+  const corpus = app.isPackaged ? join(process.resourcesPath, 'measure', 'corpus') : join(dirname, '../../resources/measure/corpus')
+  coding = new CodingSupervisor(join(app.getPath('userData'), 'coding'), () => supervisor, existsSync(corpus) ? corpus : null)
   await coding.load()
 
   const updater = new Updater(() => settings.current.updateChecks)

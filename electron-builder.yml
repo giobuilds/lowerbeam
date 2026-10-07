@@ -6,6 +6,11 @@ directories:
 files:
   - out/**
   - package.json
+# The project "Measure this model" runs on, beside the app rather than in the
+# asar: a coding run copies it, and its tests run with the user's node.
+extraResources:
+  - from: resources/measure/corpus
+    to: measure/corpus
 linux:
   icon: resources/icon.png
   # Without this, desktop environments do not associate running windows with the

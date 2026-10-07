@@ -393,7 +393,10 @@ function ContextAdvice({ modelPath, current, disabled, onUse }: { modelPath: str
       stale = true
     }
   }, [modelPath])
-  if (!modelPath || !status || status.state !== 'measured') return null
+  // An entry measured here was measured on a project a few hundred lines
+  // long, at whatever context the launch had: it says nothing about what a
+  // real project needs.
+  if (!modelPath || !status || status.state !== 'measured' || status.record.indicative) return null
   const advice = contextAdvice(status.record)
   // Nothing to say when the launch already matches; one short line otherwise,
   // with the measurement behind it in the tooltip.

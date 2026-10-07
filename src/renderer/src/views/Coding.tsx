@@ -92,13 +92,16 @@ export function Coding(): React.JSX.Element {
   )
 }
 
-function Composer({ disabled, modelName }: { disabled: boolean; modelName: string | null }): React.JSX.Element {
+function Composer({ disabled: noProjectOrModel, modelName }: { disabled: boolean; modelName: string | null }): React.JSX.Element {
   const task = useCodingStore((s) => s.task)
   const setTask = useCodingStore((s) => s.setTask)
   const start = useCodingStore((s) => s.start)
   const cancel = useCodingStore((s) => s.cancel)
   const mode = useCodingStore((s) => s.mode)
   const running = useCodingStore((s) => s.runs.some((r) => r.outcome === 'running'))
+  // The model is being measured: it is not shared with a run until that ends.
+  const measuring = useCodingStore((s) => s.measure?.state === 'running')
+  const disabled = noProjectOrModel || measuring
 
   return (
     <div className="border-b border-edge px-4 py-3">
@@ -154,7 +157,63 @@ function Composer({ disabled, modelName }: { disabled: boolean; modelName: strin
           </p>
         )}
       </div>
+      {modelName && <MeasureBar runBusy={running} />}
     </div>
+  )
+}
+
+/**
+ * "Measure this model": offered for a file the curated record does not hold,
+ * and again for one this app measured itself. While it runs, what has been
+ * done so far; after, nothing — the entry speaks through the line above.
+ */
+function MeasureBar({ runBusy }: { runBusy: boolean }): React.JSX.Element | null {
+  const capability = useCodingStore((s) => s.capability)
+  const measure = useCodingStore((s) => s.measure)
+  const startMeasure = useCodingStore((s) => s.startMeasure)
+  const cancelMeasure = useCodingStore((s) => s.cancelMeasure)
+  const sha = capability && capability.state !== 'none' ? capability.sha256 : null
+  const mine = measure && measure.sha256 === sha ? measure : null
+  if (mine?.state === 'running') {
+    return (
+      <div className="mt-2 rounded border border-edge px-3 py-2 text-[11px] text-muted">
+        <span className="text-slate-200">Measuring this model</span> on the project the app ships with: {mine.done} of {mine.total} tasks done
+        {mine.current ? <>, now {mine.current.family} ({mine.current.id})</> : null}. Coding runs wait until it finishes.{' '}
+        <button type="button" onClick={() => void cancelMeasure()} className="text-amber-200 hover:underline">
+          Stop
+        </button>
+        {mine.tasks.length > 0 && (
+          <ul className="mt-1 space-y-0.5">
+            {mine.tasks.map((t) => (
+              <li key={t.id}>
+                <span className={t.passed ? 'text-emerald-300/80' : 'text-rose-300'}>{t.passed ? 'pass' : 'fail'}</span> {t.id} — {t.note},{' '}
+                {t.rounds} rounds, {Math.round(t.ms / 1000)}s
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    )
+  }
+  const offer = capability?.state === 'unmeasured' || (capability?.state === 'measured' && capability.record.indicative !== undefined)
+  if (!offer) return null
+  const again = capability?.state === 'measured'
+  return (
+    <p className="mt-2 text-[11px] text-muted">
+      <button
+        type="button"
+        disabled={runBusy}
+        onClick={() => void startMeasure()}
+        title={runBusy ? 'Wait for the run to finish: a measurement needs the model to itself.' : ''}
+        className="rounded border border-edge px-1.5 py-0.5 text-slate-200 hover:border-accent disabled:opacity-50"
+      >
+        {again ? 'Measure again' : 'Measure this model'}
+      </button>{' '}
+      Nine short tasks on a small project the app ships with, once each — finding and explaining code, a planted instruction to ignore,
+      two bugs to fix and two failing suites to recover. About six minutes for a 9B on an 8 GB card; slower models take longer. The result is indicative and kept for this file only.
+      {mine?.state === 'cancelled' && <> Stopped after {mine.done} of {mine.total}; nothing was kept.</>}
+      {mine?.state === 'error' && <span className="text-rose-300"> The last measurement failed: {mine.error}</span>}
+    </p>
   )
 }
 
@@ -249,10 +308,15 @@ function Measured(): React.JSX.Element | null {
     )
   }
   const v = capability.record.modes[mode]
+  const indicative = capability.record.indicative !== undefined
   return (
     <span title={summary(capability)}>
       <span className={v.verdict === 'cleared' ? 'text-emerald-300/80' : v.verdict === 'refused' ? 'text-rose-300' : 'text-amber-200/80'}>
-        {v.verdict === 'cleared' ? 'Measured:' : v.verdict === 'refused' ? 'Refused:' : 'Not measured for this:'}
+        {v.verdict === 'cleared'
+          ? indicative ? 'Measured here:' : 'Measured:'
+          : v.verdict === 'refused'
+            ? indicative ? 'Refused here:' : 'Refused:'
+            : 'Not measured for this:'}
       </span>{' '}
       {v.evidence}
       {capability.record.limits.length > 0 && mode !== 'inspect' && <> Known limit: {capability.record.limits[0]}</>}
@@ -284,6 +348,11 @@ function LaunchMismatch({ capability }: { capability: Extract<CapabilityStatus, 
 
 function summary(c: Extract<CapabilityStatus, { state: 'measured' }>): string {
   const families = c.record.families.map((f) => `${f.family} ${f.passed}/${f.of} ${f.unit}`).join(', ')
+  const local = c.record.indicative
+  if (local) {
+    const tasks = local.tasks.map((t) => `${t.passed ? 'pass' : 'fail'} ${t.id}: ${t.note}`).join('\n')
+    return `${c.record.name}, measured in this app on ${c.record.measured.on} (${local.corpus}, one run each) under ${c.record.measured.build}, ${c.record.measured.launch.join(' ')}: ${families}.\n${tasks}\nJournals: ${c.record.measured.results}`
+  }
   return `${c.record.name}, measured ${c.record.measured.on} under ${c.record.measured.build}, ${c.record.measured.launch.join(' ')}: ${families}. See ${c.record.measured.results}.`
 }
 

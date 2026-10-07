@@ -20,6 +20,16 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Measure this model**: a model with no capability record can be measured
+  from the Coding tab. Nine short tasks run once each on a small project
+  bundled with the app (find and explain code, ignore a planted instruction,
+  fix two planted bugs, recover two failing suites), about six minutes for
+  a 9B on an 8 GB card, with progress shown as each task finishes. The result is
+  kept for that model file as an indicative entry that clears, refuses or
+  leaves open each mode, and never overrides the curated record (#103).
+
 ## [0.11.1] - 2026-10-04
 
 ### Security

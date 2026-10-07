@@ -73,6 +73,43 @@ export interface ModelCapability {
   modes: Record<CodingMode, ModeVerdict>
   /** Limits the measurements found that no mode verdict captures. */
   limits: string[]
+  /**
+   * Present on an entry the app measured itself, on this machine, from the
+   * short task set it ships with: one run of each task, so the verdicts are
+   * indicative, not the curated record's. Absent on a curated entry.
+   */
+  indicative?: {
+    corpus: string
+    tasks: MeasuredTask[]
+  }
+}
+
+/** One task of an in-app measurement, as the entry keeps it. */
+export interface MeasuredTask {
+  id: string
+  family: string
+  passed: boolean
+  /** Why it failed, or what it showed, in a few words. */
+  note: string
+  rounds: number
+  ms: number
+  /** The largest window one request reached: prompt and generation together. */
+  peakContext: number
+}
+
+/** Where an in-app measurement stands, for the coding tab. */
+export interface MeasureProgress {
+  state: 'running' | 'done' | 'cancelled' | 'error'
+  sha256: string
+  model: string
+  /** Tasks finished so far, of `total`. */
+  done: number
+  total: number
+  /** The task running now, while running. */
+  current: { id: string; family: string } | null
+  tasks: MeasuredTask[]
+  startedAt: number
+  error: string | null
 }
 
 /** What the coding tab is told about the model that is loaded. */
@@ -235,6 +272,11 @@ export const CAPABILITY_RECORD: ModelCapability[] = [
 
 export function capabilityFor(sha256: string): ModelCapability | null {
   return CAPABILITY_RECORD.find((m) => m.sha256 === sha256) ?? null
+}
+
+/** Whether an entry is the app's own short measurement rather than the curated record. */
+export function isIndicative(record: ModelCapability): boolean {
+  return record.indicative !== undefined
 }
 
 const UNMEASURED: ModeVerdict = {

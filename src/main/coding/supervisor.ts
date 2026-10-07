@@ -10,13 +10,20 @@ import { runTask } from '../../agent/loop.js'
 import type { ServerSupervisor } from '../supervisor.js'
 import { Journal } from './journal.js'
 import { Workspace } from './workspace.js'
-import { maskedFor, probeSandbox, runInSandbox } from './sandbox.js'
-import { ModelIdentifier } from './capability.js'
-import { verdictFor, type CapabilityStatus } from '@shared/capability.js'
+import { findNode, maskedFor, probeSandbox, runInSandbox } from './sandbox.js'
+import { LocalRecord, ModelIdentifier } from './capability.js'
+import { verdictFor, type CapabilityStatus, type MeasureProgress } from '@shared/capability.js'
+import { MEASURE_TASKS, entryFrom, measureTask, noToolsEntry, type MeasureBox, type TaskOutcome } from './measure.js'
+import type { LaunchConfig } from '@shared/types.js'
 import { evidenceFrom, withRerun, type Evidence } from '@shared/evidence.js'
 import { hashFile } from './workspace.js'
 import { appendFile, writeFile } from 'node:fs/promises'
 import type { ApplyResult, ChangeSet } from '@shared/coding.js'
+
+/** What every coding run is given, and so what a measurement measures. */
+const RUN_SETTINGS = { temperature: 0.2, topP: 0.95, topK: 40, minP: 0.05, repeatPenalty: 1.1, maxTokens: -1 }
+const MAX_ROUNDS = 12
+const RUN_TIMEOUT_MS = 6 * 60_000
 
 /**
  * Owns coding runs the way the llama.cpp supervisor owns model processes.
@@ -36,18 +43,25 @@ import type { ApplyResult, ChangeSet } from '@shared/coding.js'
 export class CodingSupervisor extends EventEmitter<{
   event: [JournalEvent]
   runs: [CodingRunSummary[]]
+  measure: [MeasureProgress]
 }> {
   private readonly runs = new Map<string, CodingRunSummary>()
   private readonly live = new Map<string, { abort: AbortController; journal: Journal }>()
   private readonly workspaces = new Map<string, Workspace>()
   private readonly identifier: ModelIdentifier
+  private readonly local: LocalRecord
+  private measuring: { progress: MeasureProgress; abort: AbortController } | null = null
+  private lastMeasure: MeasureProgress | null = null
 
   constructor(
     private readonly dir: string,
-    private readonly inference: () => ServerSupervisor | null
+    private readonly inference: () => ServerSupervisor | null,
+    /** The project "Measure this model" runs on, shipped with the app; null where it is not. */
+    private readonly corpus: string | null = null
   ) {
     super()
-    this.identifier = new ModelIdentifier(join(dir, 'model-hashes.json'))
+    this.local = new LocalRecord(join(dir, 'local-capability.json'))
+    this.identifier = new ModelIdentifier(join(dir, 'model-hashes.json'), this.local)
   }
 
   /** Rebuild the list from what is on disk, oldest first. */
@@ -77,6 +91,7 @@ export class CodingSupervisor extends EventEmitter<{
     if (!server || !status || status.phase !== 'ready' || !status.port) {
       throw new Error('Start a model on the Server tab first: a coding run needs one loaded.')
     }
+    if (this.measuring) throw new Error('The model is being measured. Wait for it to finish, or stop it, before starting a run.')
     const id = randomUUID()
     // Grant.open resolves the root and throws if it does not exist, which is
     // the right time to find out — not on the first tool call. An edit run's
@@ -152,6 +167,7 @@ export class CodingSupervisor extends EventEmitter<{
   /** The app is closing. Every run ends as cancelled, in its journal. */
   shutdown(): void {
     for (const { abort } of this.live.values()) abort.abort()
+    this.measuring?.abort.abort()
   }
 
   private async drive(
@@ -177,9 +193,9 @@ export class CodingSupervisor extends EventEmitter<{
         model: summary.model,
         task,
         grant,
-        settings: { temperature: 0.2, topP: 0.95, topK: 40, minP: 0.05, repeatPenalty: 1.1, maxTokens: -1 },
-        maxRounds: 12,
-        timeoutMs: 6 * 60_000,
+        settings: RUN_SETTINGS,
+        maxRounds: MAX_ROUNDS,
+        timeoutMs: RUN_TIMEOUT_MS,
         signal: abort.signal,
         runId: id,
         contextLimit,
@@ -245,6 +261,138 @@ export class CodingSupervisor extends EventEmitter<{
   /** Whether commands can be run on this machine, and if not, why. */
   sandbox(): ReturnType<typeof probeSandbox> {
     return probeSandbox()
+  }
+
+  /** Where a measurement stands: the one running, else the last one this session, else null. */
+  measureState(): MeasureProgress | null {
+    return this.measuring?.progress ?? this.lastMeasure
+  }
+
+  /**
+   * Measure the loaded model on the corpus the app ships with, the way a
+   * coding run would use it, and keep the result as an indicative entry for
+   * the file. Not awaited by the caller: progress comes as events.
+   */
+  async measure(): Promise<MeasureProgress> {
+    const server = this.inference()
+    const status = server?.status
+    if (!server || !status || status.phase !== 'ready' || !status.port || !status.config) {
+      throw new Error('Start a model on the Server tab first: a measurement needs one loaded.')
+    }
+    if (!this.corpus) throw new Error('The measurement corpus is missing from this copy of the app.')
+    if (this.measuring) throw new Error('A measurement is already running.')
+    if (this.live.size > 0) throw new Error('Wait for the coding run to finish: a measurement needs the model to itself.')
+    const found = await this.identifier.status(status.config.modelPath)
+    if (found.state === 'none') throw new Error('No model is loaded.')
+    if (found.state === 'measured' && !found.record.indicative) {
+      throw new Error('This file is in the curated record already; a short measurement would not add to it.')
+    }
+
+    const config = status.config
+    const model = config.modelPath.split('/').pop() ?? 'model'
+    const progress: MeasureProgress = {
+      state: 'running',
+      sha256: found.sha256,
+      model,
+      done: 0,
+      total: status.supportsTools ? MEASURE_TASKS.length : 0,
+      current: null,
+      tasks: [],
+      startedAt: Date.now(),
+      error: null
+    }
+    const abort = new AbortController()
+    this.measuring = { progress, abort }
+    this.emit('measure', { ...progress })
+    void this.runMeasure(progress, abort, {
+      baseUrl: `http://127.0.0.1:${status.port}`,
+      apiKey: status.apiKey,
+      contextLimit: status.contextPerSlot,
+      supportsTools: status.supportsTools,
+      build: server.binaryInfo.version,
+      config,
+      bytes: found.bytes,
+      corpus: this.corpus
+    })
+    return { ...progress }
+  }
+
+  cancelMeasure(): boolean {
+    if (!this.measuring) return false
+    this.measuring.abort.abort()
+    return true
+  }
+
+  private async runMeasure(
+    progress: MeasureProgress,
+    abort: AbortController,
+    on: { baseUrl: string; apiKey: string | null; contextLimit: number | null; supportsTools: boolean; build: string; config: LaunchConfig; bytes: number; corpus: string }
+  ): Promise<void> {
+    const day = new Date().toISOString().slice(0, 10)
+    const outDir = join(this.dir, 'measure', `${progress.sha256.slice(0, 12)}-${new Date().toISOString().replace(/[:.]/g, '-')}`)
+    const entryArgs = {
+      name: progress.model,
+      sha256: progress.sha256,
+      bytes: on.bytes,
+      on: day,
+      build: on.build,
+      launch: launchOf(on.config),
+      context: on.contextLimit ?? on.config.contextSize,
+      results: outDir
+    }
+    const emit = (): void => {
+      this.emit('measure', { ...progress, tasks: [...progress.tasks] })
+    }
+    try {
+      await mkdir(outDir, { recursive: true })
+      if (!on.supportsTools) {
+        await this.local.put(noToolsEntry(entryArgs))
+      } else {
+        const box = await measureBox()
+        const outcomes: TaskOutcome[] = []
+        for (const task of MEASURE_TASKS) {
+          if (abort.signal.aborted) break
+          progress.current = { id: task.id, family: task.family }
+          emit()
+          const outcome = await measureTask(task, {
+            corpus: on.corpus,
+            outDir,
+            box,
+            request: {
+              baseUrl: on.baseUrl,
+              apiKey: on.apiKey,
+              model: progress.model,
+              settings: RUN_SETTINGS,
+              maxRounds: MAX_ROUNDS,
+              timeoutMs: RUN_TIMEOUT_MS,
+              contextLimit: on.contextLimit
+            },
+            signal: abort.signal
+          })
+          // A task cut short by the stop button measured nothing; it is not kept.
+          if (abort.signal.aborted) break
+          outcomes.push(outcome)
+          const { leaked: _l, exercised: _e, edited: _d, unwanted: _u, ...kept } = outcome
+          progress.tasks.push(kept)
+          progress.done += 1
+          emit()
+        }
+        if (abort.signal.aborted) {
+          progress.state = 'cancelled'
+          return
+        }
+        await this.local.put(entryFrom({ ...entryArgs, outcomes, box }))
+      }
+      progress.state = 'done'
+    } catch (err) {
+      progress.state = 'error'
+      progress.error = err instanceof Error ? err.message : String(err)
+    } finally {
+      progress.current = null
+      this.lastMeasure = { ...progress, tasks: [...progress.tasks] }
+      this.measuring = null
+      emit()
+    }
   }
 
   /** What the record says about a model file that is not running: for a launch being prepared. */
@@ -390,6 +538,29 @@ export class CodingSupervisor extends EventEmitter<{
  * or inside it, is already granted and is dropped rather than recorded as
  * something beyond the project.
  */
+/**
+ * Whether the corpus's tests can be run in the box: the box itself, and a
+ * node to lend it. Without either, write tasks are checked by the fixed line
+ * and recovering from a failing test is not measured.
+ */
+async function measureBox(): Promise<MeasureBox> {
+  const probe = await probeSandbox()
+  if (!probe.ok) return { ok: false, reason: probe.reason }
+  const found = await findNode()
+  return found.node ? { ok: true, reason: null } : { ok: false, reason: found.note }
+}
+
+/** The launch, as the record writes one: what decides how the model ran, without ports or paths. */
+export function launchOf(config: LaunchConfig): string[] {
+  const out = config.autoFit ? ['--fit', 'on'] : ['--gpu-layers', String(config.gpuLayers), '--ctx-size', String(config.contextSize)]
+  if (config.cpuMoeLayers === -1) out.push('--cpu-moe')
+  else if (config.cpuMoeLayers > 0) out.push('--n-cpu-moe', String(config.cpuMoeLayers))
+  out.push('--parallel', String(config.parallel))
+  if (config.cacheTypeK !== 'f16' || config.cacheTypeV !== 'f16') out.push('--cache-type-k', config.cacheTypeK, '--cache-type-v', config.cacheTypeV)
+  const extra = config.extraArgs.trim()
+  return extra ? [...out, ...extra.split(/\s+/).filter((a, i, all) => a !== '--api-key' && all[i - 1] !== '--api-key')] : out
+}
+
 export async function checkTerms(terms: GrantTerms, mode: CodingStartRequest['mode'], own: string, projectRoot?: string): Promise<GrantTerms> {
   const project = projectRoot ? await realpath(projectRoot).catch(() => resolve(projectRoot)) : null
   const alsoRead: string[] = []

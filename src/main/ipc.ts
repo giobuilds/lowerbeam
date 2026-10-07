@@ -48,7 +48,7 @@ import { conversationSchema, type ConversationStore } from './conversations.js'
 import { openExternally, readerFor } from './reader.js'
 import type { CodingSupervisor } from './coding/supervisor.js'
 import type { SandboxProbe } from './coding/sandbox.js'
-import type { CapabilityStatus } from '@shared/capability.js'
+import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
 import type { ApplyResult, ChangeSet, CodingRunSummary, JournalEvent } from '@shared/coding.js'
 import type { ProfileStore } from './profiles.js'
@@ -525,6 +525,12 @@ export function registerIpc(
   handle<CapabilityStatus>(IPC.codingCapabilityOf, (path) => coding.capabilityOf(String(path ?? '')))
   handle<Evidence | null>(IPC.codingEvidence, (id) => coding.evidence(String(id ?? '')))
   handle<Evidence | null>(IPC.codingCheckBaseline, (id) => coding.checkBaseline(String(id ?? '')))
+  handle<MeasureProgress>(IPC.codingMeasure, () => coding.measure())
+  handle<null>(IPC.codingMeasureCancel, () => {
+    coding.cancelMeasure()
+    return null
+  })
+  handle<MeasureProgress | null>(IPC.codingMeasureState, () => coding.measureState())
   handle<ApplyResult>(IPC.codingApply, (id) => coding.apply(String(id ?? '')))
   handle<ApplyResult>(IPC.codingUndo, (id) => coding.undo(String(id ?? '')))
   handle<null>(IPC.codingDiscard, async (id) => {
@@ -691,6 +697,7 @@ export function wireEvents(
   broadcastBench = (run) => broadcast(IPC.benchChanged, run)
   coding.on('event', (event) => broadcast(IPC.codingEvent, event))
   coding.on('runs', (runs) => broadcast(IPC.codingRunsChanged, runs))
+  coding.on('measure', (progress) => broadcast(IPC.codingMeasureChanged, progress))
   updater.on('state', (state: UpdateState) => broadcast(IPC.updateChanged, { ...state, enabled: settings.current.updateChecks }))
 
   // llama-server can emit hundreds of lines per second; coalesce the "there is
