@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
-import { capabilityFor, type CapabilityStatus } from '@shared/capability.js'
+import { capabilityFor, type CapabilityStatus, type ModelCapability } from '@shared/capability.js'
 import { writeFileAtomic } from '../atomicWrite.js'
 
 /**
@@ -22,7 +22,11 @@ export class ModelIdentifier {
   private cache: HashCache | null = null
   private readonly inFlight = new Map<string, Promise<CapabilityStatus>>()
 
-  constructor(private readonly cacheFile: string) {}
+  constructor(
+    private readonly cacheFile: string,
+    /** Entries the app measured itself, read only for a file the curated record does not hold. */
+    private readonly local: LocalRecord | null = null
+  ) {}
 
   /** What the record says about the model at `path`, hashing it if this is the first time. */
   status(path: string | null | undefined): Promise<CapabilityStatus> {
@@ -40,7 +44,7 @@ export class ModelIdentifier {
     const held = cache[path]
     const sha256 =
       held && held.bytes === info.size && held.mtimeMs === info.mtimeMs ? held.sha256 : await this.hash(path, info.size, info.mtimeMs)
-    const record = capabilityFor(sha256)
+    const record = capabilityFor(sha256) ?? (await this.local?.get(sha256)) ?? null
     return record
       ? { state: 'measured', path, bytes: info.size, sha256, record }
       : { state: 'unmeasured', path, bytes: info.size, sha256 }
@@ -73,4 +77,37 @@ export function sha256Of(path: string): Promise<string> {
       .on('end', () => resolve(h.digest('hex')))
       .on('error', reject)
   })
+}
+
+/**
+ * The entries this app measured itself, keyed by file hash, in one file
+ * beside the runs. Kept apart from the curated record and never consulted
+ * for a file the curated record holds: a short run on this machine does not
+ * overrule the matrix the record rests on.
+ */
+export class LocalRecord {
+  private entries: Record<string, ModelCapability> | null = null
+
+  constructor(private readonly file: string) {}
+
+  async get(sha256: string): Promise<ModelCapability | null> {
+    return (await this.load())[sha256] ?? null
+  }
+
+  async put(entry: ModelCapability): Promise<void> {
+    if (capabilityFor(entry.sha256)) throw new Error('This file is in the curated record; an in-app measurement does not replace it.')
+    const entries = await this.load()
+    entries[entry.sha256] = entry
+    await writeFileAtomic(this.file, JSON.stringify(entries, null, 2))
+  }
+
+  private async load(): Promise<Record<string, ModelCapability>> {
+    if (this.entries) return this.entries
+    try {
+      this.entries = JSON.parse(await readFile(this.file, 'utf8')) as Record<string, ModelCapability>
+    } catch {
+      this.entries = {}
+    }
+    return this.entries
+  }
 }

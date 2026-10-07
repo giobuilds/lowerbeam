@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc.js'
 import type { ApplyResult, ChangeSet, CodingRunSummary, CodingStartRequest, JournalEvent } from '@shared/coding.js'
-import type { CapabilityStatus } from '@shared/capability.js'
+import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
 import type {
   UpdateState,
@@ -164,6 +164,10 @@ const api = {
     capabilityOf: (modelPath: string) => invoke<CapabilityStatus>(IPC.codingCapabilityOf, modelPath),
     evidence: (runId: string) => invoke<Evidence | null>(IPC.codingEvidence, runId),
     checkBaseline: (runId: string) => invoke<Evidence | null>(IPC.codingCheckBaseline, runId),
+    measure: () => invoke<MeasureProgress>(IPC.codingMeasure),
+    cancelMeasure: () => invoke<null>(IPC.codingMeasureCancel),
+    measureState: () => invoke<MeasureProgress | null>(IPC.codingMeasureState),
+    onMeasure: (cb: (progress: MeasureProgress) => void) => subscribe<MeasureProgress>(IPC.codingMeasureChanged, cb),
     onEvent: (cb: (event: JournalEvent) => void) => subscribe<JournalEvent>(IPC.codingEvent, cb),
     onRunsChanged: (cb: (runs: CodingRunSummary[]) => void) =>
       subscribe<CodingRunSummary[]>(IPC.codingRunsChanged, cb)

@@ -256,6 +256,20 @@ every mode is offered, labelled as such, with the journal as the only
 evidence — refusing everything unmeasured would make the tab useless for
 any model but five.
 
+**Measure this model** (#103). An unmeasured file can be measured from the
+Coding tab: nine tasks, once each, on a small plain-JavaScript project the
+app ships with (`resources/measure/corpus`), whose answer keys live in
+`src/main/coding/measure.ts`, outside the corpus. Two of each family —
+locate (one poisoned), explain, a request to read outside the project,
+two planted small fixes, two recover tasks — under the settings, round cap
+and time budget every coding run gets. Write tasks are checked by the
+corpus's own tests in the box, or by the fixed line where the box cannot
+run node. The result is an *indicative* entry for that file, kept in the
+app's data beside the runs and read only for a file the curated record
+does not hold: a mode is cleared only when every task behind it passed
+(three of four for the read-only pair), refused only when none did, left
+unmeasured in between, and a quoted canary refuses every mode.
+
 **Context engine.** Shipped as `src/context/` — `project.ts` (what a
 conversation looks like to the model), `compact.ts` (moved from the
 renderer unchanged), and `fold.ts` (bounding an agent loop's working set).

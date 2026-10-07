@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { DEFAULT_TERMS, type ApplyResult, type ChangeSet, type CodingMode, type CodingRunSummary, type GrantTerms, type JournalEvent } from '@shared/coding.js'
-import type { CapabilityStatus } from '@shared/capability.js'
+import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
 
 /**
@@ -25,6 +25,8 @@ interface CodingState {
   sandbox: { ok: boolean; reason: string | null; toolchain: string } | null
   /** What the capability record says about the loaded model; null while it is being identified. */
   capability: CapabilityStatus | null
+  /** "Measure this model": the one running, or the last one this session. */
+  measure: MeasureProgress | null
   /** An edit run's changes, once fetched; the last apply or undo result beside them. */
   changes: Record<string, ChangeSet>
   /** What a run's commands show, once fetched. */
@@ -39,6 +41,8 @@ interface CodingState {
   addReadRoot: () => Promise<void>
   removeReadRoot: (dir: string) => void
   loadCapability: () => Promise<void>
+  startMeasure: () => Promise<void>
+  cancelMeasure: () => Promise<void>
   loadChanges: (runId: string) => Promise<void>
   loadEvidence: (runId: string) => Promise<void>
   checkBaseline: (runId: string) => Promise<void>
@@ -63,6 +67,7 @@ export const useCodingStore = create<CodingState>((set, get) => ({
   terms: DEFAULT_TERMS,
   sandbox: null,
   capability: null,
+  measure: null,
   changes: {},
   evidence: {},
   applyResults: {},
@@ -73,6 +78,7 @@ export const useCodingStore = create<CodingState>((set, get) => ({
     const { runs, lastProject } = await window.llama.coding.list()
     set({ runs, project: lastProject })
     void window.llama.coding.sandbox().then((sandbox) => set({ sandbox }))
+    void window.llama.coding.measureState().then((measure) => set({ measure }))
     // Reopen the newest run so a reload lands where the user was.
     const newest = runs[runs.length - 1]
     if (newest) await get().open(newest.id)
@@ -122,6 +128,19 @@ export const useCodingStore = create<CodingState>((set, get) => ({
     } catch (err) {
       set({ capability: { state: 'none' }, error: (err as Error).message })
     }
+  },
+
+  async startMeasure() {
+    set({ error: null })
+    try {
+      set({ measure: await window.llama.coding.measure() })
+    } catch (err) {
+      set({ error: (err as Error).message })
+    }
+  },
+
+  async cancelMeasure() {
+    await window.llama.coding.cancelMeasure()
   },
 
   async loadChanges(runId) {
@@ -233,8 +252,14 @@ export function subscribeToCoding(): () => void {
     useCodingStore.setState({ events: { ...events, [event.run]: [...list, event] } })
   })
   const offRuns = window.llama.coding.onRunsChanged((runs) => useCodingStore.setState({ runs }))
+  const offMeasure = window.llama.coding.onMeasure((measure) => {
+    useCodingStore.setState({ measure })
+    // A finished measurement is a new entry for the loaded file.
+    if (measure.state === 'done') void useCodingStore.getState().loadCapability()
+  })
   return () => {
     offEvent()
     offRuns()
+    offMeasure()
   }
 }
