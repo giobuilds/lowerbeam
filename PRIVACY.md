@@ -52,7 +52,8 @@ and command outputs.
 **Outside that folder.** Models you download go to the Hugging Face cache
 (`~/.cache/huggingface/hub`, or `$HF_HOME/hub`) and are your files: the app
 never deletes them. When you apply a coding run's changes, they are written
-into your project, and the undo record stays with the run's workspace copy.
+into your project, and committed to its git repository if you ask for that, with
+your own git identity; the undo record stays with the run's workspace copy.
 Temporary copies for measurements and sandboxed commands are made under the
 system's temporary folder and removed when they finish.
 

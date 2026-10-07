@@ -268,6 +268,21 @@ every mode is offered, labelled as such, with the journal as the only
 evidence — refusing everything unmeasured would make the tab useless for
 any model but five.
 
+**Apply as a commit** (#109). In a git project the Changes panel shows the
+branch, HEAD and how much is uncommitted. Apply can commit the files it
+writes, optionally on a new branch started from HEAD: only those files go
+in the commit (`git commit --only`), whatever else is staged stays staged,
+and it is refused when one of them has an uncommitted edit of the person's,
+which would otherwise go in with it. Hooks are not run (`core.hooksPath` set
+to `/dev/null`): a run can change any project file, a hook script included,
+and a commit right after the apply would run it outside the box. Undo
+restores the files as before and commits them alone as a revert, on the
+same branch only; not `git revert`, which refuses whenever anything is
+staged. The journal's `applied` and `undone` events carry the commit and
+the reverts. A git worktree as the run's workspace is not offered: commands
+in it need the repository's `.git`, and lending that to the box would let a
+run write hooks or config that git then runs outside it.
+
 **Measure this model** (#103). An unmeasured file can be measured from the
 Coding tab: nine tasks, once each, on a small plain-JavaScript project the
 app ships with (`resources/measure/corpus`), whose answer keys live in

@@ -41,7 +41,7 @@ import type {
   RouterPlanView
 } from '@shared/types.js'
 import { IPC } from '@shared/ipc.js'
-import { launchConfigSchema, routerLaunchSchema } from '@shared/schema.js'
+import { applyOptionsSchema, launchConfigSchema, routerLaunchSchema } from '@shared/schema.js'
 import { dataUsage, deleteOwnData } from './appData.js'
 import type { ServerSupervisor } from './supervisor.js'
 import { probeBinary, readDevices } from './probe.js'
@@ -56,7 +56,7 @@ import type { CodingSupervisor } from './coding/supervisor.js'
 import type { SandboxProbe } from './coding/sandbox.js'
 import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
-import type { ApplyResult, ChangeSet, CodingRunSummary, JournalEvent } from '@shared/coding.js'
+import type { ApplyResult, ChangeSet, CodingRunSummary, GitState, JournalEvent } from '@shared/coding.js'
 import type { ProfileStore } from './profiles.js'
 import {
   searchModels,
@@ -572,7 +572,8 @@ export function registerIpc(
     return null
   })
   handle<MeasureProgress | null>(IPC.codingMeasureState, () => coding.measureState())
-  handle<ApplyResult>(IPC.codingApply, (id) => coding.apply(String(id ?? '')))
+  handle<ApplyResult>(IPC.codingApply, (id, options) => coding.apply(String(id ?? ''), applyOptionsSchema.parse(options ?? {})))
+  handle<GitState | null>(IPC.codingGit, (id) => coding.git(String(id ?? '')))
   handle<ApplyResult>(IPC.codingUndo, (id) => coding.undo(String(id ?? '')))
   handle<null>(IPC.codingDiscard, async (id) => {
     await coding.discard(String(id ?? ''))

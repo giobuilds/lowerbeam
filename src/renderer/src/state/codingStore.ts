@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { DEFAULT_TERMS, type ApplyResult, type ChangeSet, type CodingMode, type CodingRunSummary, type GrantTerms, type JournalEvent } from '@shared/coding.js'
+import { DEFAULT_TERMS, type ApplyOptions, type ApplyResult, type ChangeSet, type CodingMode, type CodingRunSummary, type GrantTerms, type JournalEvent } from '@shared/coding.js'
 import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
 import { useServerStore } from './serverStore.js'
@@ -47,7 +47,7 @@ interface CodingState {
   loadChanges: (runId: string) => Promise<void>
   loadEvidence: (runId: string) => Promise<void>
   checkBaseline: (runId: string) => Promise<void>
-  apply: (runId: string) => Promise<void>
+  apply: (runId: string, options?: ApplyOptions) => Promise<void>
   undo: (runId: string) => Promise<void>
   discard: (runId: string) => Promise<void>
   pickProject: () => Promise<void>
@@ -167,10 +167,10 @@ export const useCodingStore = create<CodingState>((set, get) => ({
     }
   },
 
-  async apply(runId) {
+  async apply(runId, options) {
     set({ busy: { ...get().busy, [runId]: true }, error: null })
     try {
-      const result = await window.llama.coding.apply(runId)
+      const result = await window.llama.coding.apply(runId, options)
       set({ applyResults: { ...get().applyResults, [runId]: result } })
       await get().loadChanges(runId)
     } catch (err) {

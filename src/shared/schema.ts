@@ -90,6 +90,16 @@ export const readerBoundsSchema = z.object({
 })
 
 /** A coding run: one project, one question. The grant is checked separately. */
+/** How a run's changes are applied: plain, or as a commit, optionally on a new branch. */
+export const applyOptionsSchema = z.object({
+  commit: z
+    .object({
+      message: z.string().min(1).max(2000),
+      branch: z.string().min(1).max(200).optional()
+    })
+    .optional()
+})
+
 export const codingStartSchema = z.object({
   projectRoot: z.string().min(1).max(4096),
   task: z.string().min(1).max(4000),
