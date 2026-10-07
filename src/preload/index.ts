@@ -38,6 +38,7 @@ import type {
   ServerStatus,
   VramPlanView,
   RouterLaunch,
+  DataUsage,
   ServedModel,
   RouterPlanView
 } from '@shared/types.js'
@@ -150,6 +151,13 @@ const api = {
     restart: () => invoke<null>(IPC.updateRestart),
     setEnabled: (on: boolean) => invoke<UpdateState>(IPC.updateSetEnabled, on),
     onChanged: (cb: (state: UpdateState) => void) => subscribe<UpdateState>(IPC.updateChanged, cb)
+  },
+  data: {
+    usage: () => invoke<DataUsage>(IPC.dataUsage),
+    deleteRuns: () => invoke<DataUsage>(IPC.dataDeleteRuns),
+    deleteConversations: () => invoke<DataUsage>(IPC.dataDeleteConversations),
+    deleteAll: () => invoke<null>(IPC.dataDeleteAll),
+    setRetention: (days: number | null) => invoke<DataUsage>(IPC.dataSetRetention, days)
   },
   coding: {
     pickProject: () => invoke<string | null>(IPC.codingPickProject),

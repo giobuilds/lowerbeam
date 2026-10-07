@@ -19,6 +19,7 @@ import type { LaunchConfig } from '@shared/types.js'
 import { evidenceFrom, withRerun, type Evidence } from '@shared/evidence.js'
 import { hashFile } from './workspace.js'
 import { appendFile, writeFile } from 'node:fs/promises'
+import { RUN_FILE } from '../appData.js'
 import type { ApplyResult, ChangeSet } from '@shared/coding.js'
 import { PRIVATE_DIR, PRIVATE_FILE } from '../private.js'
 
@@ -528,6 +529,50 @@ export class CodingSupervisor extends EventEmitter<{
     await journal.append(full)
     this.emit('event', full)
     return full
+  }
+
+  /**
+   * Every coding run gone: journals, the model's words, command outputs,
+   * baselines, measurements' journals and every workspace copy. The record
+   * of what was measured on a model, and the cache of model hashes, are not
+   * runs and stay. Refused while a run or a measurement is going.
+   */
+  async deleteAllRuns(): Promise<number> {
+    if (this.live.size > 0 || this.measuring) throw new Error('Stop the running coding run or measurement first.')
+    const count = this.runs.size
+    for (const name of await readdir(this.dir).catch(() => [] as string[])) {
+      if (RUN_FILE.test(name)) await rm(join(this.dir, name), { force: true })
+    }
+    await rm(join(this.dir, 'workspaces'), { recursive: true, force: true })
+    await rm(join(this.dir, 'measure'), { recursive: true, force: true })
+    this.runs.clear()
+    this.workspaces.clear()
+    this.lastMeasure = null
+    this.emit('runs', this.list())
+    return count
+  }
+
+  /**
+   * Retention: the workspace copy and command outputs of each run that
+   * finished more than `days` ago, removed. Both hold the project's source
+   * and what commands printed from it. The journal stays, as the record of
+   * what the run did; Changes, Apply and Undo go with the copy.
+   */
+  async pruneOlderThan(days: number, now = Date.now()): Promise<number> {
+    const cutoff = now - days * 24 * 60 * 60 * 1000
+    let pruned = 0
+    for (const run of this.runs.values()) {
+      if (this.live.has(run.id) || run.finishedAt === null || run.finishedAt > cutoff) continue
+      const dir = this.workspaceDir(run.id)
+      const had = await stat(dir).then(() => true, () => false)
+      await rm(dir, { recursive: true, force: true })
+      this.workspaces.delete(run.id)
+      for (const name of await readdir(this.dir).catch(() => [] as string[])) {
+        if (name.startsWith(`${run.id}.cmd-`)) await rm(join(this.dir, name), { force: true })
+      }
+      if (had) pruned += 1
+    }
+    return pruned
   }
 
   async discard(id: string): Promise<void> {

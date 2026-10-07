@@ -182,6 +182,8 @@ async function bootstrap(): Promise<void> {
   const corpus = app.isPackaged ? join(process.resourcesPath, 'measure', 'corpus') : join(dirname, '../../resources/measure/corpus')
   coding = new CodingSupervisor(join(app.getPath('userData'), 'coding'), () => supervisor, existsSync(corpus) ? corpus : null)
   await coding.load()
+  // Retention, when it is set: old runs' workspace copies and command outputs go.
+  if (settings.current.retentionDays) void coding.pruneOlderThan(settings.current.retentionDays).catch(() => {})
 
   const updater = new Updater(() => settings.current.updateChecks)
   registerIpc(supervisor, settings, conversations, profiles, mcp, downloads, coding, discovered, updater)

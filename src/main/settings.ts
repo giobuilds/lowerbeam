@@ -43,6 +43,8 @@ const settingsSchema = z.object({
     .default({ port: null, apiKey: '', lan: false }),
   /** Whether to look for a new release on GitHub. On unless turned off. */
   updateChecks: z.boolean().default(true),
+  /** Workspace copies and command outputs of coding runs finished longer ago than this are removed on start. Null keeps them. */
+  retentionDays: z.number().int().min(1).max(3650).nullable().default(null),
   /** Extra directories to scan for GGUF files, beyond the defaults. */
   modelDirs: z.array(z.string()).default([]),
   /**
@@ -81,7 +83,8 @@ const DEFAULTS: Settings = {
   searxngUrl: '',
   promptPresets: [],
   localApi: { port: null, apiKey: '', lan: false },
-  updateChecks: true
+  updateChecks: true,
+  retentionDays: null
 }
 
 /** Small JSON-backed settings file. Corrupt or missing files fall back to defaults. */

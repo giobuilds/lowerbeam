@@ -414,6 +414,21 @@ export interface UpdateState {
   enabled?: boolean
 }
 
+/** What the app keeps on disk, by kind, for the About panel's Data row. */
+export interface DataUsage {
+  /** The folder it all lives in. */
+  path: string
+  conversations: { count: number; bytes: number }
+  /** Coding runs' journals, the model's words, command outputs and measurements. */
+  runs: { count: number; bytes: number }
+  /** Copies of projects that edit and run modes work in. */
+  workspaces: { count: number; bytes: number }
+  /** Everything in the folder, Electron's own storage included. */
+  total: number
+  /** Workspace copies and command outputs of runs finished longer ago than this are removed on start; null keeps them. */
+  retentionDays: number | null
+}
+
 /** What the app knows about itself, for the About panel. */
 export interface AboutView {
   name: string

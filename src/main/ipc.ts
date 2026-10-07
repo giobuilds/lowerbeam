@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, BrowserWindow, type WebContents } from 'electron'
+import { app, ipcMain, dialog, session, BrowserWindow, type WebContents } from 'electron'
 import { createRequire } from 'node:module'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -35,12 +35,14 @@ import type {
   ToolResult,
   ServerStatus,
   VramPlanView,
+  DataUsage,
   ServedModel,
   LaunchConfig,
   RouterPlanView
 } from '@shared/types.js'
 import { IPC } from '@shared/ipc.js'
 import { launchConfigSchema, routerLaunchSchema } from '@shared/schema.js'
+import { dataUsage, deleteOwnData } from './appData.js'
 import type { ServerSupervisor } from './supervisor.js'
 import { probeBinary, readDevices } from './probe.js'
 import { scanModels, defaultModelDirs, type ModelEntry } from './registry.js'
@@ -587,6 +589,42 @@ export function registerIpc(
     updater.restartToUpdate()
     return null
   })
+  // What the app keeps, and getting rid of it (#133).
+  const dataPaths = {
+    userData: app.getPath('userData'),
+    conversations: join(app.getPath('userData'), 'conversations'),
+    coding: join(app.getPath('userData'), 'coding')
+  }
+  const usage = (): Promise<DataUsage> => dataUsage(dataPaths, settings.current.retentionDays)
+  handle<DataUsage>(IPC.dataUsage, usage)
+  handle<DataUsage>(IPC.dataDeleteRuns, async () => {
+    await coding.deleteAllRuns()
+    return usage()
+  })
+  handle<DataUsage>(IPC.dataDeleteConversations, async () => {
+    await conversations.removeAll()
+    return usage()
+  })
+  handle<DataUsage>(IPC.dataSetRetention, async (raw) => {
+    const days = raw === null ? null : Number(raw)
+    if (days !== null && (!Number.isInteger(days) || days < 1 || days > 3650)) throw new Error('Keep runs’ copies for 1 to 3650 days, or always.')
+    await settings.patch({ retentionDays: days })
+    if (days !== null) await coding.pruneOlderThan(days)
+    return usage()
+  })
+  // Everything: the server stopped, runs ended, the app's files removed and
+  // Electron's storage cleared, then a fresh start. Models are not touched.
+  handle<null>(IPC.dataDeleteAll, async () => {
+    coding.shutdown()
+    await supervisor.stop()
+    await deleteOwnData(dataPaths.userData)
+    await session.defaultSession.clearStorageData()
+    await session.defaultSession.clearCache()
+    app.relaunch()
+    app.exit(0)
+    return null
+  })
+
   handle<UpdateState>(IPC.updateSetEnabled, async (on) => {
     await settings.patch({ updateChecks: on === true })
     if (on === true) await updater.check()

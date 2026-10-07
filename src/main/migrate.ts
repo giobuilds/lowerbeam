@@ -15,7 +15,9 @@ import { join, dirname } from 'node:path'
  */
 
 const LEGACY_DIRECTORY_NAMES = ['llama-gui']
-const MARKER = '.migrated-from'
+/** Written once a migration has happened, or the app's data was deleted on purpose: either way, never migrate again. */
+export const MIGRATION_MARKER = '.migrated-from'
+const MARKER = MIGRATION_MARKER
 
 /**
  * The files this app owns. Emptiness is not a usable test: Electron creates the
@@ -26,7 +28,7 @@ const MARKER = '.migrated-from'
 const OUR_FILES = ['settings.json', 'profiles.json', 'conversations']
 
 export async function migrateLegacyUserData(userDataPath: string): Promise<string | null> {
-  if (await hasOurData(userDataPath)) return null
+  if ((await hasOurData(userDataPath)) || (await readdir(userDataPath).catch(() => [] as string[])).includes(MARKER)) return null
 
   const parent = dirname(userDataPath)
   for (const legacyName of LEGACY_DIRECTORY_NAMES) {

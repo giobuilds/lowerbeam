@@ -39,6 +39,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
   kept for that model file as an indicative entry that clears, refuses or
   leaves open each mode, and never overrides the curated record (#103).
 
+- **Data controls** in About: how much the app's conversations, coding runs
+  and workspace copies take; deleting all coding runs, all conversations, or
+  all app data (the server stopped, Electron's storage cleared, the app
+  restarted; models are never touched), each confirmed with what it removes;
+  and an optional retention period after which a finished run's workspace
+  copy and command output are removed on start, its journal kept. Off by
+  default (#133).
+
 ### Fixed
 
 - Applying a coding run's changes, and undoing them, are now recorded in the
