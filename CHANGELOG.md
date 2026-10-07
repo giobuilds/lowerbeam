@@ -41,6 +41,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
   kept for that model file as an indicative entry that clears, refuses or
   leaves open each mode, and never overrides the curated record (#103).
 
+### Fixed
+
+- On Ubuntu 23.10 and later, run mode was offered and then failed: AppArmor
+  refuses user namespaces there while the setting the sandbox check read
+  says they are on. The check now starts a box once to see that it works,
+  and names AppArmor as the cause when that is it. Every sandbox
+  error points to the new Requirements section of the README (#132).
+
 ## [0.11.1] - 2026-10-04
 
 ### Security
