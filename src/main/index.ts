@@ -21,6 +21,7 @@ import { isWebUrl } from '@shared/url.js'
 import { APP_INDEX_PATH, isAppUrl, trustWindow } from './sender.js'
 import { Updater } from './updater.js'
 import { tightenTree } from './private.js'
+import { SlotCache } from './slots.js'
 import type { BinaryInfo } from '@shared/types.js'
 
 const dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -186,7 +187,10 @@ async function bootstrap(): Promise<void> {
   if (settings.current.retentionDays) void coding.pruneOlderThan(settings.current.retentionDays).catch(() => {})
 
   const updater = new Updater(() => settings.current.updateChecks)
-  registerIpc(supervisor, settings, conversations, profiles, mcp, downloads, coding, discovered, updater)
+  // A long chat's server slot, saved when you leave it and restored on return.
+  const slots = new SlotCache(join(app.getPath('userData'), 'slots'), () => (supervisor ? { status: supervisor.status, build: supervisor.binaryInfo.version } : null))
+  void slots.sweep(async (id) => (await conversations.get(id).catch(() => null)) !== null).catch(() => {})
+  registerIpc(supervisor, settings, conversations, profiles, mcp, downloads, coding, discovered, updater, slots)
   wireEvents(supervisor, downloads, mcp, coding, updater, settings)
   await supervisor.adoptOrReap()
 

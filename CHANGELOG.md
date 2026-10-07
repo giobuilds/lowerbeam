@@ -29,6 +29,16 @@ and versions follow [Semantic Versioning](https://semver.org/).
   refused when one of the files has an uncommitted edit of yours. Undo
   restores the files and records a revert commit (#109).
 
+- **Long chats keep their place in the server**: each chat goes back to the
+  slot it last used, and leaving a chat longer than 2,048 tokens saves its
+  slot to disk, to be restored when you return after another chat has taken
+  it. Coming back then reads one token instead of thousands. The first reply
+  after a restore is checked: for a model where restoring did not help (a
+  hybrid model such as the Qwen3.5 family, on current llama.cpp), saving
+  stops and its files are removed. At most 4 GB, the oldest dropped first,
+  shown in About → Data and removed with the chat. One-model launches only
+  (#110).
+
 ## [0.12.0] - 2026-10-07
 
 ### Added

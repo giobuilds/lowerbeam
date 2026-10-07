@@ -42,7 +42,7 @@ export interface DataPaths {
 }
 
 /** How much each kind of data takes, and how many of it there are. */
-export async function dataUsage(paths: DataPaths, retentionDays: number | null): Promise<DataUsage> {
+export async function dataUsage(paths: DataPaths, retentionDays: number | null): Promise<Omit<DataUsage, 'slots'>> {
   const names = async (dir: string): Promise<string[]> => readdir(dir).catch(() => [] as string[])
   const conversationFiles = (await names(paths.conversations)).filter((n) => n.endsWith('.json'))
   const codingFiles = await names(paths.coding)
@@ -79,4 +79,4 @@ export async function deleteOwnData(userData: string): Promise<void> {
   await writeFile(join(userData, MIGRATION_MARKER), `deleted ${new Date().toISOString()}\n`, { mode: PRIVATE_FILE })
 }
 
-const OWN_DATA = ['coding', 'conversations', 'settings.json', 'profiles.json', 'server.json', 'router-presets.ini', 'router-cache']
+const OWN_DATA = ['coding', 'conversations', 'slots', 'settings.json', 'profiles.json', 'server.json', 'router-presets.ini', 'router-cache']
