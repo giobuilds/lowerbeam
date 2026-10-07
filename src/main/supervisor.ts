@@ -635,7 +635,11 @@ export function buildArgs(
   // Under --fit too: it sizes what is left unset around the experts' placement.
   if (config.cpuMoeLayers === -1) args.push('--cpu-moe')
   else if (config.cpuMoeLayers > 0) args.push('--n-cpu-moe', String(config.cpuMoeLayers))
-  if (config.mmprojPath) args.push('--mmproj', config.mmprojPath)
+  if (config.mmprojPath) {
+    args.push('--mmproj', config.mmprojPath)
+    // Kept on the CPU, the projector leaves the model its VRAM (#147).
+    if (config.mmprojOffload === false && binary.flags.includes('--no-mmproj-offload')) args.push('--no-mmproj-offload')
+  }
   if (binary.flashAttnStyle === 'value') {
     args.push('--flash-attn', config.flashAttn ? 'on' : 'off')
   } else if (config.flashAttn) {

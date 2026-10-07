@@ -46,6 +46,8 @@ interface ServerState {
   routerPlan: RouterPlanView | null
   /** In router mode, the model chat and coding send their requests to; null picks a loaded one. */
   activeModel: string | null
+  /** Why the projector was put where it was, when the app chose. */
+  projectorChoice: string | null
   /** Speculative decoding measured with and without, for the draft being edited. */
   speculation: { running: boolean; step: string | null; result: SpeculationMeasure | null; error: string | null }
   busy: boolean
@@ -96,6 +98,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   routerPlan: null,
   activeModel: null,
   speculation: { running: false, step: null, result: null, error: null },
+  projectorChoice: null,
   busy: false,
   error: null,
 
@@ -201,7 +204,9 @@ export const useServerStore = create<ServerState>((set, get) => ({
           parallel: draft.parallel,
           cpuMoeLayers: draft.cpuMoeLayers,
           speculative: draft.speculative ?? 'off',
-          draftModelPath: draft.draftModelPath ?? null
+          draftModelPath: draft.draftModelPath ?? null,
+          mmprojPath: draft.mmprojPath,
+          mmprojOffload: draft.mmprojOffload ?? true
         })
       })
     } catch {
@@ -259,10 +264,15 @@ export const useServerStore = create<ServerState>((set, get) => ({
     // so, so the pairing found on disk is applied unless a profile overrides it.
     const projector = get().models.find((m) => m.path === modelPath)?.projectorPath ?? null
 
+    // Where the projector goes, when no profile says: on the GPU only if the
+    // model still has room there for the context coding runs need (#147).
+    const placement = !profile && projector ? await projectorPlacement(modelPath, projector, get().draft) : null
+
     set((s) => ({
       draft: profile
         ? { ...s.draft, ...profile.config, modelPath }
-        : { ...s.draft, modelPath, mmprojPath: projector },
+        : { ...s.draft, modelPath, mmprojPath: projector, mmprojOffload: placement?.onGpu ?? true },
+      projectorChoice: placement?.why ?? null,
       profile,
       profileApplied: Boolean(profile)
     }))
@@ -286,6 +296,8 @@ export const useServerStore = create<ServerState>((set, get) => ({
     // Editing any launch setting means the draft is no longer the remembered
     // configuration, and the badge should stop claiming otherwise.
     if (Object.keys(patch).some((k) => k !== 'modelPath')) set({ profileApplied: false })
+    // A placement chosen by hand is not the app's choice any more.
+    if ('mmprojOffload' in patch || 'mmprojPath' in patch) set({ projectorChoice: null })
     set((s) => ({ draft: { ...s.draft, ...patch } }))
     // Every knob changes the VRAM estimate, so it is recomputed continuously.
     void get().refreshPlan()
@@ -420,6 +432,44 @@ async function routerLaunch(s: ServerState): Promise<RouterLaunch> {
     })
   )
   return { models, modelsMax: s.routerDraft.modelsMax }
+}
+
+/** The context a coding run needs, from the capability record's measurements. */
+const CODING_CONTEXT = 16384
+/** The free memory llama.cpp's own --fit keeps in hand, which a launch here should leave too. */
+const FIT_MARGIN_MIB = 1024
+
+/**
+ * Whether a vision projector should go on the GPU: only when the model, a
+ * coding run's context and the projector all fit with --fit's margin left.
+ * On an 8 GB card the 9B's 1.1 GiB projector does not, and on the GPU it
+ * cost the model three quarters of its context and a fifth of its speed;
+ * on the CPU an image takes about two seconds longer.
+ */
+async function projectorPlacement(modelPath: string, projector: string, draft: LaunchConfig): Promise<{ onGpu: boolean; why: string } | null> {
+  try {
+    const plan = await window.llama.models.plan({
+      modelPath,
+      gpuLayers: 999,
+      contextSize: CODING_CONTEXT,
+      cacheTypeK: draft.cacheTypeK,
+      cacheTypeV: draft.cacheTypeV,
+      parallel: 1,
+      cpuMoeLayers: draft.cpuMoeLayers,
+      mmprojPath: projector,
+      mmprojOffload: true
+    })
+    if (plan.freeMiB === null) return null
+    const gib = (mib: number): string => `${(mib / 1024).toFixed(1)} GiB`
+    return plan.totalMiB + FIT_MARGIN_MIB <= plan.freeMiB
+      ? { onGpu: true, why: `On the GPU: with it, this model and a ${CODING_CONTEXT.toLocaleString()}-token context take ${gib(plan.totalMiB)} of ${gib(plan.freeMiB)} free.` }
+      : {
+          onGpu: false,
+          why: `On the CPU: on the GPU it would take ${gib(plan.projectorMiB)}, and this model with a ${CODING_CONTEXT.toLocaleString()}-token context would not fit beside it in ${gib(plan.freeMiB)} free.`
+        }
+  } catch {
+    return null
+  }
 }
 
 /** The model requests go to now: the one picked, in a router, or the only one. */

@@ -1,6 +1,6 @@
 import { app, ipcMain, dialog, session, BrowserWindow, type WebContents } from 'electron'
 import { createRequire } from 'node:module'
-import { writeFile } from 'node:fs/promises'
+import { stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { networkInterfaces } from 'node:os'
 import { conversationMarkdown, exportFileName } from '@shared/chatExport.js'
@@ -235,8 +235,14 @@ export function registerIpc(
     if (!meta) throw new Error('Model not found. Try rescanning.')
     if (meta.error) throw new Error(`Cannot plan for this file: ${meta.error}`)
 
-    return planOne(meta, req, await freeVram(), speculationFor(req, models))
+    return planOne(meta, req, await freeVram(), speculationFor(req, models), await projectorOnGpu(req))
   })
+
+  /** A vision projector's size, when it goes on the GPU; nothing when it stays on the CPU or there is none. */
+  const projectorOnGpu = async (req: { mmprojPath?: string | null; mmprojOffload?: boolean }): Promise<number | undefined> => {
+    if (!req.mmprojPath || req.mmprojOffload === false) return undefined
+    return stat(req.mmprojPath).then((s) => s.size, () => undefined)
+  }
 
   /** The speculation a plan should count: the model's MTP head, an n-gram lookup, or a draft model from the library. */
   const speculationFor = (req: { speculative?: string; draftModelPath?: string | null }, models: ModelEntry[]): Speculation | undefined => {
@@ -264,13 +270,13 @@ export function registerIpc(
     const models = await listModels(false)
     const freeMiB = await freeVram()
     const ids = routerIds(launch.models.map((m) => m.modelPath))
-    const planned = launch.models.map((config, i) => {
+    const planned = await Promise.all(launch.models.map(async (config, i) => {
       const meta = models.find((m) => m.path === config.modelPath)
       const error = !meta ? 'not found; try rescanning' : meta.error ? meta.error : null
       if (!meta || error) return { id: ids[i]!, modelPath: config.modelPath, totalMiB: 0, contextPerSlot: 0, error }
-      const plan = planOne(meta, config, freeMiB, speculationFor(config, models))
+      const plan = planOne(meta, config, freeMiB, speculationFor(config, models), await projectorOnGpu(config))
       return { id: ids[i]!, modelPath: config.modelPath, totalMiB: plan.totalMiB, contextPerSlot: plan.contextPerSlot, error: null }
-    })
+    }))
     return { models: planned, freeMiB, ...routerWorstCase(planned, launch.modelsMax, freeMiB) }
   })
 
@@ -278,7 +284,8 @@ export function registerIpc(
     meta: ModelEntry,
     req: { gpuLayers: number; contextSize: number; cacheTypeK: LaunchConfig['cacheTypeK']; cacheTypeV: LaunchConfig['cacheTypeV']; parallel: number; cpuMoeLayers?: number },
     freeMiB: number | null,
-    speculative?: Speculation
+    speculative?: Speculation,
+    projectorBytes?: number
   ): VramPlanView => {
     const binary = supervisor.binaryInfo
     return planVram(
@@ -291,6 +298,7 @@ export function registerIpc(
         parallel: req.parallel,
         cpuMoeLayers: req.cpuMoeLayers,
         speculative,
+        projectorBytes,
         // The unified CLI is the newer line, which sizes its compute buffer very
         // differently from the classic standalone server.
         computeProfile: binary.kind === 'unified' ? 'modern' : 'classic',

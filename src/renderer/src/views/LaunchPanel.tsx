@@ -71,28 +71,7 @@ export function LaunchPanel(): React.JSX.Element {
 
       <ProfileBadge disabled={live} />
 
-      {draft.mmprojPath && (
-        <div className="rounded-md border border-violet-900/70 bg-violet-950/20 p-2.5">
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-[11px] font-medium text-violet-200">Vision projector found</span>
-            <button
-              type="button"
-              onClick={() => setDraft({ mmprojPath: null })}
-              disabled={live}
-              className="shrink-0 text-[11px] text-muted hover:text-rose-300 disabled:opacity-40"
-            >
-              Don&apos;t use
-            </button>
-          </div>
-          <p className="mt-0.5 truncate text-[11px] text-muted" title={draft.mmprojPath}>
-            {draft.mmprojPath.split('/').pop()}
-          </p>
-          <p className="mt-0.5 text-[11px] leading-snug text-muted/80">
-            Passed as --mmproj so the model can read images. Without it the model
-            still loads, but silently text-only.
-          </p>
-        </div>
-      )}
+      {draft.mmprojPath && <ProjectorPlacement disabled={live} projectorMiB={plan?.projectorMiB ?? 0} />}
 
       {supports('--fit') && (
         <section className="rounded-md border border-edge bg-ink/60 p-3">
@@ -777,5 +756,47 @@ function Speculation({ disabled, speculationMiB }: { disabled: boolean; speculat
         </div>
       )}
     </section>
+  )
+}
+
+
+/**
+ * The vision projector found beside the model, and where it runs. Without it
+ * the model loads text-only and never says so; with it on the GPU it takes
+ * over a gigabyte the model may need (#147). Each choice says what it costs.
+ */
+function ProjectorPlacement({ disabled, projectorMiB }: { disabled: boolean; projectorMiB: number }): React.JSX.Element | null {
+  const draft = useServerStore((s) => s.draft)
+  const setDraft = useServerStore((s) => s.setDraft)
+  const why = useServerStore((s) => s.projectorChoice)
+  const supports = useServerStore((s) => !s.binary || s.binary.flags.includes('--no-mmproj-offload'))
+  if (!draft.mmprojPath) return null
+  const onGpu = draft.mmprojOffload !== false
+  return (
+    <div className="rounded-md border border-violet-900/70 bg-violet-950/20 p-2.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[11px] font-medium text-violet-200">Vision projector found</span>
+        <select
+          value={onGpu ? 'gpu' : 'cpu'}
+          disabled={disabled}
+          onChange={(e) => (e.target.value === 'off' ? setDraft({ mmprojPath: null }) : setDraft({ mmprojOffload: e.target.value === 'gpu' }))}
+          className="rounded border border-edge bg-ink px-1 py-0.5 text-[11px]"
+        >
+          <option value="gpu">On the GPU</option>
+          {supports && <option value="cpu">On the CPU</option>}
+          <option value="off">Don’t load it</option>
+        </select>
+      </div>
+      <p className="mt-0.5 truncate text-[11px] text-muted" title={draft.mmprojPath}>
+        {draft.mmprojPath.split('/').pop()}
+      </p>
+      <p className="mt-0.5 text-[11px] leading-snug text-muted/80">
+        Lets the model read images; without it the model still loads, but silently text-only.{' '}
+        {onGpu
+          ? `On the GPU an image is read in about a second, for ~${Math.round(projectorMiB)} MiB of VRAM the model's context would otherwise have.`
+          : 'On the CPU an image takes a few seconds longer and the model keeps all its VRAM.'}
+      </p>
+      {why && <p className="mt-0.5 text-[11px] leading-snug text-violet-200/80">{why}</p>}
+    </div>
   )
 }

@@ -54,6 +54,8 @@ export interface PlanInput {
   cpuMoeLayers?: number
   /** Speculative decoding, and with what: it has a cost of its own. */
   speculative?: Speculation
+  /** A vision projector loaded on the GPU: its file's size. On the CPU, or absent, it costs no VRAM. */
+  projectorBytes?: number
 }
 
 export interface VramPlan {
@@ -82,6 +84,8 @@ export interface VramPlan {
   notes: string[]
   /** What speculative decoding adds: a draft model, or the model's own MTP head and its buffers. */
   speculationMiB: number
+  /** A vision projector on the GPU. */
+  projectorMiB: number
 }
 
 /**
@@ -258,14 +262,16 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
     : 0
   const overheadMiB = anyOffload && (input.hasGpuBackend ?? true) ? BACKEND_OVERHEAD_MIB : 0
 
-  const { speculative, ...plain } = input
+  const { speculative, projectorBytes, ...plain } = input
   const spec = speculative && anyOffload ? speculationBytes(plain, speculative) : null
+  const projector = projectorBytes && anyOffload ? projectorBytes * PROJECTOR_FACTOR : 0
 
   const weightsMiB = weights / MiB
   const kvCacheMiB = kv / MiB
   const computeMiB = compute / MiB
   const speculationMiB = (spec?.bytes ?? 0) / MiB
-  const totalMiB = weightsMiB + kvCacheMiB + computeMiB + overheadMiB + speculationMiB
+  const projectorMiB = projector / MiB
+  const totalMiB = weightsMiB + kvCacheMiB + computeMiB + overheadMiB + speculationMiB + projectorMiB
 
   const notes: string[] = []
   notes.push(`weights: ${fmt(meta.fileSize / MiB)} MiB x ${offloadedLayers}/${totalLayers} layers`)
@@ -294,6 +300,7 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
     )
   }
   if (spec) notes.push(spec.note)
+  if (projector) notes.push(`vision projector on the GPU: ${fmt(projector / MiB)} MiB, its weights and what it reserves to read an image`)
   if (overheadMiB > 0) notes.push(`GPU backend reserve: ~${overheadMiB} MiB before any model data`)
 
   let maxGpuLayers: number | null = null
@@ -316,6 +323,7 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
     computeMiB,
     backendOverheadMiB: overheadMiB,
     speculationMiB,
+    projectorMiB,
     totalMiB,
     freeMiB,
     fits: freeMiB === null ? null : totalMiB <= freeMiB,
@@ -359,6 +367,12 @@ export function recurrentStateBytes(meta: GgufMetadata, sequences: number): numb
   const conv = (ssm.convKernel - 1) * (ssm.innerSize + 2 * ssm.groupCount * ssm.stateSize) * 4
   return stateBlocks * (state + conv) * Math.max(1, sequences)
 }
+
+/**
+ * A projector on the GPU against its file: llama.cpp reserved 1,152 MiB for
+ * Ornith 9B's 879 MiB BF16 projector, its weights and the worst-case image.
+ */
+export const PROJECTOR_FACTOR = 1152 / 879
 
 /** A draft context's compute buffer against the target's estimate, measured on Ornith 9B (104 / 161 MiB). */
 const DRAFT_COMPUTE_SHARE = 0.65
