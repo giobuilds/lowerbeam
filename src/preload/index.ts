@@ -100,6 +100,8 @@ const api = {
       cpuMoeLayers?: number
       speculative?: string
       draftModelPath?: string | null
+      mmprojPath?: string | null
+      mmprojOffload?: boolean
     }) => invoke<VramPlanView>(IPC.modelPlan, req),
     planRouter: (launch: RouterLaunch) => invoke<RouterPlanView>(IPC.modelPlanRouter, launch),
     measureSpeculation: (config: LaunchConfig) => invoke<SpeculationMeasure>(IPC.modelMeasureSpeculation, config),

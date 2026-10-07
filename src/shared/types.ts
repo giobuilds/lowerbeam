@@ -76,6 +76,13 @@ export interface LaunchConfig {
   speculative?: SpeculativeMode
   /** The draft model, for `speculative: 'draft'`. */
   draftModelPath?: string | null
+  /**
+   * Where the vision projector runs. On the GPU an image is read in about a
+   * second, at the cost of over a gigabyte of VRAM; on the CPU it takes a
+   * few seconds and the model keeps that memory. Absent means the GPU, as
+   * llama.cpp does.
+   */
+  mmprojOffload?: boolean
 }
 
 export type SpeculativeMode = 'off' | 'mtp' | 'ngram' | 'draft'
@@ -306,6 +313,7 @@ export interface VramPlanView {
   expertsOnCpuMiB: number
   notes: string[]
   speculationMiB: number
+  projectorMiB: number
 }
 
 /** Mirrors main/registry.ts ModelEntry. */

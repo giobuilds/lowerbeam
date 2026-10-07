@@ -47,6 +47,17 @@ and versions follow [Semantic Versioning](https://semver.org/).
   9B the MTP head was 70% faster on the code rewrite and 13% on prose, for
   about 570 MiB with one slot (#111).
 
+### Fixed
+
+- A vision model's projector no longer quietly takes the model's VRAM. On
+  an 8 GB card the 9B's 1.1 GiB projector on the GPU left auto-fit 4,096
+  tokens of context and put a layer on the CPU (29 tokens a second instead
+  of 36, worse in the app). The plan now counts the projector, it can be put
+  on the GPU, on the CPU or not loaded, and by default it goes on the CPU
+  when the model and a 16,384-token context would not fit beside it — where
+  an image takes about a second longer and the model keeps its full speed
+  (#147).
+
 ## [0.12.0] - 2026-10-07
 
 ### Added
