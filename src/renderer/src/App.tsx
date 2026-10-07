@@ -18,6 +18,7 @@ import { ReaderPanel } from './components/ReaderPanel.js'
 import { subscribeToReader, useReaderStore } from './state/readerStore.js'
 import { subscribeToCoding } from './state/codingStore.js'
 import { isWebUrl } from '@shared/url.js'
+import { servedModel } from '@shared/served.js'
 import { StatusBadge } from './components/StatusBadge.js'
 
 type Tab = 'chat' | 'server' | 'models' | 'tuning' | 'coding'
@@ -25,6 +26,7 @@ type Tab = 'chat' | 'server' | 'models' | 'tuning' | 'coding'
 export default function App(): React.JSX.Element {
   const init = useServerStore((s) => s.init)
   const status = useServerStore((s) => s.status)
+  const vision = useServerStore((s) => servedModel(s.status, s.activeModel)?.modalities?.vision ?? false)
   const [tab, setTab] = useState<Tab>('chat')
   const [showFlags, setShowFlags] = useState(false)
   const [showTools, setShowTools] = useState(false)
@@ -164,7 +166,8 @@ export default function App(): React.JSX.Element {
               {status.config.modelPath.split('/').pop()}
             </span>
           )}
-          {status?.modalities?.vision && (
+          {status?.phase === 'ready' && status.router && <ModelPicker />}
+          {vision && (
             <span
               title="This model can read images"
               className="rounded bg-violet-900/50 px-1.5 py-0.5 text-[10px] text-violet-200"
@@ -236,5 +239,33 @@ function TabButton({
     >
       {children}
     </button>
+  )
+}
+
+/**
+ * In router mode, which model chat and coding send their requests to. Each
+ * is listed with what the router is doing with it; picking one that is not
+ * loaded loads it on the next request, and may unload another.
+ */
+function ModelPicker(): React.JSX.Element | null {
+  const models = useServerStore((s) => s.status?.router?.models ?? null)
+  const active = useServerStore((s) => servedModel(s.status, s.activeModel)?.id ?? '')
+  const setActiveModel = useServerStore((s) => s.setActiveModel)
+  if (!models) return null
+  const label = (state: string): string => (state === 'loaded' ? '' : state === 'loading' ? ' (loading)' : state === 'failed' ? ' (failed)' : ' (not loaded)')
+  return (
+    <select
+      value={active}
+      onChange={(e) => setActiveModel(e.target.value)}
+      title="The model chat and coding use. One that is not loaded is loaded on the next request."
+      className="max-w-[22rem] rounded border border-edge bg-ink px-1.5 py-0.5 text-[11px] text-slate-200"
+    >
+      {models.map((m) => (
+        <option key={m.id} value={m.id}>
+          {m.id}
+          {label(m.state)}
+        </option>
+      ))}
+    </select>
   )
 }

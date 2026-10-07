@@ -8,10 +8,14 @@ import type {
   LaunchConfig,
   LogLine,
   ModelEntryView,
+  RouterLaunch,
+  RouterPlanView,
+  ServedModel,
   ServerStatus,
   VramPlanView
 } from '@shared/types.js'
 import { DEFAULT_LAUNCH_CONFIG } from '@shared/types.js'
+import { servedModel } from '@shared/served.js'
 
 const MAX_RENDERED_LOGS = 2000
 
@@ -34,6 +38,13 @@ interface ServerState {
   logs: LogLine[]
   lastSeq: number
   draft: LaunchConfig
+  /** One model, or several behind a router. */
+  launchMode: 'single' | 'router'
+  /** The router's models, by file, and how many may be resident at once. */
+  routerDraft: { models: string[]; modelsMax: number }
+  routerPlan: RouterPlanView | null
+  /** In router mode, the model chat and coding send their requests to; null picks a loaded one. */
+  activeModel: string | null
   busy: boolean
   error: string | null
 
@@ -49,6 +60,11 @@ interface ServerState {
   pullLogs: () => Promise<void>
   setDraft: (patch: Partial<LaunchConfig>) => void
   start: () => Promise<void>
+  setLaunchMode: (mode: 'single' | 'router') => void
+  toggleRouterModel: (path: string) => void
+  setRouterMax: (n: number) => void
+  refreshRouterPlan: () => Promise<void>
+  setActiveModel: (id: string | null) => void
   stop: () => Promise<void>
   refreshDevices: () => Promise<void>
   clearError: () => void
@@ -71,6 +87,10 @@ export const useServerStore = create<ServerState>((set, get) => ({
   logs: [],
   lastSeq: 0,
   draft: { modelPath: '', ...DEFAULT_LAUNCH_CONFIG },
+  launchMode: 'single',
+  routerDraft: { models: [], modelsMax: 1 },
+  routerPlan: null,
+  activeModel: null,
   busy: false,
   error: null,
 
@@ -81,6 +101,10 @@ export const useServerStore = create<ServerState>((set, get) => ({
       window.llama.binary.list()
     ])
     set({ status, binary, binaries, devices: binary.devices })
+    // An adopted router is shown as the router it is.
+    if (status.router) {
+      set({ launchMode: 'router', routerDraft: { models: status.router.models.map((m) => m.modelPath), modelsMax: status.router.modelsMax } })
+    }
     // Adopting a running server means its config is the truth, not our defaults.
     if (status.config) {
       set({ draft: status.config })
@@ -267,7 +291,22 @@ export const useServerStore = create<ServerState>((set, get) => ({
   },
 
   async start() {
-    const { draft } = get()
+    const { draft, launchMode } = get()
+    if (launchMode === 'router') {
+      if (get().routerDraft.models.length === 0) {
+        set({ error: 'Choose at least one model for the router.' })
+        return
+      }
+      set({ busy: true, error: null })
+      try {
+        set({ status: await window.llama.server.startRouter(await routerLaunch(get())) })
+      } catch (err) {
+        set({ error: (err as Error).message })
+      } finally {
+        set({ busy: false })
+      }
+      return
+    }
     if (!draft.modelPath) {
       set({ error: 'Choose a .gguf model first.' })
       return
@@ -281,6 +320,40 @@ export const useServerStore = create<ServerState>((set, get) => ({
     } finally {
       set({ busy: false })
     }
+  },
+
+  setLaunchMode(launchMode) {
+    set({ launchMode })
+    if (launchMode === 'router') void get().refreshRouterPlan()
+  },
+
+  toggleRouterModel(path) {
+    const { routerDraft } = get()
+    const models = routerDraft.models.includes(path) ? routerDraft.models.filter((p) => p !== path) : [...routerDraft.models, path]
+    set({ routerDraft: { models, modelsMax: Math.min(routerDraft.modelsMax, Math.max(1, models.length)) } })
+    void get().refreshRouterPlan()
+  },
+
+  setRouterMax(n) {
+    const { routerDraft } = get()
+    set({ routerDraft: { ...routerDraft, modelsMax: Math.max(1, Math.min(n, Math.max(1, routerDraft.models.length))) } })
+    void get().refreshRouterPlan()
+  },
+
+  async refreshRouterPlan() {
+    if (get().routerDraft.models.length === 0) {
+      set({ routerPlan: null })
+      return
+    }
+    try {
+      set({ routerPlan: await window.llama.models.planRouter(await routerLaunch(get())) })
+    } catch {
+      set({ routerPlan: null })
+    }
+  },
+
+  setActiveModel(activeModel) {
+    set({ activeModel })
   },
 
   async stop() {
@@ -306,6 +379,33 @@ export const useServerStore = create<ServerState>((set, get) => ({
     set({ error: null })
   }
 }))
+
+/**
+ * Each of the router's models with the launch it last worked with — its
+ * profile — or the defaults with its projector, as choosing it on its own
+ * would give.
+ */
+async function routerLaunch(s: ServerState): Promise<RouterLaunch> {
+  const models = await Promise.all(
+    s.routerDraft.models.map(async (modelPath): Promise<LaunchConfig> => {
+      let profile: LaunchProfileView | null = null
+      try {
+        profile = await window.llama.profiles.get(modelPath)
+      } catch {
+        // None yet: the defaults.
+      }
+      const projector = s.models.find((m) => m.path === modelPath)?.projectorPath ?? null
+      return profile ? { ...DEFAULT_LAUNCH_CONFIG, ...profile.config, modelPath } : { ...DEFAULT_LAUNCH_CONFIG, modelPath, mmprojPath: projector }
+    })
+  )
+  return { models, modelsMax: s.routerDraft.modelsMax }
+}
+
+/** The model requests go to now: the one picked, in a router, or the only one. */
+export function currentServed(): ServedModel | null {
+  const { status, activeModel } = useServerStore.getState()
+  return servedModel(status, activeModel)
+}
 
 /** Wire the push events from main into the store. Called once at mount. */
 export function subscribeToMain(): () => void {

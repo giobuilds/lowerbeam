@@ -9,6 +9,7 @@ import { CompactionMark } from '../components/CompactionMark.js'
 import { Attachments } from '../components/Attachments.js'
 import { useAutoSize } from '../components/useAutoSize.js'
 import { SlotMeter } from '../components/SlotMeter.js'
+import { servedModel } from '@shared/served.js'
 
 export function Chat({ onConfigureTools }: { onConfigureTools: () => void }): React.JSX.Element {
   const active = useChatStore(activeConversation)
@@ -32,7 +33,7 @@ export function Chat({ onConfigureTools }: { onConfigureTools: () => void }): Re
   const ready = serverPhase === 'ready'
   // Vision comes from the running model's own /props, not from whether a
   // projector was passed — passing one is no guarantee it took effect.
-  const canSeeImages = useServerStore((s) => s.status?.modalities?.vision ?? false)
+  const canSeeImages = useServerStore((s) => servedModel(s.status, s.activeModel)?.modalities?.vision ?? false)
 
   const [input, setInput] = useState('')
   const [images, setImages] = useState<string[]>([])

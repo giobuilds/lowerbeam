@@ -21,6 +21,7 @@ export function LaunchPanel(): React.JSX.Element {
   const refreshDevices = useServerStore((s) => s.refreshDevices)
   const selectBinary = useServerStore((s) => s.selectBinary)
   const clearError = useServerStore((s) => s.clearError)
+  const launchMode = useServerStore((s) => s.launchMode)
 
   const phase = status?.phase ?? 'stopped'
   const live = LIVE_PHASES.has(phase)
@@ -61,6 +62,10 @@ export function LaunchPanel(): React.JSX.Element {
         </p>
       )}
 
+      <LaunchModeToggle disabled={live} />
+
+      {launchMode === 'single' ? (
+        <>
       <ModelPicker disabled={live} />
 
       <ProfileBadge disabled={live} />
@@ -269,6 +274,10 @@ export function LaunchPanel(): React.JSX.Element {
           onChange={(e) => setDraft({ extraArgs: e.target.value })}
         />
       </Field>
+        </>
+      ) : (
+        <RouterSetup disabled={live} />
+      )}
 
       <div className="flex gap-2">
         <button
@@ -582,8 +591,92 @@ function LocalApi({ status }: { status: ServerStatus | null }): React.JSX.Elemen
               <button type="button" onClick={() => copy('key', running.apiKey!)} className="text-accent hover:underline">{copied === 'key' ? 'Copied' : 'Copy key'}</button>
             </div>
           )}
+          {running.router && (
+            <p className="text-muted">
+              Clients name the model in each request — <code className="text-slate-300">"model": "{running.router.models[0]?.id}"</code> — from:{' '}
+              {running.router.models.map((m) => m.id).join(', ')}. GET <code>/v1/models</code> lists them.
+            </p>
+          )}
           {pending && <p className="text-amber-200/80">The running server was launched with different settings; they apply from the next launch.</p>}
         </div>
+      )}
+    </section>
+  )
+}
+
+/** One model per launch, or several behind llama-server's router. */
+function LaunchModeToggle({ disabled }: { disabled: boolean }): React.JSX.Element {
+  const mode = useServerStore((s) => s.launchMode)
+  const setMode = useServerStore((s) => s.setLaunchMode)
+  const option = (value: 'single' | 'router', label: string, why: string): React.JSX.Element => (
+    <button
+      type="button"
+      disabled={disabled}
+      title={why}
+      onClick={() => setMode(value)}
+      className={`flex-1 rounded px-2 py-1 text-[11px] ${mode === value ? 'bg-ink text-slate-100' : 'text-muted hover:text-slate-200'} disabled:opacity-50`}
+    >
+      {label}
+    </button>
+  )
+  return (
+    <div className="flex gap-1 rounded border border-edge p-0.5">
+      {option('single', 'One model', 'Launch one model with the settings below.')}
+      {option('router', 'Several models', 'One server that loads each chosen model when a request names it, with that model’s own saved settings.')}
+    </div>
+  )
+}
+
+/**
+ * Router mode: which models the server may load, and how many at once.
+ * Each runs with the settings it last launched with on its own (its
+ * profile), or the defaults; the plan is the worst case of the largest
+ * ones resident together, each in its own process.
+ */
+function RouterSetup({ disabled }: { disabled: boolean }): React.JSX.Element {
+  const models = useServerStore((s) => s.models)
+  const chosen = useServerStore((s) => s.routerDraft)
+  const plan = useServerStore((s) => s.routerPlan)
+  const toggle = useServerStore((s) => s.toggleRouterModel)
+  const setMax = useServerStore((s) => s.setRouterMax)
+  const usable = models.filter((m) => !m.error && !m.isProjector)
+  const mib = (n: number): string => `${(n / 1024).toFixed(1)} GiB`
+  return (
+    <section className="space-y-2 rounded-md border border-edge bg-ink/60 p-3">
+      <p className="text-[11px] leading-snug text-muted">
+        Requests name the model they want; one that is not loaded is loaded then, with the settings it last ran with here. Past the limit, the least recently
+        used model is unloaded to make room.
+      </p>
+      <div className="max-h-56 space-y-1 overflow-y-auto">
+        {usable.map((m) => {
+          const planned = plan?.models.find((p) => p.modelPath === m.path)
+          return (
+            <label key={m.path} className="flex items-baseline gap-2 text-[11px]" title={m.path}>
+              <input type="checkbox" disabled={disabled} checked={chosen.models.includes(m.path)} onChange={() => toggle(m.path)} />
+              <span className="min-w-0 flex-1 truncate text-slate-200">{m.path.split('/').pop()}</span>
+              {planned && <span className="shrink-0 text-muted">{planned.error ? planned.error : mib(planned.totalMiB)}</span>}
+            </label>
+          )
+        })}
+        {usable.length === 0 && <p className="text-[11px] text-muted">No models found. Add a folder or download one first.</p>}
+      </div>
+      <Field label="Loaded at once (--models-max)" hint="Each loaded model is its own process with its own VRAM">
+        <input
+          type="number"
+          min={1}
+          max={Math.max(1, chosen.models.length)}
+          className={inputClass}
+          value={chosen.modelsMax}
+          disabled={disabled || chosen.models.length === 0}
+          onChange={(e) => setMax(Number(e.target.value))}
+        />
+      </Field>
+      {plan && (
+        <p className={`text-[11px] ${plan.fits === false ? 'text-rose-300' : 'text-muted'}`}>
+          At most {plan.worstCase.length} loaded together: {mib(plan.worstCaseMiB)}
+          {plan.freeMiB !== null ? ` of ${mib(plan.freeMiB)} free` : ''} ({plan.worstCase.join(', ')})
+          {plan.fits === false ? ' — that does not fit; load fewer at once, or lower their context.' : plan.fits ? ' — fits.' : '.'}
+        </p>
       )}
     </section>
   )

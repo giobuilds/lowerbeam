@@ -24,12 +24,20 @@ export const launchConfigSchema = z.object({
 
 export type LaunchConfigInput = z.infer<typeof launchConfigSchema>
 
+/** A router launch: each model's own launch, and how many may be resident at once. */
+export const routerLaunchSchema = z.object({
+  models: z.array(launchConfigSchema).min(1).max(32),
+  modelsMax: z.number().int().min(1).max(32)
+})
+
 /** Persisted supervisor handoff file, used to adopt or reap a server across restarts. */
 export const serverHandoffSchema = z.object({
   pid: z.number().int().positive(),
   port: z.number().int().min(1).max(65535),
   startedAt: z.number(),
-  config: launchConfigSchema,
+  /** One model's launch; null for a router, whose models are in `router`. */
+  config: launchConfigSchema.nullable(),
+  router: routerLaunchSchema.nullable().default(null),
   /** The key and binding it was launched with, so an adopted server is reached the same way. */
   apiKey: z.string().nullable().default(null),
   lan: z.boolean().default(false)
@@ -86,6 +94,8 @@ export const codingStartSchema = z.object({
   projectRoot: z.string().min(1).max(4096),
   task: z.string().min(1).max(4000),
   mode: z.enum(['inspect', 'edit', 'run']).default('inspect'),
+  /** Which of the server's models runs it, by the name requests give it; the only one, when absent. */
+  model: z.string().min(1).max(512).optional(),
   grant: z
     .object({
       alsoRead: z.array(z.string().min(1).max(4096)).max(8).default([]),

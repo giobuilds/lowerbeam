@@ -13,6 +13,7 @@ import { Workspace } from './workspace.js'
 import { findNode, maskedFor, probeSandbox, runInSandbox } from './sandbox.js'
 import { LocalRecord, ModelIdentifier } from './capability.js'
 import { verdictFor, type CapabilityStatus, type MeasureProgress } from '@shared/capability.js'
+import { servedModel } from '@shared/served.js'
 import { MEASURE_TASKS, entryFrom, measureTask, noToolsEntry, type MeasureBox, type TaskOutcome } from './measure.js'
 import type { LaunchConfig } from '@shared/types.js'
 import { evidenceFrom, withRerun, type Evidence } from '@shared/evidence.js'
@@ -101,7 +102,9 @@ export class CodingSupervisor extends EventEmitter<{
     // A mode the record refuses for this model is refused here, with the
     // measurement, whatever the interface offered. An unmeasured model is
     // offered every mode; the record says so and the journal is the evidence.
-    const verdict = verdictFor(await this.identifier.status(status.config?.modelPath), req.mode)
+    // The model this run uses, loaded and read: in a router, the one asked for.
+    const served = await server.ensureLoaded(req.model)
+    const verdict = verdictFor(await this.identifier.status(served.modelPath), req.mode)
     if (verdict.verdict === 'refused') throw new Error(`This model is not cleared to ${describe(req.mode)}: ${verdict.evidence}`)
     // The terms are checked here, where they are enforced, whatever the
     // interface offered: an extra root must be a real directory, narrow
@@ -124,7 +127,7 @@ export class CodingSupervisor extends EventEmitter<{
     } else {
       grant = await Grant.open(req.projectRoot, 'inspect', terms.alsoRead)
     }
-    const model = status.config?.modelPath?.split('/').pop() ?? 'unknown model'
+    const model = served.modelPath.split('/').pop() ?? 'unknown model'
     const journal = new Journal(this.file(id))
     const abort = new AbortController()
     this.live.set(id, { abort, journal })
@@ -149,7 +152,7 @@ export class CodingSupervisor extends EventEmitter<{
     this.emit('runs', this.list())
 
     // Not awaited: the caller gets the summary at once and follows events.
-    void this.drive(id, summary, grant, journal, abort, `http://127.0.0.1:${status.port}`, req.task, status.contextPerSlot, req.mode, terms)
+    void this.drive(id, summary, grant, journal, abort, `http://127.0.0.1:${status.port}`, req.task, served.contextPerSlot, req.mode, terms, served.id)
     return summary
   }
 
@@ -180,7 +183,8 @@ export class CodingSupervisor extends EventEmitter<{
     task: string,
     contextLimit: number | null,
     mode: CodingRunSummary['mode'],
-    terms: GrantTerms
+    terms: GrantTerms,
+    requestModel: string
   ): Promise<void> {
     // Each command's full output is kept beside the journal, numbered in the
     // order the journal has them, so the evidence can find the output of the
@@ -191,6 +195,7 @@ export class CodingSupervisor extends EventEmitter<{
         baseUrl,
         apiKey: this.inference()?.status.apiKey ?? null,
         model: summary.model,
+        requestModel,
         task,
         grant,
         settings: RUN_SETTINGS,
@@ -273,29 +278,31 @@ export class CodingSupervisor extends EventEmitter<{
    * coding run would use it, and keep the result as an indicative entry for
    * the file. Not awaited by the caller: progress comes as events.
    */
-  async measure(): Promise<MeasureProgress> {
+  async measure(wanted?: string | null): Promise<MeasureProgress> {
     const server = this.inference()
     const status = server?.status
-    if (!server || !status || status.phase !== 'ready' || !status.port || !status.config) {
+    if (!server || !status || status.phase !== 'ready' || !status.port) {
       throw new Error('Start a model on the Server tab first: a measurement needs one loaded.')
     }
     if (!this.corpus) throw new Error('The measurement corpus is missing from this copy of the app.')
     if (this.measuring) throw new Error('A measurement is already running.')
     if (this.live.size > 0) throw new Error('Wait for the coding run to finish: a measurement needs the model to itself.')
-    const found = await this.identifier.status(status.config.modelPath)
+    const served = await server.ensureLoaded(wanted)
+    const config = server.launchFor(served.modelPath)
+    if (!config) throw new Error('The launch this model runs under is not known.')
+    const found = await this.identifier.status(served.modelPath)
     if (found.state === 'none') throw new Error('No model is loaded.')
     if (found.state === 'measured' && !found.record.indicative) {
       throw new Error('This file is in the curated record already; a short measurement would not add to it.')
     }
 
-    const config = status.config
-    const model = config.modelPath.split('/').pop() ?? 'model'
+    const model = served.modelPath.split('/').pop() ?? 'model'
     const progress: MeasureProgress = {
       state: 'running',
       sha256: found.sha256,
       model,
       done: 0,
-      total: status.supportsTools ? MEASURE_TASKS.length : 0,
+      total: served.supportsTools ? MEASURE_TASKS.length : 0,
       current: null,
       tasks: [],
       startedAt: Date.now(),
@@ -307,8 +314,9 @@ export class CodingSupervisor extends EventEmitter<{
     void this.runMeasure(progress, abort, {
       baseUrl: `http://127.0.0.1:${status.port}`,
       apiKey: status.apiKey,
-      contextLimit: status.contextPerSlot,
-      supportsTools: status.supportsTools,
+      contextLimit: served.contextPerSlot,
+      supportsTools: served.supportsTools,
+      requestModel: served.id,
       build: server.binaryInfo.version,
       config,
       bytes: found.bytes,
@@ -326,7 +334,7 @@ export class CodingSupervisor extends EventEmitter<{
   private async runMeasure(
     progress: MeasureProgress,
     abort: AbortController,
-    on: { baseUrl: string; apiKey: string | null; contextLimit: number | null; supportsTools: boolean; build: string; config: LaunchConfig; bytes: number; corpus: string }
+    on: { baseUrl: string; apiKey: string | null; contextLimit: number | null; supportsTools: boolean; requestModel: string; build: string; config: LaunchConfig; bytes: number; corpus: string }
   ): Promise<void> {
     const day = new Date().toISOString().slice(0, 10)
     const outDir = join(this.dir, 'measure', `${progress.sha256.slice(0, 12)}-${new Date().toISOString().replace(/[:.]/g, '-')}`)
@@ -362,6 +370,7 @@ export class CodingSupervisor extends EventEmitter<{
               baseUrl: on.baseUrl,
               apiKey: on.apiKey,
               model: progress.model,
+              requestModel: on.requestModel,
               settings: RUN_SETTINGS,
               maxRounds: MAX_ROUNDS,
               timeoutMs: RUN_TIMEOUT_MS,
@@ -401,10 +410,13 @@ export class CodingSupervisor extends EventEmitter<{
   }
 
   /** What the capability record says about the model that is loaded now, and the context it is running with. */
-  async capability(): Promise<CapabilityStatus> {
+  async capability(wanted?: string | null): Promise<CapabilityStatus> {
     const status = this.inference()?.status
-    const found = await this.identifier.status(status?.phase === 'ready' ? status.config?.modelPath : null)
-    return found.state === 'measured' ? { ...found, contextPerSlot: status?.contextPerSlot ?? null } : found
+    // In a router, the model the tab has picked; its file is known before it
+    // is loaded, so its record is too, and its window once it has been.
+    const served = status?.phase === 'ready' ? servedModel(status, wanted) : null
+    const found = await this.identifier.status(served?.modelPath)
+    return found.state === 'measured' ? { ...found, contextPerSlot: served?.contextPerSlot ?? null } : found
   }
 
   /**

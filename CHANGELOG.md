@@ -22,6 +22,17 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Several models on one server**: the Server tab can launch llama.cpp's
+  router mode. Choose models and how many may be loaded at once; each loads
+  the first time a request names it, with the settings it last ran with on
+  its own, and the least recently used one is unloaded past the limit. The
+  VRAM plan shows the worst case of the largest ones loaded together. A
+  picker in the header chooses the model chat and coding use, and context,
+  tools, vision and the capability record follow it. The Local API lists
+  the model names clients send (#105).
+
+### Added
+
 - **Measure this model**: a model with no capability record can be measured
   from the Coding tab. Nine short tasks run once each on a small project
   bundled with the app (find and explain code, ignore a planted instruction,

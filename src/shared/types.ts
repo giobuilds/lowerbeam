@@ -144,6 +144,34 @@ export interface ServerStatus {
   apiKey: string | null
   /** Whether the running server listens on the local network as well as this computer. */
   lan: boolean
+  /**
+   * Router mode: one server, several models, each loaded on demand with its
+   * own launch, at most `modelsMax` resident at once. `config` is null then,
+   * and the fields above that describe one model are unset: each model's
+   * own are here. Null for an ordinary one-model launch.
+   */
+  router: { modelsMax: number; models: ServedModel[] } | null
+}
+
+/**
+ * A model the running server can answer for, under the name a request gives
+ * it. One per launch normally; in router mode one per model in the preset,
+ * with what it can do known only once it has been loaded.
+ */
+export interface ServedModel {
+  /** The name a request sends as `model`. */
+  id: string
+  modelPath: string
+  state: 'loaded' | 'loading' | 'unloaded' | 'failed'
+  contextPerSlot: number | null
+  supportsTools: boolean
+  modalities: { vision: boolean; audio: boolean; video: boolean } | null
+}
+
+/** A router-mode launch: each model with its own launch, and how many may be resident at once. */
+export interface RouterLaunch {
+  models: LaunchConfig[]
+  modelsMax: number
 }
 
 /**
@@ -223,6 +251,20 @@ export interface GpuDevice {
 }
 
 /** Mirrors main/planner.ts VramPlan; duplicated here so the renderer can type it. */
+/**
+ * What a router launch can hold at once. Every model is planned with its own
+ * launch; the worst case is the `modelsMax` largest resident together, each
+ * a process of its own with its own backend overhead.
+ */
+export interface RouterPlanView {
+  models: Array<{ id: string; modelPath: string; totalMiB: number; contextPerSlot: number; error: string | null }>
+  /** The models that make the worst case, largest first. */
+  worstCase: string[]
+  worstCaseMiB: number
+  freeMiB: number | null
+  fits: boolean | null
+}
+
 export interface VramPlanView {
   offloadedLayers: number
   totalLayers: number

@@ -246,6 +246,8 @@ export interface CodingStartRequest {
   projectRoot: string
   task: string
   mode: CodingMode
+  /** Which of the server's models runs it, by the name requests give it; the only one, when absent. */
+  model?: string
   grant?: GrantTerms
 }
 

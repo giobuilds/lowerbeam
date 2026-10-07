@@ -4,6 +4,7 @@ import { useCodingStore } from '../state/codingStore.js'
 import { verdictFor, type CapabilityStatus } from '@shared/capability.js'
 import { isTestPath, type CommandEvidence } from '@shared/evidence.js'
 import { useServerStore } from '../state/serverStore.js'
+import { servedModel } from '@shared/served.js'
 import { renderMarkdown } from '../api/markdown.js'
 
 /**
@@ -24,7 +25,6 @@ export function Coding(): React.JSX.Element {
   const open = useCodingStore((s) => s.open)
   const error = useCodingStore((s) => s.error)
   const clearError = useCodingStore((s) => s.clearError)
-  const status = useServerStore((s) => s.status)
   const loadCapability = useCodingStore((s) => s.loadCapability)
 
   useEffect(() => {
@@ -32,12 +32,14 @@ export function Coding(): React.JSX.Element {
   }, [init])
 
   const active = runs.find((r) => r.id === activeRunId) ?? null
-  const modelPath = status?.phase === 'ready' ? (status.config?.modelPath ?? null) : null
+  // The model a run would use: in a router, the one picked in the header.
+  const modelPath = useServerStore((s) => (s.status?.phase === 'ready' ? (servedModel(s.status, s.activeModel)?.modelPath ?? null) : null))
+  const window_ = useServerStore((s) => (s.status?.phase === 'ready' ? (servedModel(s.status, s.activeModel)?.contextPerSlot ?? null) : null))
   const modelName = modelPath?.split('/').pop() ?? null
-  // Whenever a different model is ready, ask the record about it.
+  // Whenever a different model is ready, or its window becomes known, ask the record about it.
   useEffect(() => {
     void loadCapability()
-  }, [loadCapability, modelPath])
+  }, [loadCapability, modelPath, window_])
 
   return (
     <div className="flex h-full min-h-0">

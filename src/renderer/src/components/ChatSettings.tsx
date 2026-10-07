@@ -3,6 +3,7 @@ import type { PromptPreset } from '@shared/types.js'
 import { DEFAULT_OUTPUT, outputConstraint, type OutputMode } from '@shared/structuredOutput.js'
 import { activeConversation, useChatStore } from '../state/chatStore.js'
 import { useServerStore } from '../state/serverStore.js'
+import { servedModel } from '@shared/served.js'
 
 /**
  * Which tools the model may call.
@@ -22,7 +23,7 @@ import { useServerStore } from '../state/serverStore.js'
 function CompactionToggle(): React.JSX.Element | null {
   const conversation = useChatStore(activeConversation)
   const setAutoCompact = useChatStore((s) => s.setAutoCompact)
-  const limit = useServerStore((s) => s.status?.contextPerSlot ?? null)
+  const limit = useServerStore((s) => servedModel(s.status, s.activeModel)?.contextPerSlot ?? null)
   if (!conversation) return null
 
   return (
@@ -53,7 +54,7 @@ function ToolToggles({ onConfigure }: { onConfigure: () => void }): React.JSX.El
   const tools = useChatStore((s) => s.availableTools)
   const enabled = useChatStore((s) => activeConversation(s)?.tools ?? [])
   const toggle = useChatStore((s) => s.toggleTool)
-  const canCall = useServerStore((s) => s.status?.supportsTools ?? false)
+  const canCall = useServerStore((s) => servedModel(s.status, s.activeModel)?.supportsTools ?? false)
   if (tools.length === 0) return null
 
   // Roughly four characters to a token, over the JSON actually sent.
