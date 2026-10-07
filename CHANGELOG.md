@@ -71,6 +71,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
   now written readable by their owner only (files 0600, folders 0700), and
   what earlier versions wrote is tightened when the app starts (#129).
 
+- A packaged copy no longer takes its update feed from `LOWERBEAM_UPDATE_URL`
+  unless the address is this machine's loopback, so something that can set
+  the app's environment cannot point updates at another server (#135).
+
+- Turning on web search in a chat now says where the model's queries go —
+  DuckDuckGo, or your SearXNG instance — with a way to change it (#135).
+
 ## [0.11.1] - 2026-10-04
 
 ### Security

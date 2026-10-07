@@ -98,11 +98,39 @@ function ToolToggles({ onConfigure }: { onConfigure: () => void }): React.JSX.El
             <span>
               <span className="text-xs text-slate-200">{t.label}</span>
               <span className="block text-[11px] leading-snug text-muted">{t.description}</span>
+              {t.name === 'web_search' && enabled.includes(t.name) && <SearchProvider onConfigure={onConfigure} />}
             </span>
           </label>
         ))}
       </div>
     </section>
+  )
+}
+
+/**
+ * Where the model's searches go, said as soon as search is turned on: the
+ * queries it writes leave the machine, and the default engine is a third
+ * party the user never picked.
+ */
+function SearchProvider({ onConfigure }: { onConfigure: () => void }): React.JSX.Element {
+  const [backend, setBackend] = useState<string | null>(null)
+  useEffect(() => {
+    void window.llama.search.getBackend().then(setBackend).catch(() => setBackend(''))
+  }, [])
+  if (backend === null) return <></>
+  let host = backend
+  try {
+    host = new URL(backend).host
+  } catch {
+    // Shown as it was entered.
+  }
+  return (
+    <span className="mt-0.5 block text-[11px] leading-snug text-amber-200/80">
+      The queries the model writes are sent to {backend ? <code title={backend}>{host}</code> : 'DuckDuckGo'}.{' '}
+      <button type="button" onClick={onConfigure} className="text-accent hover:underline">
+        {backend ? 'Change' : 'Use your own SearXNG instead'}
+      </button>
+    </span>
   )
 }
 
