@@ -2,7 +2,7 @@ import { app } from 'electron'
 import { EventEmitter } from 'node:events'
 import electronUpdater from 'electron-updater'
 import type { UpdateState } from '@shared/types.js'
-import { updateMode, type UpdateMode } from './updateMode.js'
+import { testFeed, updateMode, type UpdateMode } from './updateMode.js'
 
 const { autoUpdater } = electronUpdater
 
@@ -43,7 +43,8 @@ export class Updater extends EventEmitter {
     autoUpdater.logger = null
     // For trying the whole flow against a local server before any release
     // exists: a generic provider serving latest-linux.yml and the AppImage.
-    const feed = process.env['LOWERBEAM_UPDATE_URL']
+    // Loopback only: see testFeed.
+    const feed = testFeed()
     if (feed) autoUpdater.setFeedURL({ provider: 'generic', url: feed })
 
     autoUpdater.on('checking-for-update', () => this.set({ phase: 'checking', error: null }))

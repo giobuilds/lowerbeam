@@ -81,6 +81,15 @@ console.log('\na router launched, its models loaded on demand')
     sup.on('status', (s) => { if (s.phase === phase) { clearTimeout(t); resolve() } })
   })
   await sup.startRouter(launch, { port: null, apiKey: 'k1', lan: false })
+  // A failed assertion below must not leave the fake router running.
+  const routerPid = sup.status.pid!
+  process.on('exit', () => {
+    try {
+      process.kill(-routerPid, 'SIGKILL')
+    } catch {
+      // Already stopped.
+    }
+  })
   await waitPhase('ready')
   assert.equal(sup.status.config, null); assert.deepEqual(sup.status.router!.models.map((m) => m.state), ['unloaded', 'unloaded', 'unloaded']); ok('ready with nothing loaded: the router is up, its models are not')
   const preset = await (await fetch(`http://127.0.0.1:${sup.status.port}/preset`, { headers: { authorization: 'Bearer k1' } })).text()
