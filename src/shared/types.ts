@@ -423,6 +423,8 @@ export interface DataUsage {
   runs: { count: number; bytes: number }
   /** Copies of projects that edit and run modes work in. */
   workspaces: { count: number; bytes: number }
+  /** Long chats' server slots, saved when you left them. */
+  slots: { count: number; bytes: number }
   /** Everything in the folder, Electron's own storage included. */
   total: number
   /** Workspace copies and command outputs of runs finished longer ago than this are removed on start; null keeps them. */

@@ -238,6 +238,10 @@ function DataRow(): React.JSX.Element {
         <span className="text-right text-muted">{size(usage.runs.bytes)}</span>
         <span>{usage.workspaces.count} workspace cop{usage.workspaces.count === 1 ? 'y' : 'ies'} of projects</span>
         <span className="text-right text-muted">{size(usage.workspaces.bytes)}</span>
+        <span title="A long chat's place in the server, saved when you leave it so coming back does not read it all again. Removed with the chat; at most 4 GB, the oldest dropped first.">
+          {count(usage.slots.count, 'saved chat cache')}
+        </span>
+        <span className="text-right text-muted">{size(usage.slots.bytes)}</span>
         <span className="text-muted">All of it, Electron’s storage included</span>
         <span className="text-right text-muted">{size(usage.total)}</span>
       </div>

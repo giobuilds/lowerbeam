@@ -152,6 +152,11 @@ const api = {
     setEnabled: (on: boolean) => invoke<UpdateState>(IPC.updateSetEnabled, on),
     onChanged: (cb: (state: UpdateState) => void) => subscribe<UpdateState>(IPC.updateChanged, cb)
   },
+  slots: {
+    prepare: (conversationId: string) => invoke<{ slot: number; restored: number | null } | null>(IPC.slotsPrepare, conversationId),
+    leave: (conversationId: string, tokens: number) => invoke<boolean>(IPC.slotsLeave, conversationId, tokens),
+    report: (conversationId: string, cacheTokens: number) => invoke<null>(IPC.slotsReport, conversationId, cacheTokens)
+  },
   data: {
     usage: () => invoke<DataUsage>(IPC.dataUsage),
     deleteRuns: () => invoke<DataUsage>(IPC.dataDeleteRuns),

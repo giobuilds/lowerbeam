@@ -43,6 +43,7 @@ import type {
 import { IPC } from '@shared/ipc.js'
 import { applyOptionsSchema, launchConfigSchema, routerLaunchSchema } from '@shared/schema.js'
 import { dataUsage, deleteOwnData } from './appData.js'
+import type { SlotCache } from './slots.js'
 import type { ServerSupervisor } from './supervisor.js'
 import { probeBinary, readDevices } from './probe.js'
 import { scanModels, defaultModelDirs, type ModelEntry } from './registry.js'
@@ -140,7 +141,8 @@ export function registerIpc(
   coding: CodingSupervisor,
   /** Every llama.cpp install found at startup, best first. */
   discovered: BinaryInfo[],
-  updater: Updater
+  updater: Updater,
+  slots: SlotCache
 ): void {
   handle<ServerStatus>(IPC.serverStatus, () => supervisor.status)
 
@@ -596,7 +598,7 @@ export function registerIpc(
     conversations: join(app.getPath('userData'), 'conversations'),
     coding: join(app.getPath('userData'), 'coding')
   }
-  const usage = (): Promise<DataUsage> => dataUsage(dataPaths, settings.current.retentionDays)
+  const usage = async (): Promise<DataUsage> => ({ ...(await dataUsage(dataPaths, settings.current.retentionDays)), slots: await slots.usage() })
   handle<DataUsage>(IPC.dataUsage, usage)
   handle<DataUsage>(IPC.dataDeleteRuns, async () => {
     await coding.deleteAllRuns()
@@ -604,6 +606,7 @@ export function registerIpc(
   })
   handle<DataUsage>(IPC.dataDeleteConversations, async () => {
     await conversations.removeAll()
+    await slots.clear()
     return usage()
   })
   handle<DataUsage>(IPC.dataSetRetention, async (raw) => {
@@ -718,6 +721,15 @@ export function registerIpc(
   )
   handle<null>(IPC.chatDelete, async (id) => {
     await conversations.remove(String(id ?? ''))
+    await slots.drop(String(id ?? '')).catch(() => undefined)
+    return null
+  })
+  // A chat's place in the server (#110): the slot to send to, restored first
+  // if need be; saving it on leaving; and what the reply after a restore reused.
+  handle<{ slot: number; restored: number | null } | null>(IPC.slotsPrepare, (id) => slots.prepare(String(id ?? '')))
+  handle<boolean>(IPC.slotsLeave, (id, tokens) => slots.leave(String(id ?? ''), Number(tokens) || 0))
+  handle<null>(IPC.slotsReport, async (id, cacheTokens) => {
+    await slots.report(String(id ?? ''), Number(cacheTokens) || 0)
     return null
   })
   handle<ConversationSearchHitView[]>(IPC.chatSearch, (query) => conversations.search(String(query ?? '').slice(0, 200)))

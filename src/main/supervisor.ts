@@ -144,7 +144,9 @@ export class ServerSupervisor extends EventEmitter<SupervisorEvents> {
 
   async start(config: LaunchConfig, api: LocalApiSettings = DEFAULT_LOCAL_API): Promise<void> {
     const { host, port } = await this.prepare(api)
-    await this.spawnServer(buildArgs(config, port, this.binary, { host }), port, api, config, null)
+    const slotDir = join(dirname(this.handoffPath), 'slots')
+    await mkdir(slotDir, { recursive: true, mode: PRIVATE_DIR })
+    await this.spawnServer(buildArgs(config, port, this.binary, { host, slotDir }), port, api, config, null)
   }
 
   /**
@@ -601,7 +603,7 @@ export function buildArgs(
   config: LaunchConfig,
   port: number,
   binary: BinaryInfo,
-  api: { host?: string } = {}
+  api: { host?: string; slotDir?: string } = {}
 ): string[] {
   const canFit = binary.flags.includes('--fit')
   const autoFit = config.autoFit && canFit
@@ -640,6 +642,8 @@ export function buildArgs(
     args.push('--flash-attn')
   }
   if (config.noWarmup) args.push('--no-warmup')
+  // Where a long chat's slot is saved when you leave it (src/main/slots.ts).
+  if (api.slotDir && binary.flags.includes('--slot-save-path')) args.push('--slot-save-path', api.slotDir)
   if (config.threads > 0) args.push('--threads', String(config.threads))
   if (config.alias) args.push('--alias', config.alias)
   // Deliberately not passing --no-webui: the stock UI stays reachable as an

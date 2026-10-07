@@ -5,7 +5,7 @@ import type {
   ConversationSummaryView,
   ConversationView
 } from '@shared/types.js'
-import { streamChat, type ChatTurn, type StreamedToolCall } from '@shared/chatClient.js'
+import { windowUsed, streamChat, type ChatTurn, type StreamedToolCall } from '@shared/chatClient.js'
 import type { ServedModel, ToolCallView, ToolDefinition } from '@shared/types.js'
 import { currentServed, useServerStore } from './serverStore.js'
 import {
@@ -526,7 +526,10 @@ async function runCompletion(
     set({ error: (err as Error).message })
     return
   }
-  const baseUrl = { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey, model: served.id }
+  // Its place in the server: the slot that still holds it, or one its saved
+  // state was put back into (src/main/slots.ts). One-model servers only.
+  const placed = status.router ? null : await window.llama.slots.prepare(conversationId).catch(() => null)
+  const baseUrl = { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey, model: served.id, slot: placed?.slot ?? null }
   // Checked here too, since a regenerate reaches this without passing send().
   // llama.cpp does not decode under a grammar and offer tools in one request,
   // so a constrained reply is asked for without them.
@@ -598,6 +601,8 @@ async function runCompletion(
           },
           onDone: ({ tokensPerSecond, model, toolCalls: calls, usage, finishReason }) => {
             requested = calls.filter((c) => c.name)
+            // The first reply after a restore says whether it helped.
+            if (round === 0 && placed?.restored && usage) void window.llama.slots.report(conversationId, usage.cacheTokens).catch(() => {})
             // "length" with no max_tokens of our own means the window filled:
             // the reply is unfinished, and saying so is the difference between
             // a bug and a limit.
@@ -711,3 +716,16 @@ function maybeCompactAhead(conversationId: string, get: Getter): void {
   if (projectedPromptTokens(conversation, '') <= limit * PREEMPT_AT) return
   void get().compact(conversationId)
 }
+
+/**
+ * Leaving a long chat — opening another, starting a new one, deleting —
+ * keeps its place in the server: its slot is saved, to be put back when it
+ * is next used and its slot has gone to another chat. Not while it is still
+ * replying: the slot is busy, and the reply is not finished.
+ */
+useChatStore.subscribe((state, previous) => {
+  const leaving = previous.activeId
+  if (!leaving || leaving === state.activeId || state.streams[leaving]) return
+  const last = [...(state.byId[leaving]?.messages ?? [])].reverse().find((m) => m.usage)
+  if (last?.usage) void window.llama.slots.leave(leaving, windowUsed({ ...last.usage, cacheTokens: last.usage.cacheTokens ?? 0 })).catch(() => {})
+})
