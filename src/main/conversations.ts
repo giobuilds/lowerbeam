@@ -240,6 +240,15 @@ export class ConversationStore {
   async remove(id: string): Promise<void> {
     await rm(this.file(id), { force: true })
   }
+
+  /** Every conversation gone. Returns how many there were. */
+  async removeAll(): Promise<number> {
+    return this.writes.run(async () => {
+      const names = (await readdir(this.dir).catch(() => [] as string[])).filter((n) => /^[a-f0-9-]{36}\.json$/i.test(n))
+      for (const n of names) await rm(join(this.dir, n), { force: true })
+      return names.length
+    })
+  }
 }
 
 /** First user message, trimmed to something that fits a sidebar row. */

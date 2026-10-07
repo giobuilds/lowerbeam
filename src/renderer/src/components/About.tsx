@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import type { AboutView, UpdateState } from '@shared/types.js'
+import type { AboutView, DataUsage, UpdateState } from '@shared/types.js'
 import { useServerStore } from '../state/serverStore.js'
+import { useChatStore } from '../state/chatStore.js'
 import { useUpdate } from './UpdateBanner.js'
 
 const REPO = 'https://github.com/giobuilds/lowerbeam'
@@ -88,6 +89,9 @@ export function About({ onClose }: { onClose: () => void }): React.JSX.Element {
           <Row label="Updates">
             <UpdateRow state={update} onChange={setUpdate} />
           </Row>
+          <Row label="Data">
+            <DataRow />
+          </Row>
         </dl>
 
         <div className="flex items-center gap-3 border-t border-edge px-5 py-3">
@@ -167,6 +171,105 @@ function Row({
     <div className="flex gap-4 px-5 py-2.5">
       <dt className="w-20 shrink-0 pt-0.5 text-[11px] text-muted">{label}</dt>
       <dd className="min-w-0 flex-1">{children}</dd>
+    </div>
+  )
+}
+
+const count = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`
+
+const size = (bytes: number): string =>
+  bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : bytes < 1024 ** 3 ? `${(bytes / 1024 ** 2).toFixed(1)} MB` : `${(bytes / 1024 ** 3).toFixed(2)} GB`
+
+/**
+ * What the app keeps, by kind, and getting rid of it: each kind in one
+ * step, everything at once, and old runs' copies after a while. Every
+ * deletion asks once more, saying what it will remove.
+ */
+function DataRow(): React.JSX.Element {
+  const [usage, setUsage] = useState<DataUsage | null>(null)
+  const [confirm, setConfirm] = useState<'runs' | 'conversations' | 'all' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    void window.llama.data.usage().then(setUsage).catch((e: Error) => setError(e.message))
+  }, [])
+  if (!usage) return <span className="text-muted">{error ?? 'Measuring…'}</span>
+
+  const act = async (what: 'runs' | 'conversations' | 'all'): Promise<void> => {
+    setConfirm(null)
+    setError(null)
+    try {
+      if (what === 'runs') setUsage(await window.llama.data.deleteRuns())
+      else if (what === 'conversations') {
+        // Replies still streaming would write their chats back; they stop first.
+        for (const s of Object.values(useChatStore.getState().streams)) s.abort.abort()
+        setUsage(await window.llama.data.deleteConversations())
+        useChatStore.setState({ conversations: [], byId: {}, activeId: null, streams: {} })
+      } else await window.llama.data.deleteAll()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+  const ask = (what: 'runs' | 'conversations' | 'all', label: string, question: string): React.JSX.Element =>
+    confirm === what ? (
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="text-rose-200">{question}</span>
+        <button type="button" onClick={() => void act(what)} className="text-rose-300 hover:underline">
+          Delete
+        </button>
+        <button type="button" onClick={() => setConfirm(null)} className="text-muted hover:text-slate-200">
+          Keep
+        </button>
+      </span>
+    ) : (
+      <button type="button" onClick={() => setConfirm(what)} className="text-muted hover:text-rose-300">
+        {label}
+      </button>
+    )
+
+  return (
+    <div className="space-y-1.5 text-[11px]">
+      <div className="grid grid-cols-[1fr_auto] gap-x-3 text-slate-200">
+        <span>{usage.conversations.count} conversation{usage.conversations.count === 1 ? '' : 's'}</span>
+        <span className="text-right text-muted">{size(usage.conversations.bytes)}</span>
+        <span>{usage.runs.count} coding run{usage.runs.count === 1 ? '' : 's'}</span>
+        <span className="text-right text-muted">{size(usage.runs.bytes)}</span>
+        <span>{usage.workspaces.count} workspace cop{usage.workspaces.count === 1 ? 'y' : 'ies'} of projects</span>
+        <span className="text-right text-muted">{size(usage.workspaces.bytes)}</span>
+        <span className="text-muted">All of it, Electron’s storage included</span>
+        <span className="text-right text-muted">{size(usage.total)}</span>
+      </div>
+      <p className="truncate text-muted" title={usage.path}>
+        In {usage.path}. Models are your files and are never deleted here.
+      </p>
+      <label className="flex items-center gap-1.5 text-slate-200">
+        Keep runs’ workspace copies and command output
+        <select
+          value={usage.retentionDays ?? ''}
+          onChange={(e) => {
+            setError(null)
+            void window.llama.data
+              .setRetention(e.target.value === '' ? null : Number(e.target.value))
+              .then(setUsage)
+              .catch((err: Error) => setError(err.message))
+          }}
+          className="rounded border border-edge bg-ink px-1 py-0.5 text-[11px]"
+        >
+          <option value="">always</option>
+          <option value="7">7 days</option>
+          <option value="14">14 days</option>
+          <option value="30">30 days</option>
+          <option value="90">90 days</option>
+        </select>
+      </label>
+      {usage.retentionDays !== null && (
+        <p className="text-muted">After that, a run keeps its journal; its changes can no longer be applied or undone.</p>
+      )}
+      <div className="flex flex-col items-start gap-1">
+        {ask('runs', 'Delete all coding runs…', `Delete ${count(usage.runs.count, 'run')} and ${count(usage.workspaces.count, 'workspace copy', 'workspace copies')} (${size(usage.runs.bytes + usage.workspaces.bytes)})? Applied changes stay in your projects; undo goes.`)}
+        {ask('conversations', 'Delete all conversations…', `Delete ${count(usage.conversations.count, 'conversation')} (${size(usage.conversations.bytes)})?`)}
+        {ask('all', 'Delete all app data…', 'Stop the server, delete conversations, runs, settings and launch profiles, clear Electron’s storage, and restart?')}
+      </div>
+      {error && <p className="text-rose-300">{error}</p>}
     </div>
   )
 }
