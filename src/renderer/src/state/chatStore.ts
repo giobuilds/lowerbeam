@@ -6,8 +6,8 @@ import type {
   ConversationView
 } from '@shared/types.js'
 import { streamChat, type ChatTurn, type StreamedToolCall } from '@shared/chatClient.js'
-import type { ToolCallView, ToolDefinition } from '@shared/types.js'
-import { useServerStore } from './serverStore.js'
+import type { ServedModel, ToolCallView, ToolDefinition } from '@shared/types.js'
+import { currentServed, useServerStore } from './serverStore.js'
 import {
   compactableMessages,
   PREEMPT_AT,
@@ -214,7 +214,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // Still too full — a single turn can jump most of the window on its own —
     // so make room now, with the user waiting.
-    const limit = useServerStore.getState().status?.contextPerSlot ?? null
+    const limit = currentServed()?.contextPerSlot ?? null
     const latest = get().byId[withUser.id] ?? withUser
     if (shouldCompact(latest, trimmed, limit)) await get().compact(withUser.id)
 
@@ -365,14 +365,15 @@ async function compactNow(id: string, set: Setter, get: Getter): Promise<void> {
     const status = useServerStore.getState().status
     if (!conversation || !status || status.phase !== 'ready' || !status.port) return
 
-    const limit = status.contextPerSlot
+    const served = currentServed()
+    const limit = served?.contextPerSlot ?? null
     const older = compactableMessages(conversation, limit)
     if (older.length === 0) return
 
     set({ compacting: { ...get().compacting, [id]: true } })
     try {
       const summary = await summarise(
-        { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey },
+        { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey, model: served?.id },
         conversation,
         older,
         conversation.compaction?.summary ?? null,
@@ -515,7 +516,17 @@ async function runCompletion(
     set({ error: 'Start a model on the Server tab before chatting.' })
     return
   }
-  const baseUrl = { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey }
+  // The model this reply comes from. A router loads it first if it has to,
+  // so its window and tools are known before anything is sent.
+  let served: ServedModel
+  try {
+    set({ error: null })
+    served = await window.llama.server.ensureModel(useServerStore.getState().activeModel)
+  } catch (err) {
+    set({ error: (err as Error).message })
+    return
+  }
+  const baseUrl = { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey, model: served.id }
   // Checked here too, since a regenerate reaches this without passing send().
   // llama.cpp does not decode under a grammar and offer tools in one request,
   // so a constrained reply is asked for without them.
@@ -662,7 +673,7 @@ async function runCompletion(
     if (get().byId[conversationId]?.compaction) {
       return runCompletion(conversationId, set, get, true)
     }
-    set({ error: contextTooSmall(useServerStore.getState().status?.contextPerSlot ?? null) })
+    set({ error: contextTooSmall(currentServed()?.contextPerSlot ?? null) })
     return
   }
 
@@ -694,7 +705,7 @@ async function runCompletion(
  */
 function maybeCompactAhead(conversationId: string, get: Getter): void {
   const conversation = get().byId[conversationId]
-  const limit = useServerStore.getState().status?.contextPerSlot ?? null
+  const limit = currentServed()?.contextPerSlot ?? null
   if (!conversation?.autoCompact || !limit) return
   if (compactableMessages(conversation, limit).length === 0) return
   if (projectedPromptTokens(conversation, '') <= limit * PREEMPT_AT) return

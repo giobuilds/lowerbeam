@@ -45,9 +45,21 @@ Measured or observed in this repo, so it is not rediscovered.
   suites with esbuild, stubs Electron, and already runs integration suites
   against a real llama.cpp binary and real models. The UI is driven over the
   DevTools protocol. Nothing new is needed to run agent tasks the same way.
-- **Only one model at a time.** `llama serve` hosts one model; the only second
-  model it accepts is a draft model. A coding run and a chat share the loaded
-  model, which is what the architecture's *model lease* is for.
+- **One model per launch, or several behind a router.** A plain launch hosts
+  one model, and a coding run and a chat share it, which is what the
+  architecture's *model lease* is for. Since #105 the Server tab can also
+  launch llama.cpp's router mode (`--models-preset`, `--models-max`): one
+  server, several models, each loaded on the first request that names it
+  with the launch it last ran with on its own, and the least recently used
+  unloaded past the limit. Each loaded model is its own process with its
+  own VRAM, so the plan is the worst case of the largest that may be
+  resident together. Chat and coding send the model picked in the header;
+  the window, tools, vision and capability record follow the model a
+  request actually uses, which is loaded and read before the request is
+  sent. With `--models-max 1`, a chat on one model and a run on another
+  take turns unloading each other: the lease is still one model at a time.
+  The router is pointed at an empty Hugging Face cache, so it offers only
+  the models chosen, not every model on disk under llama.cpp's defaults.
 - **Packaging targets Linux.** RPM and AppImage. The sandbox backend is
   validated there first and nowhere else in this plan.
 - **A template that declares no tool support cannot run the loop at all.**

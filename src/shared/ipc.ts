@@ -1,6 +1,8 @@
 /** Channel names, kept in one place so main and preload cannot drift apart. */
 export const IPC = {
   serverStart: 'server:start',
+  serverStartRouter: 'server:start-router',
+  serverEnsureModel: 'server:ensure-model',
   serverStop: 'server:stop',
   serverStatus: 'server:status',
   serverStatusChanged: 'server:status-changed',
@@ -18,6 +20,7 @@ export const IPC = {
   modelsList: 'models:list',
   modelsRescan: 'models:rescan',
   modelPlan: 'models:plan',
+  modelPlanRouter: 'models:plan-router',
   modelFit: 'models:fit',
   binaryHealthCheck: 'binary:health-check',
   hfSearch: 'hf:search',

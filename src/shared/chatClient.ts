@@ -132,6 +132,8 @@ interface StreamChunk {
 export interface ServerEndpoint {
   url: string
   apiKey?: string | null
+  /** Which model answers, by the name the server gives it. A router needs it; a one-model server ignores it. */
+  model?: string | null
 }
 
 /** The Authorization header for a server's key, or nothing when it has none. */
@@ -150,7 +152,7 @@ export async function streamChat(
   /** A JSON schema or grammar the reply must match. llama.cpp does not combine one with tools. */
   constraint?: OutputConstraint | null
 ): Promise<void> {
-  const { url: baseUrl, apiKey } = typeof endpoint === 'string' ? { url: endpoint, apiKey: null } : endpoint
+  const { url: baseUrl, apiKey, model: requestModel } = typeof endpoint === 'string' ? { url: endpoint, apiKey: null, model: null } : endpoint
   let res: Response
   try {
     res = await fetch(`${baseUrl}/v1/chat/completions`, {
@@ -158,6 +160,7 @@ export async function streamChat(
       headers: { 'content-type': 'application/json', ...authHeaders(apiKey) },
       signal,
       body: JSON.stringify({
+        ...(requestModel ? { model: requestModel } : {}),
         messages: messages.map(encodeTurn),
         stream: true,
         // llama.cpp reports timings in the final streamed chunk when asked.

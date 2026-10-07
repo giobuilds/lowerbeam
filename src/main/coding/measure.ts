@@ -187,7 +187,7 @@ export interface MeasureContext {
   /** Where the journals are kept. */
   outDir: string
   box: MeasureBox
-  request: Pick<RunRequest, 'baseUrl' | 'apiKey' | 'model' | 'settings' | 'maxRounds' | 'timeoutMs' | 'contextLimit'>
+  request: Pick<RunRequest, 'baseUrl' | 'apiKey' | 'model' | 'requestModel' | 'settings' | 'maxRounds' | 'timeoutMs' | 'contextLimit'>
   signal: AbortSignal
 }
 

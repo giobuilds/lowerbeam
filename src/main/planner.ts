@@ -319,3 +319,14 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
 }
 
 const fmt = (n: number): string => n.toLocaleString(undefined, { maximumFractionDigits: 0 })
+
+/**
+ * The worst case for a router: the `modelsMax` largest plans resident at
+ * once. Each model runs in its own process, so nothing is shared between
+ * them — not the weights, not the cache, not the backend's own overhead.
+ */
+export function routerWorstCase(plans: Array<{ id: string; totalMiB: number }>, modelsMax: number, freeMiB: number | null): { worstCase: string[]; worstCaseMiB: number; fits: boolean | null } {
+  const largest = [...plans].sort((a, b) => b.totalMiB - a.totalMiB).slice(0, Math.max(1, modelsMax))
+  const worstCaseMiB = largest.reduce((n, p) => n + p.totalMiB, 0)
+  return { worstCase: largest.map((p) => p.id), worstCaseMiB, fits: freeMiB === null ? null : worstCaseMiB <= freeMiB }
+}

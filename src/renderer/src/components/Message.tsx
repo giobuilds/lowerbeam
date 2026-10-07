@@ -4,6 +4,7 @@ import type { ChatMessageView } from '@shared/types.js'
 import { renderMarkdown } from '../api/markdown.js'
 import { ToolCalls } from './ToolCalls.js'
 import { useServerStore } from '../state/serverStore.js'
+import { servedModel } from '@shared/served.js'
 
 /**
  * One turn. Assistant content is markdown-rendered (and sanitised in
@@ -23,7 +24,7 @@ function RanOutOfContext({
 }: {
   usage: ChatMessageView['usage']
 }): React.JSX.Element {
-  const limit = useServerStore((s) => s.status?.contextPerSlot ?? null)
+  const limit = useServerStore((s) => servedModel(s.status, s.activeModel)?.contextPerSlot ?? null)
   const slots = useServerStore((s) => s.status?.config?.parallel ?? null)
   const used = usage ? (usage.cacheTokens ?? 0) + usage.promptTokens + usage.predictedTokens : null
 

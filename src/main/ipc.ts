@@ -34,14 +34,18 @@ import type {
   ToolDefinition,
   ToolResult,
   ServerStatus,
-  VramPlanView
+  VramPlanView,
+  ServedModel,
+  LaunchConfig,
+  RouterPlanView
 } from '@shared/types.js'
 import { IPC } from '@shared/ipc.js'
-import { launchConfigSchema } from '@shared/schema.js'
+import { launchConfigSchema, routerLaunchSchema } from '@shared/schema.js'
 import type { ServerSupervisor } from './supervisor.js'
 import { probeBinary, readDevices } from './probe.js'
 import { scanModels, defaultModelDirs, type ModelEntry } from './registry.js'
-import { planVram } from './planner.js'
+import { planVram, routerWorstCase } from './planner.js'
+import { routerIds } from '@shared/served.js'
 import { fitParams } from './fit.js'
 import { runHealthCheck } from './health.js'
 import { conversationSchema, type ConversationStore } from './conversations.js'
@@ -145,6 +149,16 @@ export function registerIpc(
     return supervisor.status
   })
 
+  // A router's model loaded before a request is sent, so its window and
+  // tools are known first; with one model, the running one.
+  handle<ServedModel>(IPC.serverEnsureModel, (id) => supervisor.ensureLoaded(typeof id === 'string' ? id : null))
+
+  handle<ServerStatus>(IPC.serverStartRouter, async (raw) => {
+    const launch = routerLaunchSchema.parse(raw)
+    await supervisor.startRouter(launch, settings.current.localApi)
+    return supervisor.status
+  })
+
   handle<LocalApiSettings>(IPC.localApiGet, () => settings.current.localApi)
   handle<LocalApiSettings>(IPC.localApiSet, async (raw) => (await settings.patch({ localApi: raw as LocalApiSettings })).localApi)
   // Where another machine would reach this one: each non-internal IPv4 address.
@@ -210,15 +224,40 @@ export function registerIpc(
     if (!meta) throw new Error('Model not found. Try rescanning.')
     if (meta.error) throw new Error(`Cannot plan for this file: ${meta.error}`)
 
-    // Free VRAM is re-read here rather than reused from the startup probe:
-    // other processes take and release VRAM while the app is open.
-    let freeMiB: number | null = null
+    return planOne(meta, req, await freeVram())
+  })
+
+  // Free VRAM is re-read on every plan rather than reused from the startup
+  // probe: other processes take and release VRAM while the app is open.
+  const freeVram = async (): Promise<number | null> => {
     try {
       const devices = await readDevices(supervisor.binaryInfo)
-      freeMiB = devices[0]?.freeMiB ?? null
+      return devices[0]?.freeMiB ?? null
     } catch {
-      freeMiB = null
+      return null
     }
+  }
+
+  handle<RouterPlanView>(IPC.modelPlanRouter, async (raw) => {
+    const launch = routerLaunchSchema.parse(raw)
+    const models = await listModels(false)
+    const freeMiB = await freeVram()
+    const ids = routerIds(launch.models.map((m) => m.modelPath))
+    const planned = launch.models.map((config, i) => {
+      const meta = models.find((m) => m.path === config.modelPath)
+      const error = !meta ? 'not found; try rescanning' : meta.error ? meta.error : null
+      if (!meta || error) return { id: ids[i]!, modelPath: config.modelPath, totalMiB: 0, contextPerSlot: 0, error }
+      const plan = planOne(meta, config, freeMiB)
+      return { id: ids[i]!, modelPath: config.modelPath, totalMiB: plan.totalMiB, contextPerSlot: plan.contextPerSlot, error: null }
+    })
+    return { models: planned, freeMiB, ...routerWorstCase(planned, launch.modelsMax, freeMiB) }
+  })
+
+  const planOne = (
+    meta: ModelEntry,
+    req: { gpuLayers: number; contextSize: number; cacheTypeK: LaunchConfig['cacheTypeK']; cacheTypeV: LaunchConfig['cacheTypeV']; parallel: number; cpuMoeLayers?: number },
+    freeMiB: number | null
+  ): VramPlanView => {
     const binary = supervisor.binaryInfo
     return planVram(
       {
@@ -236,7 +275,7 @@ export function registerIpc(
       },
       freeMiB
     )
-  })
+  }
 
   /**
    * llama.cpp's own fitting tool. Cached per model+binary: it loads the model
@@ -521,11 +560,11 @@ export function registerIpc(
   handle<JournalEvent[]>(IPC.codingGet, (id) => coding.events(String(id ?? '')))
   handle<ChangeSet | null>(IPC.codingChanges, (id) => coding.changes(String(id ?? '')))
   handle<SandboxProbe>(IPC.codingSandbox, () => coding.sandbox())
-  handle<CapabilityStatus>(IPC.codingCapability, () => coding.capability())
+  handle<CapabilityStatus>(IPC.codingCapability, (model) => coding.capability(typeof model === 'string' ? model : null))
   handle<CapabilityStatus>(IPC.codingCapabilityOf, (path) => coding.capabilityOf(String(path ?? '')))
   handle<Evidence | null>(IPC.codingEvidence, (id) => coding.evidence(String(id ?? '')))
   handle<Evidence | null>(IPC.codingCheckBaseline, (id) => coding.checkBaseline(String(id ?? '')))
-  handle<MeasureProgress>(IPC.codingMeasure, () => coding.measure())
+  handle<MeasureProgress>(IPC.codingMeasure, (model) => coding.measure(typeof model === 'string' ? model : null))
   handle<null>(IPC.codingMeasureCancel, () => {
     coding.cancelMeasure()
     return null

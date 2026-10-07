@@ -28,7 +28,10 @@ export interface RunRequest {
   baseUrl: string
   /** The server's API key, when it was launched with one. */
   apiKey?: string | null
+  /** The model's name in the journal. */
   model: string
+  /** The name requests give the model, when the server serves several; absent, requests name none. */
+  requestModel?: string | null
   task: string
   grant: Grant
   settings: ChatSettingsView
@@ -294,7 +297,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
     const t0 = Date.now()
 
     await streamChat(
-      { url: req.baseUrl, apiKey: req.apiKey },
+      { url: req.baseUrl, apiKey: req.apiKey, model: req.requestModel },
       sent,
       req.settings,
       deadline,

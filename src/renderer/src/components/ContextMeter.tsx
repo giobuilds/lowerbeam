@@ -1,6 +1,7 @@
 import { activeConversation, useChatStore } from '../state/chatStore.js'
 import { useServerStore } from '../state/serverStore.js'
 import { COMPACT_AT, projectedPromptTokens } from '@context/compact.js'
+import { servedModel } from '@shared/served.js'
 
 /**
  * How much of this chat's window is spoken for.
@@ -13,7 +14,7 @@ export function ContextMeter(): React.JSX.Element | null {
   const conversation = useChatStore(activeConversation)
   const compacting = useChatStore((s) => (conversation ? Boolean(s.compacting[conversation.id]) : false))
   const compact = useChatStore((s) => s.compact)
-  const limit = useServerStore((s) => s.status?.contextPerSlot ?? null)
+  const limit = useServerStore((s) => servedModel(s.status, s.activeModel)?.contextPerSlot ?? null)
 
   if (!conversation || !limit) return null
 

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { DEFAULT_TERMS, type ApplyResult, type ChangeSet, type CodingMode, type CodingRunSummary, type GrantTerms, type JournalEvent } from '@shared/coding.js'
 import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
+import { useServerStore } from './serverStore.js'
 
 /**
  * A projection of the coding supervisor's state — never a second engine.
@@ -120,7 +121,7 @@ export const useCodingStore = create<CodingState>((set, get) => ({
     // while; the tab says so until this lands.
     set({ capability: null })
     try {
-      const capability = await window.llama.coding.capability()
+      const capability = await window.llama.coding.capability(useServerStore.getState().activeModel)
       set({ capability })
       // A mode the record refuses is not left selected.
       const { mode } = get()
@@ -133,7 +134,7 @@ export const useCodingStore = create<CodingState>((set, get) => ({
   async startMeasure() {
     set({ error: null })
     try {
-      set({ measure: await window.llama.coding.measure() })
+      set({ measure: await window.llama.coding.measure(useServerStore.getState().activeModel) })
     } catch (err) {
       set({ error: (err as Error).message })
     }
@@ -203,7 +204,7 @@ export const useCodingStore = create<CodingState>((set, get) => ({
     const { project, task } = get()
     if (!project || !task.trim()) return
     try {
-      const run = await window.llama.coding.start({ projectRoot: project, task: task.trim(), mode: get().mode, grant: get().terms })
+      const run = await window.llama.coding.start({ projectRoot: project, task: task.trim(), mode: get().mode, grant: get().terms, model: useServerStore.getState().activeModel ?? undefined })
       set({
         runs: [...get().runs, run],
         activeRunId: run.id,

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useServerStore } from '../state/serverStore.js'
 import { authHeaders } from '@shared/chatClient.js'
 import { useChatStore } from '../state/chatStore.js'
+import { servedModel } from '@shared/served.js'
 
 interface SlotInfo {
   total: number
@@ -19,18 +20,24 @@ interface SlotInfo {
 export function SlotMeter(): React.JSX.Element | null {
   const port = useServerStore((s) => (s.status?.phase === 'ready' ? s.status.port : null))
   const apiKey = useServerStore((s) => s.status?.apiKey ?? null)
+  // A router has slots per model, and only a loaded one answers for them.
+  const model = useServerStore((s) => {
+    const m = s.status?.router ? servedModel(s.status, s.activeModel) : null
+    return m && m.state === 'loaded' ? m.id : null
+  })
+  const routed = useServerStore((s) => Boolean(s.status?.router))
   const streamCount = useChatStore((s) => Object.keys(s.streams).length)
   const [slots, setSlots] = useState<SlotInfo | null>(null)
 
   useEffect(() => {
-    if (!port) {
+    if (!port || (routed && !model)) {
       setSlots(null)
       return
     }
     let cancelled = false
     const poll = async (): Promise<void> => {
       try {
-        const res = await fetch(`http://127.0.0.1:${port}/slots`, {
+        const res = await fetch(`http://127.0.0.1:${port}/slots${model ? `?model=${encodeURIComponent(model)}` : ''}`, {
           headers: authHeaders(apiKey),
           signal: AbortSignal.timeout(2000)
         })
@@ -52,7 +59,7 @@ export function SlotMeter(): React.JSX.Element | null {
       cancelled = true
       clearInterval(timer)
     }
-  }, [port, apiKey])
+  }, [port, apiKey, model, routed])
 
   if (!slots) return null
 

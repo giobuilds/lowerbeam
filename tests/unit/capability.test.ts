@@ -70,7 +70,8 @@ console.log('\nthe main process refuses a mode the record refuses')
   const info = await stat(model)
   // The floor's hash for this file: cleared to inspect, refused edits.
   await writeFile(join(base, 'model-hashes.json'), '{}')
-  const supervisor = new CodingSupervisor(dir, () => ({ status: { phase: 'ready', port: 1, config: { modelPath: model }, contextPerSlot: 4096 } }) as never)
+  const served = { id: 'model', modelPath: model, state: 'loaded', contextPerSlot: 4096, supportsTools: true, modalities: null }
+  const supervisor = new CodingSupervisor(dir, () => ({ status: { phase: 'ready', port: 1, config: { modelPath: model }, contextPerSlot: 4096 }, ensureLoaded: async () => served }) as never)
   const { mkdir } = await import('node:fs/promises')
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, 'model-hashes.json'), JSON.stringify({ [model]: { bytes: info.size, mtimeMs: info.mtimeMs, sha256: 'f28b0ae262158af10d847c3f01bfdb943161dd31320f3aed20775ee2ad6c67a6' } }))

@@ -36,7 +36,10 @@ import type {
   ToolDefinition,
   ToolResult,
   ServerStatus,
-  VramPlanView
+  VramPlanView,
+  RouterLaunch,
+  ServedModel,
+  RouterPlanView
 } from '@shared/types.js'
 
 /**
@@ -62,6 +65,8 @@ const api = {
   server: {
     status: () => invoke<ServerStatus>(IPC.serverStatus),
     start: (config: LaunchConfig) => invoke<ServerStatus>(IPC.serverStart, config),
+    startRouter: (launch: RouterLaunch) => invoke<ServerStatus>(IPC.serverStartRouter, launch),
+    ensureModel: (id: string | null) => invoke<ServedModel>(IPC.serverEnsureModel, id),
     stop: () => invoke<ServerStatus>(IPC.serverStop),
     onStatus: (cb: (status: ServerStatus) => void) => subscribe(IPC.serverStatusChanged, cb)
   },
@@ -91,7 +96,8 @@ const api = {
       cacheTypeV: string
       parallel: number
       cpuMoeLayers?: number
-    }) => invoke<VramPlanView>(IPC.modelPlan, req)
+    }) => invoke<VramPlanView>(IPC.modelPlan, req),
+    planRouter: (launch: RouterLaunch) => invoke<RouterPlanView>(IPC.modelPlanRouter, launch)
   },
   downloads: {
     search: (query: string) => invoke<HfModel[]>(IPC.hfSearch, query),
@@ -160,11 +166,11 @@ const api = {
     discard: (runId: string) => invoke<null>(IPC.codingDiscard, runId),
     /** Whether commands can be run on this machine, with the reason when not. */
     sandbox: () => invoke<{ ok: boolean; reason: string | null; toolchain: string }>(IPC.codingSandbox),
-    capability: () => invoke<CapabilityStatus>(IPC.codingCapability),
+    capability: (model?: string | null) => invoke<CapabilityStatus>(IPC.codingCapability, model ?? null),
     capabilityOf: (modelPath: string) => invoke<CapabilityStatus>(IPC.codingCapabilityOf, modelPath),
     evidence: (runId: string) => invoke<Evidence | null>(IPC.codingEvidence, runId),
     checkBaseline: (runId: string) => invoke<Evidence | null>(IPC.codingCheckBaseline, runId),
-    measure: () => invoke<MeasureProgress>(IPC.codingMeasure),
+    measure: (model?: string | null) => invoke<MeasureProgress>(IPC.codingMeasure, model ?? null),
     cancelMeasure: () => invoke<null>(IPC.codingMeasureCancel),
     measureState: () => invoke<MeasureProgress | null>(IPC.codingMeasureState),
     onMeasure: (cb: (progress: MeasureProgress) => void) => subscribe<MeasureProgress>(IPC.codingMeasureChanged, cb),
