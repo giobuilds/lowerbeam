@@ -132,6 +132,22 @@ export type JournalEvent =
       chars: number
     })
   | (Base & {
+      /**
+       * The run's changes written into the project, after the run: each file
+       * with the hash of what was written (null for a file removed), and each
+       * one left alone with the reason. Applying again adds another.
+       */
+      type: 'applied'
+      files: Array<{ path: string; sha256: string | null }>
+      conflicts: Array<{ path: string; reason: string }>
+    })
+  | (Base & {
+      /** An apply taken back: the files restored, and any that could not be. */
+      type: 'undone'
+      files: string[]
+      conflicts: Array<{ path: string; reason: string }>
+    })
+  | (Base & {
       type: 'run.finished'
       outcome: RunOutcome
       answer: string

@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { realpath, stat } from 'node:fs/promises'
-import { DEFAULT_TERMS, type CodingRunSummary, type CodingStartRequest, type GrantTerms, type JournalEvent } from '@shared/coding.js'
+import { DEFAULT_TERMS, JOURNAL_VERSION, type CodingRunSummary, type CodingStartRequest, type GrantTerms, type JournalEvent } from '@shared/coding.js'
 import { Grant, secretReason } from '../../agent/grant.js'
 import { runTask } from '../../agent/loop.js'
 import type { ServerSupervisor } from '../supervisor.js'
@@ -489,10 +489,19 @@ export class CodingSupervisor extends EventEmitter<{
     if (!ws) throw new Error('This run has no workspace to apply.')
     if (this.live.has(id)) throw new Error('Wait for the run to finish, or stop it, before applying.')
     const result = await ws.apply()
-    const summary = this.runs.get(id)
-    if (summary && result.applied.length) {
-      summary.appliedAt = Date.now()
-      this.emit('runs', this.list())
+    // The journal is the run's record, and writing into the project is the
+    // most consequential thing a run leads to: it is recorded there, with
+    // what was written, so a restart and an audit both see it.
+    if (result.applied.length || result.conflicts.length) {
+      const files = await Promise.all(
+        result.applied.map(async (path) => ({ path, sha256: await hashFile(join(ws.root, path)).catch(() => null) }))
+      )
+      const event = await this.record(id, { type: 'applied', files, conflicts: result.conflicts })
+      const summary = this.runs.get(id)
+      if (summary && result.applied.length) {
+        summary.appliedAt = event.ts
+        this.emit('runs', this.list())
+      }
     }
     return result
   }
@@ -501,12 +510,23 @@ export class CodingSupervisor extends EventEmitter<{
     const ws = await this.workspace(id)
     if (!ws) throw new Error('This run has no workspace.')
     const result = await ws.undo()
+    if (result.applied.length || result.conflicts.length) await this.record(id, { type: 'undone', files: result.applied, conflicts: result.conflicts })
     const summary = this.runs.get(id)
     if (summary && result.conflicts.length === 0) {
       summary.appliedAt = null
       this.emit('runs', this.list())
     }
     return result
+  }
+
+  /** Append an event to a finished run's journal, after its last, and pass it on as the loop's events are. */
+  private async record(id: string, event: { type: 'applied' | 'undone' } & Record<string, unknown>): Promise<JournalEvent> {
+    const journal = new Journal(this.file(id))
+    const last = (await journal.read()).at(-1)
+    const full = { v: JOURNAL_VERSION, run: id, seq: (last?.seq ?? -1) + 1, ts: Date.now(), ...event } as JournalEvent
+    await journal.append(full)
+    this.emit('event', full)
+    return full
   }
 
   async discard(id: string): Promise<void> {
@@ -653,6 +673,16 @@ function describe(mode: CodingStartRequest['mode']): string {
   return mode === 'run' ? 'edit and run commands' : mode === 'edit' ? 'edit' : 'inspect'
 }
 
+/** When the run's changes were last applied and not taken back, from the journal; null if they are not in the project. */
+export function appliedFrom(events: JournalEvent[]): number | null {
+  let at: number | null = null
+  for (const e of events) {
+    if (e.type === 'applied' && e.files.length > 0) at = e.ts
+    else if (e.type === 'undone' && e.conflicts.length === 0) at = null
+  }
+  return at
+}
+
 /**
  * A summary from a journal alone. A run with a start and no finish was cut
  * off — by a crash or a quit — and is reported as exactly that, never as a
@@ -664,13 +694,14 @@ export function summarise(events: JournalEvent[]): CodingRunSummary | null {
   const finished = events.find((e) => e.type === 'run.finished')
   const denials = events.filter((e) => e.type === 'tool.result' && e.denied).length
   const mode = started.mode ?? 'inspect'
+  const appliedAt = appliedFrom(events)
   if (finished && finished.type === 'run.finished') {
     return {
       id: started.run,
       task: started.task,
       projectRoot: started.grantRoot,
       mode,
-      appliedAt: null,
+      appliedAt,
       model: started.model,
       startedAt: started.ts,
       finishedAt: finished.ts,
@@ -693,7 +724,7 @@ export function summarise(events: JournalEvent[]): CodingRunSummary | null {
     task: started.task,
     projectRoot: started.grantRoot,
     mode,
-    appliedAt: null,
+    appliedAt,
     model: started.model,
     startedAt: started.ts,
     finishedAt: events[events.length - 1]?.ts ?? started.ts,
