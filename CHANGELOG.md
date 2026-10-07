@@ -20,6 +20,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-07
+
 ### Added
 
 - **Several models on one server**: the Server tab can launch llama.cpp's
