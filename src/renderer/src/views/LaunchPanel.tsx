@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useServerStore } from '../state/serverStore.js'
+import { canDraftFor } from '@shared/speculation.js'
 import { contextAdvice, type CapabilityStatus } from '@shared/capability.js'
 import { KV_CACHE_TYPES, type LocalApiSettings, type ServerStatus } from '@shared/types.js'
 import { Field, inputClass } from '../components/Field.js'
@@ -150,6 +151,8 @@ export function LaunchPanel(): React.JSX.Element {
           onChange={(cpuMoeLayers) => setDraft({ cpuMoeLayers })}
         />
       )}
+
+      {(supports('--spec-type') || supports('--model-draft')) && draft.modelPath && <Speculation disabled={live} speculationMiB={plan?.speculationMiB ?? 0} />}
 
       <div className={`grid grid-cols-2 gap-3 ${draft.autoFit ? 'opacity-50' : ''}`}>
         <Field label="GPU layers (-ngl)" hint="999 offloads everything that fits">
@@ -677,6 +680,101 @@ function RouterSetup({ disabled }: { disabled: boolean }): React.JSX.Element {
           {plan.freeMiB !== null ? ` of ${mib(plan.freeMiB)} free` : ''} ({plan.worstCase.join(', ')})
           {plan.fits === false ? ' — that does not fit; load fewer at once, or lower their context.' : plan.fits ? ' — fits.' : '.'}
         </p>
+      )}
+    </section>
+  )
+}
+
+/**
+ * Speculative decoding: guess a few tokens cheaply and let the model check
+ * them in one pass. Offered as what this model and binary can do, with its
+ * VRAM from the plan and its gain measured here rather than assumed.
+ */
+function Speculation({ disabled, speculationMiB }: { disabled: boolean; speculationMiB: number }): React.JSX.Element {
+  const draft = useServerStore((s) => s.draft)
+  const models = useServerStore((s) => s.models)
+  const binary = useServerStore((s) => s.binary)
+  const setDraft = useServerStore((s) => s.setDraft)
+  const measure = useServerStore((s) => s.speculation)
+  const runMeasure = useServerStore((s) => s.measureSpeculation)
+  const status = useServerStore((s) => s.status)
+  const model = models.find((m) => m.path === draft.modelPath)
+  const typed = !binary || binary.flags.includes('--spec-type')
+  const hasMtp = (model?.nextnLayers ?? 0) > 0
+  const mode = draft.speculative ?? 'off'
+  const drafts = model
+    ? models.filter((m) => m.path !== model.path && !m.error && !m.isProjector && m.fileSize < model.fileSize && canDraftFor(m, model) === null)
+    : []
+  const result = measure.result && measure.result.modelPath === draft.modelPath && measure.result.mode === mode ? measure.result : null
+  const serverRunning = Boolean(status?.pid)
+  const pct = (a: number, b: number): string => (b > 0 ? `${Math.round((a / b) * 100)}%` : '—')
+  const gain = (a: number, b: number): string => (b > 0 ? `${a >= b ? '+' : ''}${Math.round(((a - b) / b) * 100)}%` : '')
+
+  return (
+    <section className="rounded-md border border-edge bg-ink/60 p-3 text-[11px]">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-slate-200">Speculative decoding</span>
+        <select
+          value={mode}
+          disabled={disabled}
+          onChange={(e) => setDraft({ speculative: e.target.value as typeof mode })}
+          className="ml-auto rounded border border-edge bg-ink px-1.5 py-0.5 text-[11px]"
+        >
+          <option value="off">Off</option>
+          {typed && hasMtp && <option value="mtp">The model’s own MTP head</option>}
+          {typed && <option value="ngram">N-gram lookup (no VRAM)</option>}
+          <option value="draft" disabled={drafts.length === 0}>
+            A draft model{drafts.length === 0 ? ' (none with this tokenizer)' : ''}
+          </option>
+        </select>
+      </div>
+      <p className="mt-1 leading-snug text-muted">
+        {mode === 'off'
+          ? hasMtp
+            ? 'This model carries a multi-token-prediction head: it can draft for itself, at no cost in quality.'
+            : 'Guess a few tokens cheaply and let the model check them in one pass: faster where the text is predictable, the same output.'
+          : mode === 'mtp'
+            ? 'The model drafts with its own MTP head. Most effective where the reply repeats what it read, as when rewriting code.'
+            : mode === 'ngram'
+              ? 'Drafts from repeats in the text so far. Costs no VRAM; helps only when the reply copies long runs of the prompt.'
+              : 'A smaller model with the same tokenizer drafts, and this one checks.'}
+        {mode !== 'off' && speculationMiB > 0 && <> Adds ~{Math.round(speculationMiB)} MiB to the plan above.</>}
+      </p>
+      {mode === 'draft' && (
+        <select
+          value={draft.draftModelPath ?? ''}
+          disabled={disabled}
+          onChange={(e) => setDraft({ draftModelPath: e.target.value || null })}
+          className="mt-1 w-full rounded border border-edge bg-ink px-1.5 py-0.5 text-[11px]"
+        >
+          <option value="">Choose a draft model…</option>
+          {drafts.map((m) => (
+            <option key={m.path} value={m.path}>
+              {m.fileName}
+            </option>
+          ))}
+        </select>
+      )}
+      {mode !== 'off' && (
+        <div className="mt-1.5 space-y-0.5">
+          <button
+            type="button"
+            disabled={disabled || serverRunning || measure.running || (mode === 'draft' && !draft.draftModelPath)}
+            onClick={() => void runMeasure()}
+            title={serverRunning ? 'Stop the server first: this launches the model twice on its own.' : 'Launch with and without it, and time a code rewrite and a short story on each.'}
+            className="rounded border border-edge px-1.5 py-0.5 text-slate-200 hover:border-accent disabled:opacity-50"
+          >
+            {measure.running ? `Measuring: ${measure.step ?? '…'}` : 'Measure the gain'}
+          </button>
+          {result && (
+            <p className="text-slate-300">
+              Code rewrite {result.without.code.toFixed(1)} → {result.with.code.toFixed(1)} tok/s ({gain(result.with.code, result.without.code)}), prose{' '}
+              {result.without.prose.toFixed(1)} → {result.with.prose.toFixed(1)} tok/s ({gain(result.with.prose, result.without.prose)})
+              {result.with.drafted > 0 && <span className="text-muted"> · {pct(result.with.accepted, result.with.drafted)} of drafted tokens accepted</span>}
+            </p>
+          )}
+          {measure.error && <p className="text-rose-300">{measure.error}</p>}
+        </div>
       )}
     </section>
   )

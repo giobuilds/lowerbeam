@@ -90,6 +90,15 @@ export interface GgufMetadata {
   fullAttentionInterval: number | null
   /** Multi-token-prediction blocks counted in block_count that the server does not run. */
   nextnLayers: number | null
+  /**
+   * A state-space (or gated delta-net) block's shape, on a hybrid model:
+   * what its fixed per-sequence state takes, which speculative decoding
+   * keeps extra copies of. Absent on a model without such blocks.
+   */
+  ssm?: { stateSize: number; innerSize: number; groupCount: number; timeStepRank: number; convKernel: number } | null
+  /** The tokenizer's model and pre-tokenizer, which a draft model has to share with the model it drafts for. */
+  tokenizerModel?: string | null
+  tokenizerPre?: string | null
   /** Mixture-of-experts shape. Null on a dense model. */
   expertCount: number | null
   expertUsedCount: number | null
@@ -466,6 +475,20 @@ export async function readGgufMetadata(path: string): Promise<GgufMetadata> {
       // far less per token than its size suggests.
       fullAttentionInterval: num(kv.get(`${arch}.full_attention_interval`)),
       nextnLayers: num(kv.get(`${arch}.nextn_predict_layers`)),
+      ssm: (() => {
+        const stateSize = num(kv.get(`${arch}.ssm.state_size`))
+        const innerSize = num(kv.get(`${arch}.ssm.inner_size`))
+        if (stateSize === null || innerSize === null) return null
+        return {
+          stateSize,
+          innerSize,
+          groupCount: num(kv.get(`${arch}.ssm.group_count`)) ?? 1,
+          timeStepRank: num(kv.get(`${arch}.ssm.time_step_rank`)) ?? 1,
+          convKernel: num(kv.get(`${arch}.ssm.conv_kernel`)) ?? 4
+        }
+      })(),
+      tokenizerModel: typeof kv.get('tokenizer.ggml.model') === 'string' ? (kv.get('tokenizer.ggml.model') as string) : null,
+      tokenizerPre: typeof kv.get('tokenizer.ggml.pre') === 'string' ? (kv.get('tokenizer.ggml.pre') as string) : null,
       expertCount: num(kv.get(`${arch}.expert_count`)),
       expertUsedCount: num(kv.get(`${arch}.expert_used_count`)),
       expertFeedForwardLength: num(kv.get(`${arch}.expert_feed_forward_length`)),

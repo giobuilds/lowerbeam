@@ -35,6 +35,7 @@ import type {
   ToolResult,
   ServerStatus,
   VramPlanView,
+  SpeculationMeasure,
   DataUsage,
   ServedModel,
   LaunchConfig,
@@ -43,11 +44,12 @@ import type {
 import { IPC } from '@shared/ipc.js'
 import { applyOptionsSchema, launchConfigSchema, routerLaunchSchema } from '@shared/schema.js'
 import { dataUsage, deleteOwnData } from './appData.js'
+import { measureSpeculation } from './specMeasure.js'
 import type { SlotCache } from './slots.js'
 import type { ServerSupervisor } from './supervisor.js'
 import { probeBinary, readDevices } from './probe.js'
 import { scanModels, defaultModelDirs, type ModelEntry } from './registry.js'
-import { planVram, routerWorstCase } from './planner.js'
+import { planVram, routerWorstCase, type Speculation } from './planner.js'
 import { routerIds } from '@shared/served.js'
 import { fitParams } from './fit.js'
 import { runHealthCheck } from './health.js'
@@ -146,7 +148,12 @@ export function registerIpc(
 ): void {
   handle<ServerStatus>(IPC.serverStatus, () => supervisor.status)
 
+  // Set while a speculation measurement has the GPU: a launch then would
+  // compete with it for VRAM and spoil both.
+  let measuringSpeculation = false
+
   handle<ServerStatus>(IPC.serverStart, async (raw) => {
+    if (measuringSpeculation) throw new Error('Wait for the speculation measurement to finish.')
     // Renderer input reaches a process spawn, so it is validated, not trusted.
     const config = launchConfigSchema.parse(raw)
     await supervisor.start(config, settings.current.localApi)
@@ -228,8 +235,18 @@ export function registerIpc(
     if (!meta) throw new Error('Model not found. Try rescanning.')
     if (meta.error) throw new Error(`Cannot plan for this file: ${meta.error}`)
 
-    return planOne(meta, req, await freeVram())
+    return planOne(meta, req, await freeVram(), speculationFor(req, models))
   })
+
+  /** The speculation a plan should count: the model's MTP head, an n-gram lookup, or a draft model from the library. */
+  const speculationFor = (req: { speculative?: string; draftModelPath?: string | null }, models: ModelEntry[]): Speculation | undefined => {
+    if (req.speculative === 'mtp' || req.speculative === 'ngram') return { type: req.speculative }
+    if (req.speculative === 'draft' && req.draftModelPath) {
+      const draft = models.find((m) => m.path === req.draftModelPath && !m.error)
+      return draft ? { type: 'draft', meta: draft } : undefined
+    }
+    return undefined
+  }
 
   // Free VRAM is re-read on every plan rather than reused from the startup
   // probe: other processes take and release VRAM while the app is open.
@@ -251,7 +268,7 @@ export function registerIpc(
       const meta = models.find((m) => m.path === config.modelPath)
       const error = !meta ? 'not found; try rescanning' : meta.error ? meta.error : null
       if (!meta || error) return { id: ids[i]!, modelPath: config.modelPath, totalMiB: 0, contextPerSlot: 0, error }
-      const plan = planOne(meta, config, freeMiB)
+      const plan = planOne(meta, config, freeMiB, speculationFor(config, models))
       return { id: ids[i]!, modelPath: config.modelPath, totalMiB: plan.totalMiB, contextPerSlot: plan.contextPerSlot, error: null }
     })
     return { models: planned, freeMiB, ...routerWorstCase(planned, launch.modelsMax, freeMiB) }
@@ -260,7 +277,8 @@ export function registerIpc(
   const planOne = (
     meta: ModelEntry,
     req: { gpuLayers: number; contextSize: number; cacheTypeK: LaunchConfig['cacheTypeK']; cacheTypeV: LaunchConfig['cacheTypeV']; parallel: number; cpuMoeLayers?: number },
-    freeMiB: number | null
+    freeMiB: number | null,
+    speculative?: Speculation
   ): VramPlanView => {
     const binary = supervisor.binaryInfo
     return planVram(
@@ -272,6 +290,7 @@ export function registerIpc(
         cacheTypeV: req.cacheTypeV,
         parallel: req.parallel,
         cpuMoeLayers: req.cpuMoeLayers,
+        speculative,
         // The unified CLI is the newer line, which sizes its compute buffer very
         // differently from the classic standalone server.
         computeProfile: binary.kind === 'unified' ? 'modern' : 'classic',
@@ -293,6 +312,21 @@ export function registerIpc(
     const key = `${binary.path}::${modelPath}`
     if (!fitCache.has(key)) fitCache.set(key, await fitParams(binary, modelPath))
     return fitCache.get(key) ?? null
+  })
+
+  // Speculative decoding's gain on this machine, before relying on it (#111).
+  handleFrom<Promise<SpeculationMeasure>>(IPC.modelMeasureSpeculation, async (sender, raw) => {
+    if (supervisor.status.pid !== null) throw new Error('Stop the running server first: measuring launches the model twice on its own.')
+    if (measuringSpeculation) throw new Error('A measurement is already running.')
+    const config = launchConfigSchema.parse(raw)
+    measuringSpeculation = true
+    try {
+      return await measureSpeculation(supervisor.binaryInfo, config, (step) => {
+        if (!sender.isDestroyed()) sender.send(IPC.modelMeasureSpeculationProgress, step)
+      })
+    } finally {
+      measuringSpeculation = false
+    }
   })
 
   handle<HealthCheckResult>(IPC.binaryHealthCheck, async (raw) => {

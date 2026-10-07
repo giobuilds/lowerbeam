@@ -52,6 +52,8 @@ export interface PlanInput {
   hasGpuBackend?: boolean
   /** Experts kept in system RAM: 0 none, -1 every layer's, N the first N layers'. */
   cpuMoeLayers?: number
+  /** Speculative decoding, and with what: it has a cost of its own. */
+  speculative?: Speculation
 }
 
 export interface VramPlan {
@@ -78,6 +80,8 @@ export interface VramPlan {
   expertsOnCpuMiB: number
   /** Human-readable arithmetic, shown in the UI so the estimate is auditable. */
   notes: string[]
+  /** What speculative decoding adds: a draft model, or the model's own MTP head and its buffers. */
+  speculationMiB: number
 }
 
 /**
@@ -254,10 +258,14 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
     : 0
   const overheadMiB = anyOffload && (input.hasGpuBackend ?? true) ? BACKEND_OVERHEAD_MIB : 0
 
+  const { speculative, ...plain } = input
+  const spec = speculative && anyOffload ? speculationBytes(plain, speculative) : null
+
   const weightsMiB = weights / MiB
   const kvCacheMiB = kv / MiB
   const computeMiB = compute / MiB
-  const totalMiB = weightsMiB + kvCacheMiB + computeMiB + overheadMiB
+  const speculationMiB = (spec?.bytes ?? 0) / MiB
+  const totalMiB = weightsMiB + kvCacheMiB + computeMiB + overheadMiB + speculationMiB
 
   const notes: string[] = []
   notes.push(`weights: ${fmt(meta.fileSize / MiB)} MiB x ${offloadedLayers}/${totalLayers} layers`)
@@ -285,6 +293,7 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
         : `compute: activations for ${ubatch} ubatch (logits only for emitted tokens)`
     )
   }
+  if (spec) notes.push(spec.note)
   if (overheadMiB > 0) notes.push(`GPU backend reserve: ~${overheadMiB} MiB before any model data`)
 
   let maxGpuLayers: number | null = null
@@ -306,6 +315,7 @@ export function planVram(input: PlanInput, freeMiB: number | null): VramPlan {
     kvCacheMiB,
     computeMiB,
     backendOverheadMiB: overheadMiB,
+    speculationMiB,
     totalMiB,
     freeMiB,
     fits: freeMiB === null ? null : totalMiB <= freeMiB,
@@ -330,3 +340,67 @@ export function routerWorstCase(plans: Array<{ id: string; totalMiB: number }>, 
   const worstCaseMiB = largest.reduce((n, p) => n + p.totalMiB, 0)
   return { worstCase: largest.map((p) => p.id), worstCaseMiB, fits: freeMiB === null ? null : worstCaseMiB <= freeMiB }
 }
+
+/**
+ * A hybrid model's fixed state per sequence: each state-space block holds
+ * its recurrent state (heads x key dim x value dim, f32) and its convolution
+ * window ((kernel - 1) x channels, f32). For Ornith 9B that is 24 blocks of
+ * 2 MiB + 96 KiB, the 50.25 MiB llama.cpp reports. Zero for other models.
+ */
+export function recurrentStateBytes(meta: GgufMetadata, sequences: number): number {
+  const ssm = meta.ssm
+  if (!ssm) return 0
+  const blocks = (meta.blockCount ?? 0) - (meta.nextnLayers ?? 0)
+  const stateBlocks = blocks - attentionLayers(meta)
+  if (stateBlocks <= 0) return 0
+  const heads = ssm.timeStepRank
+  const valueDim = ssm.innerSize / Math.max(1, heads)
+  const state = heads * ssm.stateSize * valueDim * 4
+  const conv = (ssm.convKernel - 1) * (ssm.innerSize + 2 * ssm.groupCount * ssm.stateSize) * 4
+  return stateBlocks * (state + conv) * Math.max(1, sequences)
+}
+
+/** A draft context's compute buffer against the target's estimate, measured on Ornith 9B (104 / 161 MiB). */
+const DRAFT_COMPUTE_SHARE = 0.65
+
+/** How many tokens llama.cpp drafts at a time unless told otherwise (`--spec-draft-n-max`). */
+export const DRAFT_MAX = 3
+
+export type Speculation = { type: 'mtp' } | { type: 'ngram' } | { type: 'draft'; meta: GgufMetadata }
+
+/**
+ * What speculative decoding adds to a launch's VRAM. Measured on Ornith 9B
+ * at 16,384 tokens, one slot, from llama.cpp's own buffer sizes: the MTP
+ * head's weights, which a launch without it leaves unloaded (144 MiB); a
+ * cache for its one layer (64 MiB); three more copies of the recurrent
+ * state, one per drafted token, so a rejected draft can be rolled back
+ * (50 -> 201 MiB); and two compute buffers for the draft context (2 x 104
+ * MiB). An n-gram lookup costs nothing on the GPU. A draft model is planned
+ * as the launch it is: its weights, its cache at the same context, its
+ * compute, without a second backend reserve.
+ */
+export function speculationBytes(input: Omit<PlanInput, 'speculative'>, spec: Speculation): { bytes: number; note: string } {
+  const { meta } = input
+  const contextSize = input.contextSize > 0 ? input.contextSize : (meta.contextLength ?? 0)
+  const parallel = input.parallel ?? 1
+  const compute = computeBufferBytes(meta, input.ubatch ?? 512, input.computeProfile ?? 'modern') ?? 0
+  if (spec.type === 'ngram') return { bytes: 0, note: 'speculation: n-gram lookup, no VRAM' }
+  if (spec.type === 'mtp') {
+    const heads = meta.unusedBytes ?? 0
+    const kv = kvCacheBytes(meta, contextSize, input.cacheTypeK, input.cacheTypeV, meta.nextnLayers ?? 1) ?? 0
+    const states = recurrentStateBytes(meta, parallel) * DRAFT_MAX
+    // The draft context's two buffers are smaller than the target's: 104
+    // MiB each against the 161 this file's compute estimate gives the 9B.
+    const draftCompute = 2 * compute * DRAFT_COMPUTE_SHARE
+    const bytes = heads + kv + states + draftCompute
+    return {
+      bytes,
+      note: `speculation: the model's MTP head ${fmt(heads / MiB)} + its cache ${fmt(kv / MiB)}${states ? ` + ${DRAFT_MAX} more recurrent states ${fmt(states / MiB)}` : ''} + 2 draft compute buffers ${fmt(draftCompute / MiB)} MiB`
+    }
+  }
+  const draft = planVram({ ...input, meta: spec.meta, gpuLayers: 999, cpuMoeLayers: 0 }, null)
+  const bytes = (draft.totalMiB - draft.backendOverheadMiB) * MiB
+  return { bytes, note: `speculation: draft model ${spec.meta.name || 'model'} ${fmt(bytes / MiB)} MiB (weights, cache, compute)` }
+}
+
+export { canDraftFor } from '@shared/speculation.js'

@@ -696,6 +696,10 @@ export function launchOf(config: LaunchConfig): string[] {
   if (config.cpuMoeLayers === -1) out.push('--cpu-moe')
   else if (config.cpuMoeLayers > 0) out.push('--n-cpu-moe', String(config.cpuMoeLayers))
   out.push('--parallel', String(config.parallel))
+  if (config.speculative && config.speculative !== 'off') {
+    out.push('--spec-type', config.speculative === 'mtp' ? 'draft-mtp' : config.speculative === 'ngram' ? 'ngram-mod' : 'draft-simple')
+    if (config.speculative === 'draft' && config.draftModelPath) out.push('--model-draft', config.draftModelPath.split('/').pop()!)
+  }
   if (config.cacheTypeK !== 'f16' || config.cacheTypeV !== 'f16') out.push('--cache-type-k', config.cacheTypeK, '--cache-type-v', config.cacheTypeV)
   const extra = config.extraArgs.trim()
   return extra ? [...out, ...extra.split(/\s+/).filter((a, i, all) => a !== '--api-key' && all[i - 1] !== '--api-key')] : out

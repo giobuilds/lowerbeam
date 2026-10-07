@@ -39,6 +39,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
   shown in About → Data and removed with the chat. One-model launches only
   (#110).
 
+- **Speculative decoding** on the Server tab: the model's own
+  multi-token-prediction head when the file has one, an n-gram lookup (no
+  VRAM), or a smaller draft model with the same tokenizer. The VRAM plan
+  counts what it adds, and *Measure the gain* launches the model with and
+  without it and times a code rewrite and a short story on each. On Ornith
+  9B the MTP head was 70% faster on the code rewrite and 13% on prose, for
+  about 570 MiB with one slot (#111).
+
 ## [0.12.0] - 2026-10-07
 
 ### Added

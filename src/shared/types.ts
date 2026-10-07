@@ -67,6 +67,28 @@ export interface LaunchConfig {
   alias?: string
   /** Extra raw flags, split on whitespace. Escape hatch for anything unmodelled. */
   extraArgs: string
+  /**
+   * Speculative decoding: guess a few tokens cheaply and have the model check
+   * them in one pass. `mtp` uses the model's own multi-token-prediction head,
+   * `ngram` looks up repeats in the text so far (no VRAM), `draft` a small
+   * model with the same tokenizer. Absent means off.
+   */
+  speculative?: SpeculativeMode
+  /** The draft model, for `speculative: 'draft'`. */
+  draftModelPath?: string | null
+}
+
+export type SpeculativeMode = 'off' | 'mtp' | 'ngram' | 'draft'
+
+/** Generation speed with and without speculative decoding, on the same launch and requests. */
+export interface SpeculationMeasure {
+  mode: SpeculativeMode
+  modelPath: string
+  draftModelPath: string | null
+  /** Tokens a second on a code rewrite and on prose; drafted and accepted tokens over both. */
+  without: { code: number; prose: number; drafted: number; accepted: number }
+  with: { code: number; prose: number; drafted: number; accepted: number }
+  measuredAt: number
 }
 
 export const KV_CACHE_TYPES = [
@@ -283,6 +305,7 @@ export interface VramPlanView {
   /** Expert weights held in system RAM by --cpu-moe / --n-cpu-moe. */
   expertsOnCpuMiB: number
   notes: string[]
+  speculationMiB: number
 }
 
 /** Mirrors main/registry.ts ModelEntry. */
@@ -301,6 +324,10 @@ export interface ModelEntryView {
   parameterCount: number | null
   hasChatTemplate: boolean
   vocabSize: number | null
+  /** Multi-token-prediction heads the file carries: speculative decoding with no draft model. */
+  nextnLayers?: number | null
+  tokenizerModel?: string | null
+  tokenizerPre?: string | null
   mtimeMs: number
   error?: string
   isProjector: boolean
