@@ -297,6 +297,13 @@ completes 22 of 30 write tasks with its round cap lifted to 40; the app keeps
 a cap of 12 until the next matrix says whether the cap or folding older tool
 results is what holds it back.
 
+## Privacy
+
+No telemetry, analytics or account. [PRIVACY.md](PRIVACY.md) lists every
+connection the app makes (update checks, Hugging Face when you use the Models
+tab, web search and pages only when a chat's web tools are on, MCP servers you
+add), how to turn each off, and everything it stores and how to delete it.
+
 ## Security
 
 To report a vulnerability, use GitHub's private reporting — the

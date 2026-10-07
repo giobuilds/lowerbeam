@@ -47,6 +47,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
   copy and command output are removed on start, its journal kept. Off by
   default (#133).
 
+- A privacy statement, [PRIVACY.md](PRIVACY.md), linked from About and the
+  README: no telemetry; every connection the app makes, when and how to turn
+  it off; everything it stores, where, and how to delete it (#131).
+
 ### Fixed
 
 - Applying a coding run's changes, and undoing them, are now recorded in the

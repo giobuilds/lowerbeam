@@ -98,6 +98,9 @@ export function About({ onClose }: { onClose: () => void }): React.JSX.Element {
           <a href={REPO} data-external="true" className="text-[11px] text-accent hover:underline">
             Source
           </a>
+          <a href={`${REPO}/blob/main/PRIVACY.md`} data-external="true" className="text-[11px] text-accent hover:underline">
+            Privacy
+          </a>
           <a
             href={`${REPO}/issues/new`}
             data-external="true"
