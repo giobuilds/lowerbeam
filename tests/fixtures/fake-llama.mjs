@@ -27,6 +27,14 @@ createServer((req, res) => {
     res.writeHead(200, {'content-type':'application/json'}); res.end('{"default_generation_settings":{"n_ctx":4096}}')
     return
   }
+  // A reply with the server's timings: faster, and with drafts counted,
+  // when launched with speculative decoding.
+  if (req.url === '/v1/chat/completions' && req.method === 'POST' && ready) {
+    const spec = argv.includes('--spec-type') || argv.includes('--model-draft')
+    const timings = spec ? { predicted_per_second: 51, draft_n: 100, draft_n_accepted: 70 } : { predicted_per_second: 30 }
+    res.writeHead(200, {'content-type':'application/json'}); res.end(JSON.stringify({ choices: [{ message: { content: 'ok' } }], timings }))
+    return
+  }
   res.writeHead(404); res.end()
 }).listen(port, host, () => {
   setTimeout(() => {

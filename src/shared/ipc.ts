@@ -21,6 +21,8 @@ export const IPC = {
   modelsRescan: 'models:rescan',
   modelPlan: 'models:plan',
   modelPlanRouter: 'models:plan-router',
+  modelMeasureSpeculation: 'models:measure-speculation',
+  modelMeasureSpeculationProgress: 'models:measure-speculation-progress',
   modelFit: 'models:fit',
   binaryHealthCheck: 'binary:health-check',
   hfSearch: 'hf:search',

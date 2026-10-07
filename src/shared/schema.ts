@@ -19,7 +19,9 @@ export const launchConfigSchema = z.object({
   cpuMoeLayers: z.number().int().min(-1).max(9999).default(0),
   mmprojPath: z.string().nullable(),
   alias: z.string().max(200).optional(),
-  extraArgs: z.string().max(4000)
+  extraArgs: z.string().max(4000),
+  speculative: z.enum(['off', 'mtp', 'ngram', 'draft']).optional(),
+  draftModelPath: z.string().min(1).nullable().optional()
 })
 
 export type LaunchConfigInput = z.infer<typeof launchConfigSchema>
@@ -152,5 +154,7 @@ export const planRequestSchema = z.object({
   cacheTypeK: z.enum(KV_CACHE_TYPES),
   cacheTypeV: z.enum(KV_CACHE_TYPES),
   parallel: z.number().int().min(1).max(64),
-  cpuMoeLayers: z.number().int().min(-1).max(9999).default(0)
+  cpuMoeLayers: z.number().int().min(-1).max(9999).default(0),
+  speculative: z.enum(['off', 'mtp', 'ngram', 'draft']).optional(),
+  draftModelPath: z.string().min(1).nullable().optional()
 })

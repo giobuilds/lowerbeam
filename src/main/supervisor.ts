@@ -642,6 +642,7 @@ export function buildArgs(
     args.push('--flash-attn')
   }
   if (config.noWarmup) args.push('--no-warmup')
+  args.push(...speculativeArgs(config, binary))
   // Where a long chat's slot is saved when you leave it (src/main/slots.ts).
   if (api.slotDir && binary.flags.includes('--slot-save-path')) args.push('--slot-save-path', api.slotDir)
   if (config.threads > 0) args.push('--threads', String(config.threads))
@@ -651,6 +652,22 @@ export function buildArgs(
   const extra = config.extraArgs.trim()
   if (extra) args.push(...extra.split(/\s+/))
   return args
+}
+
+/**
+ * Speculative decoding as the binary takes it. A build with `--spec-type`
+ * names the kind; an older one knows only a draft model.
+ */
+export function speculativeArgs(config: LaunchConfig, binary: BinaryInfo): string[] {
+  const mode = config.speculative ?? 'off'
+  if (mode === 'off') return []
+  const typed = binary.flags.includes('--spec-type')
+  if (mode === 'draft') {
+    if (!config.draftModelPath) return []
+    return typed ? ['--spec-type', 'draft-simple', '--model-draft', config.draftModelPath] : ['--model-draft', config.draftModelPath]
+  }
+  if (!typed) return []
+  return ['--spec-type', mode === 'mtp' ? 'draft-mtp' : 'ngram-mod']
 }
 
 /** What a running model can do, from its /props: the router's, for one model, when `model` is given. */

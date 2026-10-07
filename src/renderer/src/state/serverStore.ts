@@ -12,6 +12,7 @@ import type {
   RouterPlanView,
   ServedModel,
   ServerStatus,
+  SpeculationMeasure,
   VramPlanView
 } from '@shared/types.js'
 import { DEFAULT_LAUNCH_CONFIG } from '@shared/types.js'
@@ -45,6 +46,8 @@ interface ServerState {
   routerPlan: RouterPlanView | null
   /** In router mode, the model chat and coding send their requests to; null picks a loaded one. */
   activeModel: string | null
+  /** Speculative decoding measured with and without, for the draft being edited. */
+  speculation: { running: boolean; step: string | null; result: SpeculationMeasure | null; error: string | null }
   busy: boolean
   error: string | null
 
@@ -65,6 +68,7 @@ interface ServerState {
   setRouterMax: (n: number) => void
   refreshRouterPlan: () => Promise<void>
   setActiveModel: (id: string | null) => void
+  measureSpeculation: () => Promise<void>
   stop: () => Promise<void>
   refreshDevices: () => Promise<void>
   clearError: () => void
@@ -91,6 +95,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   routerDraft: { models: [], modelsMax: 1 },
   routerPlan: null,
   activeModel: null,
+  speculation: { running: false, step: null, result: null, error: null },
   busy: false,
   error: null,
 
@@ -194,7 +199,9 @@ export const useServerStore = create<ServerState>((set, get) => ({
           cacheTypeK: draft.cacheTypeK,
           cacheTypeV: draft.cacheTypeV,
           parallel: draft.parallel,
-          cpuMoeLayers: draft.cpuMoeLayers
+          cpuMoeLayers: draft.cpuMoeLayers,
+          speculative: draft.speculative ?? 'off',
+          draftModelPath: draft.draftModelPath ?? null
         })
       })
     } catch {
@@ -354,6 +361,20 @@ export const useServerStore = create<ServerState>((set, get) => ({
 
   setActiveModel(activeModel) {
     set({ activeModel })
+  },
+
+  async measureSpeculation() {
+    const { draft } = get()
+    set({ speculation: { running: true, step: 'starting', result: null, error: null } })
+    const off = window.llama.models.onMeasureSpeculationProgress((step) => set({ speculation: { ...get().speculation, step } }))
+    try {
+      const result = await window.llama.models.measureSpeculation(draft)
+      set({ speculation: { running: false, step: null, result, error: null } })
+    } catch (err) {
+      set({ speculation: { running: false, step: null, result: null, error: (err as Error).message } })
+    } finally {
+      off()
+    }
   },
 
   async stop() {

@@ -38,6 +38,7 @@ import type {
   ServerStatus,
   VramPlanView,
   RouterLaunch,
+  SpeculationMeasure,
   DataUsage,
   ServedModel,
   RouterPlanView
@@ -97,8 +98,12 @@ const api = {
       cacheTypeV: string
       parallel: number
       cpuMoeLayers?: number
+      speculative?: string
+      draftModelPath?: string | null
     }) => invoke<VramPlanView>(IPC.modelPlan, req),
-    planRouter: (launch: RouterLaunch) => invoke<RouterPlanView>(IPC.modelPlanRouter, launch)
+    planRouter: (launch: RouterLaunch) => invoke<RouterPlanView>(IPC.modelPlanRouter, launch),
+    measureSpeculation: (config: LaunchConfig) => invoke<SpeculationMeasure>(IPC.modelMeasureSpeculation, config),
+    onMeasureSpeculationProgress: (cb: (step: string) => void) => subscribe<string>(IPC.modelMeasureSpeculationProgress, cb)
   },
   downloads: {
     search: (query: string) => invoke<HfModel[]>(IPC.hfSearch, query),
