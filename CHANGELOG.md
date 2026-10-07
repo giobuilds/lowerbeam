@@ -44,6 +44,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Applying a coding run's changes, and undoing them, are now recorded in the
   run's journal with the files, their hashes and anything left alone, so a
   run still shows as applied after the app restarts (#134).
+- On Ubuntu 23.10 and later, run mode was offered and then failed: AppArmor
+  refuses user namespaces there while the setting the sandbox check read
+  says they are on. The check now starts a box once to see that it works,
+  and names AppArmor as the cause when that is it. Every sandbox
+  error points to the new Requirements section of the README (#132).
 
 ### Security
 

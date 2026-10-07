@@ -59,17 +59,47 @@ export async function probeSandbox(): Promise<SandboxProbe> {
   } catch {
     /* absent */
   }
+  // The settings above can all look right and a box still not start: Ubuntu
+  // 23.10 and later leave user namespaces on but have AppArmor refuse them to
+  // unconfined programs. So a box is started once, empty, to know.
+  const trial = bubblewrap && userNamespaces ? await trialBox() : null
   const reason = !bubblewrap
-    ? 'bubblewrap (bwrap) is not installed, so commands cannot be contained.'
+    ? `bubblewrap (bwrap) is not installed, so commands cannot be contained. ${SEE_REQUIREMENTS}`
     : !userNamespaces
-      ? 'unprivileged user namespaces are disabled, so bubblewrap cannot run without root.'
-      : null
+      ? `unprivileged user namespaces are disabled, so bubblewrap cannot run without root. ${SEE_REQUIREMENTS}`
+      : trial
   const found = await findNode()
   const toolchain = found.node ? (await lendNode(found.node, await realHome())).note : found.note
   cachedProbe = { ok: reason === null, bubblewrap, userNamespaces, landlock, reason, toolchain }
   return cachedProbe
 }
 let cachedProbe: SandboxProbe | null = null
+
+/** Where a person finds out how to make the box work on their system. */
+const SEE_REQUIREMENTS = 'See Requirements in the README: https://github.com/giobuilds/lowerbeam#requirements'
+
+/** Start an empty box with the namespaces a real one uses; null when it worked, the reason when it did not. */
+async function trialBox(): Promise<string | null> {
+  try {
+    await run('bwrap', ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc', '--unshare-all', '--die-with-parent', '--', 'true'], { timeout: 10_000 })
+    return null
+  } catch (err) {
+    const detail = ((err as { stderr?: string }).stderr ?? (err as Error).message).trim().split('\n')[0] ?? ''
+    if (await apparmorRestrictsUserns()) {
+      return `AppArmor is refusing user namespaces to unconfined programs (kernel.apparmor_restrict_unprivileged_userns = 1, as on Ubuntu 23.10 and later), so bubblewrap cannot start. ${SEE_REQUIREMENTS}`
+    }
+    return `bubblewrap could not start a box here (${detail.slice(0, 160)}), so commands cannot be contained. ${SEE_REQUIREMENTS}`
+  }
+}
+
+async function apparmorRestrictsUserns(): Promise<boolean> {
+  try {
+    const { readFile } = await import('node:fs/promises')
+    return (await readFile('/proc/sys/kernel/apparmor_restrict_unprivileged_userns', 'utf8')).trim() === '1'
+  } catch {
+    return false
+  }
+}
 
 export interface SandboxCommand {
   /** The workspace copy: the only place the command may write. */

@@ -125,10 +125,40 @@ fastest. Sampler settings aren't here on purpose: they don't change throughput.
 
 ## Requirements
 
-- Node 22.12+ (developed on 24)
-- llama.cpp — either the unified `llama` CLI or the standalone `llama-server`
-- For *edit and run* only: bubblewrap (`bwrap`) and unprivileged user
-  namespaces. Without them the other coding modes still work.
+**Linux on x86_64 only.** Releases are an AppImage and an RPM for x86_64.
+Windows and macOS are not supported: run mode's sandbox is bubblewrap,
+and there is no validated equivalent for them yet. ARM builds are not made.
+
+| | Needed | Tested |
+|---|---|---|
+| Distribution | Any x86_64 Linux the AppImage runs on; the RPM is for Fedora and its relatives | Fedora 44 Workstation (kernel 7.2, glibc 2.43), September–October 2026. CI builds and runs the suites on Ubuntu (GitHub's `ubuntu-latest`) |
+| glibc | 2.25 or later: the newest symbol version the Electron 44 binary asks for | 2.43 |
+| llama.cpp | The unified `llama` CLI or the standalone `llama-server`, from a build recent enough for `--jinja` and `/props` (the router needs `--models-preset`) | `llama` 0.4.0-dev, build 10826 (commit 73a43d1f6) |
+| GPU backend | Whatever your llama.cpp build was compiled for — Vulkan, ROCm, CUDA, or none. Lowerbeam does not ship llama.cpp; it drives the one you have | Vulkan (RADV) on an AMD Radeon RX 6600, 8 GB. ROCm, CUDA and CPU-only builds are expected to work and have not been tested here |
+| Memory | Enough for the model you launch: the Server tab says what fits before launching | 8 GB VRAM and 32 GB RAM: a 9B at Q4_K_M with 16k context fully on the GPU, or a 30B-A3B with its experts in RAM |
+| Node | 22.12 or later, to build from source or to run project tests in run mode | 24 |
+
+**For *edit and run* only**: bubblewrap (`bwrap`) and unprivileged user
+namespaces. Without them the other coding modes still work, and the app says
+which part is missing.
+
+- Fedora, Arch and Debian allow unprivileged user namespaces by default;
+  install bubblewrap (`sudo dnf install bubblewrap`, `sudo pacman -S bubblewrap`,
+  `sudo apt install bubblewrap`).
+- **Ubuntu 23.10 and later** keep them on but have AppArmor refuse them to
+  programs without a profile, so bubblewrap fails to start. The app detects
+  this and says so. To allow it for the whole system (what CI does):
+
+  ```bash
+  sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+  # to keep it after a reboot:
+  echo 'kernel.apparmor_restrict_unprivileged_userns=0' | sudo tee /etc/sysctl.d/60-userns.conf
+  ```
+
+  That loosens a protection for every program, so weigh it. Narrower is an
+  AppArmor profile that grants `userns` to `/usr/bin/bwrap` alone.
+- Commands get Node from the one on your `PATH`, lent to the box read-only;
+  without one they run with the system's tools only.
 
 Lowerbeam finds both and prefers the unified CLI, since a stale distro build
 often sits in `/usr/bin` beside a current one. Override with the binary dropdown
