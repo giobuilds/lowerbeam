@@ -1,10 +1,13 @@
 # A release: push an annotated tag `vX.Y.Z` on main's merge commit, matching
 # package.json's version and a section in CHANGELOG.md (`npm run
 # release:prepare` makes both). This checks all of that, builds the AppImage
-# and RPM, publishes them with latest-linux.yml as a GitHub release — which is
-# what a running AppImage looks for (src/main/updater.ts) — and writes the
-# release notes: the changelog section, then the pull requests merged since
-# the previous release.
+# and RPM, signs SHA256SUMS over them and latest-linux.yml, and only then
+# publishes the GitHub release — which is what a running AppImage looks for
+# (src/main/updater.ts). The notes are the changelog section, then the pull
+# requests merged since the previous release. The signature is made by the
+# key in release-signing-key.asc; its private half is the GPG_PRIVATE_KEY
+# secret and the passphrase is GPG_PASSPHRASE. A tag with either secret
+# missing is not published.
 #
 # On a pull request that touches packaging, the same job builds without
 # publishing and keeps the packages as workflow artifacts, so the release
@@ -23,6 +26,8 @@ on:
       - package-lock.json
       - CHANGELOG.md
       - scripts/release.mjs
+      - scripts/checksums.mjs
+      - release-signing-key.asc
 
 jobs:
   release:
@@ -65,11 +70,12 @@ jobs:
           node scripts/release.mjs notes "${version}" > /dev/null
 
       # The same checks as CI: nothing is released that would not pass them.
-      # rpm is for electron-builder's RPM target; bubblewrap for the sandbox suites.
-      - name: Install rpm and bubblewrap
+      # rpm is for electron-builder's RPM target; bubblewrap for the sandbox
+      # suites; gnupg signs the checksums.
+      - name: Install rpm, bubblewrap and gnupg
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq rpm bubblewrap
+          sudo apt-get install -y -qq rpm bubblewrap gnupg
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
       - run: npm ci
@@ -77,13 +83,37 @@ jobs:
       - run: npm test
       - run: npx electron-vite build
 
-      - name: Package and publish
+      # Built either way, and not published yet: a tag signs the checksums
+      # first, and only then creates the release. Publishing before the
+      # signature exists would leave a release that cannot be checked.
+      - name: Package
+        run: npx electron-builder --linux --publish never
+
+      - name: The signing key is available
         if: startsWith(github.ref, 'refs/tags/')
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --linux --publish always
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ] || [ -z "$GPG_PASSPHRASE" ]; then
+            echo "::error::GPG_PRIVATE_KEY and GPG_PASSPHRASE must be set before a release is published"
+            exit 1
+          fi
 
-      - name: Release notes
+      - name: Sign the checksums
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          umask 077
+          gnupg=$(mktemp -d)
+          chmod 700 "$gnupg"
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --homedir "$gnupg" --import
+          GNUPGHOME="$gnupg" node scripts/checksums.mjs dist --sign
+          rm -rf "$gnupg"
+
+      - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -94,11 +124,18 @@ jobs:
             echo
             gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" -f tag_name="${GITHUB_REF_NAME}" --jq .body
           } > notes.md
-          gh release edit "${GITHUB_REF_NAME}" --title "Lowerbeam ${version}" --notes-file notes.md
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/Lowerbeam.AppImage \
+            dist/*.rpm \
+            dist/latest-linux.yml \
+            dist/SHA256SUMS \
+            dist/SHA256SUMS.asc \
+            --title "Lowerbeam ${version}" \
+            --notes-file notes.md
 
-      - name: Package without publishing
+      - name: Checksums for the dry run
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        run: npx electron-builder --linux --publish never
+        run: node scripts/checksums.mjs dist
 
       # What the notes would say for the version in package.json, so a PR that
       # breaks the changelog finds out before a tag does.
@@ -115,4 +152,5 @@ jobs:
             dist/*.AppImage
             dist/*.rpm
             dist/latest-linux.yml
+            dist/SHA256SUMS
           retention-days: 7

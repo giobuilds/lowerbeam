@@ -212,13 +212,44 @@ git push origin v0.9.26
 
 The *Release* workflow refuses a tag that is lightweight, not on `main`'s own
 history, not the version in `package.json`, or missing from the changelog. It
-runs the same checks as CI, publishes `Lowerbeam.AppImage`, the RPM and
-`latest-linux.yml` as a GitHub release, and writes its notes: the changelog
-section, then the pull requests merged since the previous release. Running
-AppImages find it within six hours and install it on their next restart. A
-published tag is never moved or deleted; a broken release is followed by a new
-one. The AppImage's name carries no version on purpose: an update replaces the
-file in place, so a shortcut to it keeps working.
+runs the same checks as CI, builds `Lowerbeam.AppImage`, the RPM and
+`latest-linux.yml`, and signs `SHA256SUMS` over the three of them before it
+creates the GitHub release. The notes are the changelog section, then the
+pull requests merged since the previous release. Running AppImages find it
+within six hours and install it on their next restart. A published tag is
+never moved or deleted; a broken release is followed by a new one. The
+AppImage's name carries no version on purpose: an update replaces the file
+in place, so a shortcut to it keeps working.
+
+The signing key is not in the repository. Its public half is
+[release-signing-key.asc](release-signing-key.asc). The private half and its
+passphrase are the Actions secrets `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE`;
+without them the workflow stops before creating the release. A copy of the
+key is kept at `~/.config/lowerbeam/release-signing` on the machine that
+created it.
+
+## Checking a download
+
+`SHA256SUMS.asc` is a detached signature by this key:
+
+```
+CB72 2EF2 60C3 0897 756B  9229 CAC0 53DD 7A01 8445
+```
+
+The app's updater does not check that signature. It checks the AppImage
+against the sha512 inside `latest-linux.yml`, and that file comes from the
+same GitHub release. To check a download yourself, from a directory holding
+the release files and a copy of the public key:
+
+```bash
+gpg --import release-signing-key.asc
+gpg --verify SHA256SUMS.asc SHA256SUMS
+sha256sum -c SHA256SUMS
+```
+
+`gpg --verify` prints the fingerprint above when the signature is good. It
+also warns that the key is not certified, which means you have not signed it
+yourself; compare the fingerprint with this page.
 
 ## About the estimates
 
