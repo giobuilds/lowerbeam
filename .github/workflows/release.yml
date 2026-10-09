@@ -13,9 +13,11 @@
 # publishing and keeps the packages as workflow artifacts, so the release
 # path is exercised before a tag ever depends on it.
 #
-# workflow_dispatch runs only the signing rehearsal: a throwaway key, dummy
-# release files, sign, verify, and no GitHub release. The tag job never sets
-# GPG_FINGERPRINT, so it still signs with the key in the repository.
+# workflow_dispatch runs only the signing rehearsal: a throwaway key, exported
+# armoured and with a passphrase, then imported and used to sign dummy
+# release files. There is no GitHub release. Both that job and a tag call
+# scripts/sign-release.sh. The tag job never sets GPG_FINGERPRINT, so it
+# still signs with the key in the repository.
 name: Release
 
 on:
@@ -32,6 +34,7 @@ on:
       - CHANGELOG.md
       - scripts/release.mjs
       - scripts/checksums.mjs
+      - scripts/sign-release.sh
       - release-signing-key.asc
 
 jobs:
@@ -111,13 +114,7 @@ jobs:
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: |
-          umask 077
-          gnupg=$(mktemp -d)
-          chmod 700 "$gnupg"
-          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --homedir "$gnupg" --import
-          GNUPGHOME="$gnupg" node scripts/checksums.mjs dist --sign
-          rm -rf "$gnupg"
+        run: bash scripts/sign-release.sh dist
 
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/')
@@ -162,8 +159,10 @@ jobs:
           retention-days: 7
 
   # The tag steps above are the first time the real key would sign anything.
-  # This job runs that same sign-and-verify command with a key created here
-  # and deleted here. It does not read GPG_PRIVATE_KEY or create a release.
+  # This job creates a throwaway key, exports it armoured and protected by a
+  # passphrase, deletes that keyring, and signs through scripts/sign-release.sh
+  # — the same import a tag uses. It does not read the GPG_PRIVATE_KEY secret
+  # and it does not create a release.
   signing-rehearsal:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -183,21 +182,24 @@ jobs:
       - name: Sign and verify with a throwaway key
         run: |
           umask 077
-          gnupg=$(mktemp -d)
-          chmod 700 "$gnupg"
+          gen=$(mktemp -d)
+          chmod 700 "$gen"
           passphrase=$(openssl rand -base64 24 | tr -d '\n')
-          printf '%s' "$passphrase" | gpg --homedir "$gnupg" --batch --pinentry-mode loopback --passphrase-fd 0 \
+          printf '%s' "$passphrase" | gpg --homedir "$gen" --batch --pinentry-mode loopback --passphrase-fd 0 \
             --quick-gen-key "Lowerbeam signing test <signing-test@example.invalid>" ed25519 sign 1d
-          fingerprint=$(gpg --homedir "$gnupg" --batch --with-colons --list-keys | awk -F: '/^fpr:/ {print $10; exit}')
-          public=$(gpg --homedir "$gnupg" --armor --export "$fingerprint")
+          fingerprint=$(gpg --homedir "$gen" --batch --with-colons --list-keys | awk -F: '/^fpr:/ {print $10; exit}')
+          public=$(gpg --homedir "$gen" --armor --export "$fingerprint")
+          private=$(printf '%s' "$passphrase" | gpg --homedir "$gen" --batch --pinentry-mode loopback --passphrase-fd 0 \
+            --armor --export-secret-keys "$fingerprint")
+          rm -rf "$gen"
           mkdir -p dist
           printf 'appimage\n' > dist/Lowerbeam.AppImage
           printf 'rpm\n' > dist/lowerbeam-test.x86_64.rpm
           printf 'version: 0.0.0\n' > dist/latest-linux.yml
-          GNUPGHOME="$gnupg" \
+          GPG_PRIVATE_KEY="$private" \
             GPG_PASSPHRASE="$passphrase" \
             GPG_FINGERPRINT="$fingerprint" \
             GPG_PUBLIC_KEY="$public" \
-            node scripts/checksums.mjs dist --sign
+            bash scripts/sign-release.sh dist
           test -f dist/SHA256SUMS.asc
-          rm -rf "$gnupg" dist
+          rm -rf dist
