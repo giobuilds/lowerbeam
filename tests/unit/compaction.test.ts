@@ -1,15 +1,19 @@
 import assert from 'node:assert/strict'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { createServer, type AddressInfo } from 'node:http'
 import {
   COMPACT_AT,
   compactableMessages,
   projectedPromptTokens,
   shouldCompact,
+  summarise,
   summaryBudget,
   trimToLastSentence,
   verbatimUserMessages,
   PREEMPT_AT
 } from '@context/compact.js'
 import { projectConversation as buildTurns } from '@context/project.js'
+import { streamChat } from '@shared/chatClient.js'
 import type { ChatMessageView, ConversationView } from '@shared/types.js'
 
 let n = 0; const ok = (m: string) => { n++; console.log('  ok', m) }
@@ -220,6 +224,75 @@ console.log('\nwhat actually gets sent')
   const text = buildTurns(c).map((t) => t.content).join(' | ')
   assert.ok(text.includes('kept') && text.includes('also kept'))
   ok('a summary pointing at a deleted message covers nothing rather than everything')
+}
+
+console.log('\na thinking server still yields a summary')
+{
+  // Bundled suites run from tests/.build, so the fixture sits one level up.
+  const fixture = new URL('../fixtures/fake-llama.mjs', import.meta.url).pathname
+  const probe = createServer()
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', () => resolve()))
+  const port = (probe.address() as AddressInfo).port
+  await new Promise<void>((resolve) => probe.close(() => resolve()))
+  const child: ChildProcess = spawn(process.execPath, [fixture, '--port', String(port), '--model', 'fake.gguf'], {
+    env: { ...process.env, FAKE_LOAD_MS: '20' },
+    stdio: 'ignore'
+  })
+  const base = `http://127.0.0.1:${port}`
+  try {
+    for (let i = 0; i < 50; i++) {
+      try {
+        const health = await fetch(`${base}/health`)
+        if (health.ok) break
+      } catch { /* still starting */ }
+      if (i === 49) throw new Error('fake llama never became ready')
+      await new Promise((r) => setTimeout(r, 20))
+    }
+    const older = [msg('user', 'What did we decide?'), msg('assistant', 'We kept the first approach.')]
+    const summary = await summarise(base, chat(older), older, null, 4096, AbortSignal.timeout(5000))
+    assert.equal(summary, 'The earlier turns settled the open questions.')
+    ok('summarise stores the reply when the server would otherwise think up to the cap')
+
+    let content = ''
+    let reasoning = ''
+    let finish: string | null = null
+    await streamChat(base, [{ role: 'user', content: 'summarise' }], chat([]).settings, AbortSignal.timeout(5000), {
+      onDelta: (text) => { content += text },
+      onReasoning: (text) => { reasoning += text },
+      onDone: (info) => { finish = info.finishReason },
+      onError: (message) => { throw new Error(message) }
+    })
+    assert.equal(content, '')
+    assert.equal(reasoning, 'think '.repeat(chat([]).settings.maxTokens > 0 ? chat([]).settings.maxTokens : 8))
+    assert.equal(finish, 'length')
+    ok('the same server spends the cap on reasoning when thinking stays on')
+  } finally {
+    child.kill('SIGKILL')
+  }
+}
+{
+  // A server that ignores the switch still has to say why nothing was stored.
+  const server = createServer((req, res) => {
+    req.on('data', () => {})
+    req.on('end', () => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: 'planning the summary' } }] })}\n\n`)
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'length' }] })}\n\n`)
+      res.end('data: [DONE]\n\n')
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  try {
+    const older = [msg('user', 'hello')]
+    await assert.rejects(
+      () => summarise(url, chat(older), older, null, 4096, AbortSignal.timeout(5000)),
+      /The summary cap was spent on reasoning, so no summary was written\./
+    )
+    ok('a server that still thinks explains why the chat was not compacted')
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
 }
 
 console.log(`\n${n} assertions passed`)

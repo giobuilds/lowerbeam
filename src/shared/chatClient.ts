@@ -128,6 +128,17 @@ interface StreamChunk {
   error?: { message?: string }
 }
 
+/**
+ * Per-request controls that are not part of the conversation's saved settings.
+ *
+ * `thinking: false` asks the server not to open a reasoning block. A summary
+ * has a small token cap, and a thinking model spends that cap before it writes
+ * any reply. A template that does not understand the switch ignores it.
+ */
+export interface StreamOptions {
+  thinking?: boolean
+}
+
 /** Where a llama-server is, and the key it wants. */
 export interface ServerEndpoint {
   url: string
@@ -152,7 +163,8 @@ export async function streamChat(
   /** Sent only when tools are enabled; each definition costs tokens every time. */
   tools?: unknown[],
   /** A JSON schema or grammar the reply must match. llama.cpp does not combine one with tools. */
-  constraint?: OutputConstraint | null
+  constraint?: OutputConstraint | null,
+  options?: StreamOptions
 ): Promise<void> {
   const { url: baseUrl, apiKey, model: requestModel, slot } = typeof endpoint === 'string' ? { url: endpoint, apiKey: null, model: null, slot: null } : endpoint
   let res: Response
@@ -175,7 +187,12 @@ export async function streamChat(
         repeat_penalty: settings.repeatPenalty,
         ...(settings.maxTokens > 0 ? { max_tokens: settings.maxTokens } : {}),
         ...(tools && tools.length > 0 ? { tools, tool_choice: 'auto' } : {}),
-        ...constraintFields(constraint)
+        ...constraintFields(constraint),
+        // After the constraint fields, so a caller can turn thinking off on a
+        // free-text request too. A constraint already sends the same switch.
+        ...(options?.thinking === false
+          ? { chat_template_kwargs: { enable_thinking: false } }
+          : {})
       })
     })
   } catch (err) {

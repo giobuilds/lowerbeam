@@ -27,6 +27,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   The README says how to check a download against the key in the repository.
   The in-app updater still follows the GitHub release. (#135)
 
+### Fixed
+
+- Compacting a chat no longer spends the summary's token cap on reasoning.
+  With thinking on, that cap used to finish the turn before any summary was
+  written, and the chat was left unchanged. (#153)
+
 ## [0.13.0] - 2026-10-07
 
 ### Added
