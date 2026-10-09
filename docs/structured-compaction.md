@@ -227,11 +227,13 @@ program, which date was insisted on. Those spellings are not in this record.
 Measured while building the current implementation, and worth not rediscovering:
 
 - A chat gets `--ctx-size ÷ --parallel`, not the whole context. Ornith-1.5-9B on
-  an 8 GB card: 7,424 tokens per chat at `--parallel 4`, 38,912 at `--parallel 1`.
+  an 8 GB card: 7,424 tokens per chat at `--parallel 4`, which is the slot the
+  compaction budgets use. One slot is not a fixed 38,912. That figure had no
+  date and is withdrawn. `--fit` follows free VRAM; the dated runs are under
+  "Context with the projector on the CPU" below.
 - A projector on the GPU is what cut the context to 4,096. On the CPU, or with
   no projector, `--fit` still sizes the context, and the two launches match.
-  The 34,304 / 36,352 pair is explained under "Context with the projector on
-  the CPU" below.
+  The 34,304 / 36,352 pair is explained under that same heading.
 - Prior reasoning is never resent, so prompts stay small. In a 2,048-token
   window the measured prompts were 28–144 tokens while replies generated
   ~2,000 — **the window was consumed by one reply's thinking, not by history.**
@@ -270,6 +272,27 @@ At each slot count the two launches fitted the same context. The published
 pair is 2,048 tokens apart, which is 64 MiB of this model's f16 KV. That is
 the width of a small change in free memory between two separate `--fit` runs.
 A launch with no projector does not come out behind.
+
+Re-run on 10 Oct 2026, same binary and model, `--parallel 1` only, each
+launch twice. Before every launch sysfs reported 1,840,234,496 bytes used
+(1,755 MiB) and `llama serve --list-devices` reported 6,421 MiB free of
+8,176. After each server stopped, sysfs was back at 1,840,234,496. The fit
+itself logged 6,370 MiB of free device memory against a projection of 13,406.
+
+| launch | run | free at launch | context |
+|---|---|---|---|
+| no projector | first | 6,421 MiB of 8,176 | 11,776 |
+| no projector | second | 6,421 MiB of 8,176 | 11,776 |
+| projector on the CPU | first | 6,421 MiB of 8,176 | 11,776 |
+| projector on the CPU | second | 6,421 MiB of 8,176 | 11,776 |
+
+Each log says the context was reduced from 262,144 to 11,776 and that the
+whole model fit. The CPU-projector launches also logged `adding 1127.09 MiB
+to fit_params_target for device CPU`. The 34,304 / 36,352 pair was not
+reproduced, and neither was the 13,568 from the day before. The card had
+about 50 MiB more in use than on 9 Oct (1,755 MiB against 1,705), and the
+fitted context moved. Two repeats at the same free amount agreed. `--fit`
+results depend on free VRAM. They are not a stable one-slot size.
 
 The older note that a loaded `--mmproj` makes `--fit` stop searching and use
 4,096 is the projector-on-GPU row from that same measurement: 4,096 tokens and
