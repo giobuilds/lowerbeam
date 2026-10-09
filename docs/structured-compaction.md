@@ -203,6 +203,25 @@ command and `700000`. The paragraph kept `700000`. The other SDL spellings
 were paraphrased or absent, as in the baseline. The first table remains the
 M0 number.
 
+## M1
+
+`extractMechanics` in `src/context/extract.ts` keeps the spellings a paragraph
+paraphrases away: shell commands, file paths, host names, flags, includes,
+macros, function signatures, the string literals a program prints, and
+compiler errors. It is a scan of the text. It does not call a model, and a
+chat still sends the prose summary. Replacing that summary is M2.
+
+A function body is not part of the record. The line `if (*line == ' ')` is how
+the pointer bug was worked out, and the scan leaves it. The signature
+`int main(void)` and the literal `You wake in a small, dark room.` stay.
+
+Four of the fourteen M0 questions are this layer: the opening line, the
+compile command, `700000`, and `Time.now`. On the turns a 7,424-token slot
+summarises, the scan keeps all four. The prose paragraph in the M0 run kept
+one of them, `700000`. The other ten questions are decisions and names — what
+was set aside, which engines were listed, why the pointer stuck, who built the
+program, which date was insisted on. Those spellings are not in this record.
+
 ## What is already known
 
 Measured while building the current implementation, and worth not rediscovering:
