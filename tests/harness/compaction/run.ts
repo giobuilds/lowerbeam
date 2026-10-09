@@ -4,13 +4,13 @@
  *   node tests/harness/compaction/run.mjs
  *   node tests/harness/compaction/run.mjs --base-url http://127.0.0.1:8990
  *
- * The server, when this starts it, is Ornith-1.5-9B at 16,384 tokens with
- * reasoning off. The summary request is the older transcript plus the reply,
- * and that does not fit in the 7,424-token slot the app would actually give
- * the chat. The slot size is still what the budgets see: how much summary to
- * ask for, which turns to replace, which of the user's lines to keep verbatim.
- * Reasoning stays off because the summary cap is 700 tokens and, with
- * thinking left on, those tokens are spent before a paragraph exists.
+ * The server, when this starts it, is Ornith-1.5-9B at 16,384 tokens with the
+ * daily reasoning budget. The summary request is the older transcript plus
+ * the reply, and that does not fit in the 7,424-token slot the app would
+ * actually give the chat. The slot size is still what the budgets see: how
+ * much summary to ask for, which turns to replace, which of the user's lines
+ * to keep verbatim. summarise() turns thinking off on its own request, so the
+ * 700-token cap is the paragraph even while this server is thinking.
  *
  * Each question is asked twice. Projected is what the app would send next
  * (summary, verbatim user lines, recent turns). Summary is the paragraph
@@ -34,12 +34,11 @@ const MODEL = join(
   homedir(),
   '.cache/huggingface/hub/models--ornith-ai--Ornith-1.5-9B-GGUF/snapshots/abdd624b12ebf020b767fff532ff44fe552b28c3/Ornith-1.5-9B-Q4_K_M.gguf'
 )
-// The daily Ornith launch sets a reasoning budget of 1024. The summary cap is
-// 700 tokens. With thinking left on, that cap is spent in reasoning and the
-// content comes back empty (a budget of 0 still thinks on this model). The
-// paragraph summarise() asks for is what `--reasoning off` produces. The
-// answer calls use the same server.
-const LAUNCH = ['--gpu-layers', '999', '--ctx-size', '16384', '--reasoning', 'off']
+// The daily Ornith launch. summarise() sends enable_thinking: false on the
+// summary request, so this budget applies to the answer calls and not to the
+// paragraph. Starting the server with --reasoning off hid the case where the
+// summary cap was spent before any content existed.
+const LAUNCH = ['--gpu-layers', '999', '--ctx-size', '16384', '--reasoning-budget', '1024']
 
 const ANSWER = {
   temperature: 0,

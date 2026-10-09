@@ -217,6 +217,7 @@ export async function summarise(
   ]
 
   let summary = ''
+  let reasoned = false
   let failure: string | null = null
   let cutOff = false
   await streamChat(
@@ -229,16 +230,30 @@ export async function summarise(
       onDelta: (text) => {
         summary += text
       },
+      onReasoning: () => {
+        reasoned = true
+      },
       onDone: ({ finishReason }) => {
         cutOff = finishReason === 'length'
       },
       onError: (message) => {
         failure = message
       }
-    }
+    },
+    undefined,
+    null,
+    // The cap is the summary, not a reasoning trace. The chat's own thinking
+    // settings stay as they are for the replies the person actually reads.
+    { thinking: false }
   )
   if (failure) throw new Error(failure)
   const trimmed = summary.trim()
-  if (!trimmed) throw new Error('The model returned an empty summary.')
+  if (!trimmed) {
+    throw new Error(
+      reasoned
+        ? 'The summary cap was spent on reasoning, so no summary was written.'
+        : 'The model returned an empty summary.'
+    )
+  }
   return cutOff ? trimToLastSentence(trimmed) : trimmed
 }

@@ -28,11 +28,40 @@ createServer((req, res) => {
     return
   }
   // A reply with the server's timings: faster, and with drafts counted,
-  // when launched with speculative decoding.
+  // when launched with speculative decoding. A non-streaming caller still gets
+  // that JSON. A streaming caller that leaves thinking on spends max_tokens on
+  // reasoning_content and finishes for length with no reply, which is what a
+  // thinking model does to a short cap. chat_template_kwargs.enable_thinking
+  // set to false is the switch that writes the reply instead.
   if (req.url === '/v1/chat/completions' && req.method === 'POST' && ready) {
     const spec = argv.includes('--spec-type') || argv.includes('--model-draft')
     const timings = spec ? { predicted_per_second: 51, draft_n: 100, draft_n_accepted: 70 } : { predicted_per_second: 30 }
-    res.writeHead(200, {'content-type':'application/json'}); res.end(JSON.stringify({ choices: [{ message: { content: 'ok' } }], timings }))
+    let raw = ''
+    req.on('data', (c) => { raw += c })
+    req.on('end', () => {
+      let body = {}
+      try { body = raw ? JSON.parse(raw) : {} } catch { body = {} }
+      if (body.stream !== true) {
+        res.writeHead(200, {'content-type':'application/json'})
+        res.end(JSON.stringify({ choices: [{ message: { content: 'ok' } }], timings }))
+        return
+      }
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
+      const thinkingOff = body.chat_template_kwargs && body.chat_template_kwargs.enable_thinking === false
+      if (thinkingOff) {
+        const text = 'The earlier turns settled the open questions.'
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`)
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], timings })}\n\n`)
+        res.end('data: [DONE]\n\n')
+        return
+      }
+      const cap = typeof body.max_tokens === 'number' && body.max_tokens > 0 ? body.max_tokens : 8
+      for (let i = 0; i < cap; i++) {
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: 'think ' } }] })}\n\n`)
+      }
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'length' }], timings })}\n\n`)
+      res.end('data: [DONE]\n\n')
+    })
     return
   }
   res.writeHead(404); res.end()

@@ -183,6 +183,26 @@ verbatim user lines and in the SDL paragraph, and `Claude` and `8th September
 2026` are in the London user lines, and those replies were `unknown` too.
 That is the number later milestones have to beat.
 
+The harness that produced the table started the server with `--reasoning off`.
+With the daily launch (`--reasoning-budget 1024`), and with a budget of 0, the
+summary cap was spent on reasoning and `summarise` stored nothing. `summarise`
+now turns thinking off on that request. The harness was run again on 9 Oct
+2026 with `--reasoning-budget 1024` and without `--reasoning off`. Both
+summaries were written on the first attempt. The answer calls still think,
+inside the 2,048-token reply cap.
+
+| chat | projected | summary | retained |
+|---|---|---|---|
+| london-clock | 6/7 | 5/7 | 5/7 |
+| sdl-story | 2/7 | 1/7 | 1/7 |
+| total | 8/14 | 6/14 | 6/14 |
+
+London's replies quoted six spellings and missed `Time.now`. The paragraph
+kept five: it also dropped `Claude`. SDL's projection quoted the compile
+command and `700000`. The paragraph kept `700000`. The other SDL spellings
+were paraphrased or absent, as in the baseline. The first table remains the
+M0 number.
+
 ## What is already known
 
 Measured while building the current implementation, and worth not rediscovering:
