@@ -13,13 +13,18 @@ import { ServerSupervisor } from './supervisor.js'
  * a code rewrite, where most of the output repeats the input and a draft is
  * usually right, and a short story, where it is right less often. The gain
  * is the generation speed of one against the other, as the server reports
- * it, with how many drafted tokens it accepted. Outside the app, with
- * `-ngl 999 -c 16384` and one slot, the 9B's MTP head took a code rewrite
- * from 36 to 61 tokens a second and prose from 36 to 41. In the app, after
- * the projector stayed on the CPU, this function's launch (`--fit on`, one
- * slot, `--no-mmproj-offload`) on 9 Oct 2026 took the rewrite from 36.5 to
- * 48.4 and prose from 36.5 to 29.8, and accepted 315 of 578 drafted tokens.
- * An n-gram lookup changed neither.
+ * it, with how many drafted tokens it accepted, separately for the rewrite
+ * and the story, and the context `--fit` chose for each launch. Outside the
+ * app, with `-ngl 999 -c 16384` and one slot, the 9B's MTP head took a code
+ * rewrite from 36 to 61 tokens a second and prose from 36 to 41. In the app,
+ * after the projector stayed on the CPU, this function's launch (`--fit on`,
+ * one slot, `--no-mmproj-offload`) on 9 Oct 2026 sent `reasoning_budget` 0,
+ * which llama-server ignores, and took the rewrite from 36.5 to 48.4 and
+ * prose from 36.5 to 29.8, accepting 315 of 578 drafted tokens. An n-gram
+ * lookup changed neither. The requests now send `enable_thinking: false`.
+ * On 10 Oct 2026 that launch took the rewrite from 36.4 to 48.0 and prose
+ * from 36.5 to 25.8. The rewrite accepted 189 of 197 drafted tokens and the
+ * story 131 of 367. `--fit` chose 11,776 without MTP and 4,096 with it.
  */
 
 const CODE = `export function parseLine(line: string): Entry | null {
@@ -77,7 +82,22 @@ async function run(binary: BinaryInfo, config: LaunchConfig, onProgress: (step: 
       if (Date.now() > deadline) throw new Error('the model did not load in five minutes')
       await new Promise((r) => setTimeout(r, 300))
     }
-    const result = { code: 0, prose: 0, drafted: 0, accepted: 0 }
+    const propsRes = await fetch(`${server.baseUrl}/props`, { signal: AbortSignal.timeout(10_000) })
+    if (!propsRes.ok) throw new Error(`the server did not report its context (HTTP ${propsRes.status})`)
+    const props = (await propsRes.json()) as { default_generation_settings?: { n_ctx?: number } }
+    const context = props.default_generation_settings?.n_ctx
+    if (typeof context !== 'number' || context <= 0) throw new Error('the server did not say which context it fitted')
+    const result = {
+      code: 0,
+      prose: 0,
+      codeDrafted: 0,
+      codeAccepted: 0,
+      proseDrafted: 0,
+      proseAccepted: 0,
+      drafted: 0,
+      accepted: 0,
+      context
+    }
     for (const kind of ['code', 'prose'] as const) {
       onProgress(kind === 'code' ? 'a code rewrite' : 'a short story')
       const res = await fetch(`${server.baseUrl}/v1/chat/completions`, {
@@ -90,17 +110,27 @@ async function run(binary: BinaryInfo, config: LaunchConfig, onProgress: (step: 
           top_p: 0.95,
           top_k: 40,
           min_p: 0.05,
-          // A thinking model's reasoning is generation like any other, but
-          // its length varies run to run; off keeps the two runs comparable.
-          reasoning_budget: 0
+          // reasoning_budget is ignored. This is the switch summarise() uses:
+          // a thinking model's reasoning varies in length, so the two runs
+          // only compare when it is off.
+          chat_template_kwargs: { enable_thinking: false }
         }),
         signal: AbortSignal.timeout(5 * 60_000)
       })
       if (!res.ok) throw new Error(`the server answered HTTP ${res.status}`)
       const body = (await res.json()) as { timings?: { predicted_per_second?: number; draft_n?: number; draft_n_accepted?: number } }
+      const drafted = body.timings?.draft_n ?? 0
+      const accepted = body.timings?.draft_n_accepted ?? 0
       result[kind] = body.timings?.predicted_per_second ?? 0
-      result.drafted += body.timings?.draft_n ?? 0
-      result.accepted += body.timings?.draft_n_accepted ?? 0
+      if (kind === 'code') {
+        result.codeDrafted = drafted
+        result.codeAccepted = accepted
+      } else {
+        result.proseDrafted = drafted
+        result.proseAccepted = accepted
+      }
+      result.drafted += drafted
+      result.accepted += accepted
     }
     return result
   } finally {

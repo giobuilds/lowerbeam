@@ -48,6 +48,18 @@ and versions follow [Semantic Versioning](https://semver.org/).
   578 drafted tokens were accepted. Idle, `llama serve --list-devices`
   reported 6,470 MiB free of 8,176. While generating, the card held 7,140
   MiB at the peak. (#163)
+- *Measure the gain* turns thinking off. The 9 Oct run sent `reasoning_budget`
+  0, which llama-server ignores, so the model could still think. The requests
+  now send `chat_template_kwargs.enable_thinking: false`, the same switch a
+  summary uses. Re-run on 10 Oct 2026 on the RX 6600 with the same binary and
+  the same launch: one slot, `--fit on`, the projector on the CPU. The rewrite
+  went from 36.4 to 48.0 tok/s and prose from 36.5 to 25.8, so MTP still makes
+  in-app prose slower. The rewrite accepted 189 of 197 drafted tokens; the
+  story accepted 131 of 367. `--fit` chose 11,776 tokens without MTP and 4,096
+  with it. A following load of the MTP launch, with the fit trace on, reduced
+  the context from 262,144 to 4,096 and kept 31 of 34 layers. Idle VRAM was
+  1,840,234,496 bytes. The peak during the timed run was 7,478,726,656 bytes.
+  (#169)
 
 ## [0.13.0] - 2026-10-07
 

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { planVram, recurrentStateBytes, speculationBytes, computeBufferBytes, kvCacheBytes, DRAFT_MAX } from '../../src/main/planner.js'
 import { speculativeArgs } from '../../src/main/supervisor.js'
 import { measureSpeculation } from '../../src/main/specMeasure.js'
@@ -63,11 +66,20 @@ console.log('\nwhat it costs in VRAM')
 console.log('\nthe gain, measured')
 {
   process.env['FAKE_LOAD_MS'] = '100'
+  const bodies = join(mkdtempSync(join(tmpdir(), 'lowerbeam-spec-bodies-')), 'bodies.ndjson')
+  process.env['FAKE_RECORD_BODIES'] = bodies
   const shim = new URL('../fixtures/fake-llama.mjs', import.meta.url).pathname
   const steps: string[] = []
   const r = await measureSpeculation({ ...bin(['--spec-type']), path: shim, argvPrefix: [] }, { ...cfg, speculative: 'mtp' }, (s) => steps.push(s))
+  delete process.env['FAKE_RECORD_BODIES']
   assert.equal(r.without.code, 30); assert.equal(r.with.code, 51); assert.equal(r.with.prose, 51); ok('the same launch with and without it, the speed each reported')
   assert.equal(r.with.drafted, 200); assert.equal(r.with.accepted, 140); assert.equal(r.without.drafted, 0); ok('with the drafted and accepted tokens over both requests')
+  assert.equal(r.with.codeDrafted, 100); assert.equal(r.with.codeAccepted, 70); assert.equal(r.with.proseDrafted, 100); assert.equal(r.with.proseAccepted, 70); ok('acceptance separately for the rewrite and the story')
+  assert.equal(r.without.context, 4096); assert.equal(r.with.context, 4096); ok('the context each launch reported')
+  const sent = readFileSync(bodies, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as { reasoning_budget?: number; chat_template_kwargs?: { enable_thinking?: boolean } })
+  rmSync(bodies, { force: true })
+  assert.equal(sent.length, 4); ok('two requests on each launch')
+  assert.ok(sent.every((body) => body.chat_template_kwargs?.enable_thinking === false && body.reasoning_budget === undefined)); ok('thinking off, and no reasoning_budget for the server to ignore')
   assert.ok(steps.some((s) => s.startsWith('without speculation')) && steps.some((s) => s.startsWith('with mtp'))); ok('reporting progress as it goes')
   await assert.rejects(measureSpeculation(bin([]), cfg), /Choose a kind/); ok('nothing to measure when it is off')
 }

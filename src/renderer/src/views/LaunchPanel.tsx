@@ -747,9 +747,15 @@ function Speculation({ disabled, speculationMiB }: { disabled: boolean; speculat
           </button>
           {result && (
             <p className="text-slate-300">
-              Code rewrite {result.without.code.toFixed(1)} → {result.with.code.toFixed(1)} tok/s ({gain(result.with.code, result.without.code)}), prose{' '}
-              {result.without.prose.toFixed(1)} → {result.with.prose.toFixed(1)} tok/s ({gain(result.with.prose, result.without.prose)})
-              {result.with.drafted > 0 && <span className="text-muted"> · {pct(result.with.accepted, result.with.drafted)} of drafted tokens accepted</span>}
+              Code rewrite {result.without.code.toFixed(1)} → {result.with.code.toFixed(1)} tok/s ({gain(result.with.code, result.without.code)})
+              {result.with.codeDrafted > 0 && (
+                <span className="text-muted">, {pct(result.with.codeAccepted, result.with.codeDrafted)} of its drafts accepted</span>
+              )}
+              , prose {result.without.prose.toFixed(1)} → {result.with.prose.toFixed(1)} tok/s ({gain(result.with.prose, result.without.prose)})
+              {result.with.proseDrafted > 0 && (
+                <span className="text-muted">, {pct(result.with.proseAccepted, result.with.proseDrafted)} of its drafts accepted</span>
+              )}
+              . Fitted context {result.without.context.toLocaleString()} and {result.with.context.toLocaleString()}.
             </p>
           )}
           {measure.error && <p className="text-rose-300">{measure.error}</p>}

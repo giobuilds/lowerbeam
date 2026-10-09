@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Stand-in for llama-server: same CLI shape, same stderr strings (taken from the
 // b6153 binary), same /health semantics (503 "Loading model" until resident).
+import { appendFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 const argv = process.argv.slice(2)
 const get = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : undefined }
@@ -41,6 +42,7 @@ createServer((req, res) => {
     req.on('end', () => {
       let body = {}
       try { body = raw ? JSON.parse(raw) : {} } catch { body = {} }
+      if (process.env.FAKE_RECORD_BODIES) appendFileSync(process.env.FAKE_RECORD_BODIES, `${raw}\n`)
       if (body.stream !== true) {
         res.writeHead(200, {'content-type':'application/json'})
         res.end(JSON.stringify({ choices: [{ message: { content: 'ok' } }], timings }))
