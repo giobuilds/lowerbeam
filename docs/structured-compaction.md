@@ -126,7 +126,7 @@ Each ends at something usable; none requires the next.
 |---|---|
 | **M0** | Corpus of real conversations + answerability harness. Score today's prose compaction as the baseline to beat. |
 | **M1** | Mechanical extraction: paths, flags, commands, code interfaces, error strings. No model. Already a better record than prose for the things it covers. |
-| **M2** | Schema + GBNF-constrained extraction using the model already loaded. Replaces the prose summary. |
+| **M2** | Schema-constrained extraction using the model already loaded. The first score did not beat the prose summary, so the summary stays. |
 | **M3** | Eviction policy: typed budget, reference counting, interface/body rule for code. |
 | **M4** | Verification wired into the UI — show what was kept, flag anything unsupported by the transcript. |
 | **M5** | Optional: a fine-tuned small extractor, judged against M0. Only worth doing if M2 shows the running model's extraction is the bottleneck. |
@@ -209,7 +209,7 @@ M0 number.
 paraphrases away: shell commands, file paths, host names, flags, includes,
 macros, function signatures, the string literals a program prints, and
 compiler errors. It is a scan of the text. It does not call a model, and a
-chat still sends the prose summary. Replacing that summary is M2.
+chat still sends the prose summary.
 
 A function body is not part of the record. The line `if (*line == ' ')` is how
 the pointer bug was worked out, and the scan leaves it. The signature
@@ -221,6 +221,33 @@ summarises, the scan keeps all four. The prose paragraph in the M0 run kept
 one of them, `700000`. The other ten questions are decisions and names — what
 was set aside, which engines were listed, why the pointer stuck, who built the
 program, which date was insisted on. Those spellings are not in this record.
+
+## M2
+
+`extractSpeech` in `src/context/speech.ts` asks the loaded model to fill a
+JSON schema: constraints, decisions with reasons, rejected options with
+reasons, artifacts, and open questions. The request uses the same
+`OutputConstraint` as chat, which turns thinking off. The lists are capped at
+twelve. The reply cap is 1,400 tokens, because the prose cap of 700 cut the
+object off mid-string. A chat still sends the prose summary. #117 stays open
+until a record beats the M0 retained column, which is 7/14.
+
+`node tests/harness/compaction/speech.mjs` fills the form for the same two
+chats and the same 7,424-token slot, and counts spellings in the form. It does
+not ask the questions back. One draw, 9 Oct 2026, Ornith-1.5-9B, llama.cpp
+0.4.0-dev build 10826, `--reasoning-budget 1024`, temperature 0:
+
+| chat | speech | speech plus the M1 scan |
+|---|---|---|
+| london-clock | 3/7 | 4/7 |
+| sdl-story | 1/7 | 3/7 |
+| total | 4/14 | 7/14 |
+
+The form alone is behind the paragraph. Adding the mechanical scan ties the
+paragraph and does not pass it. The SDL decisions describe the pointer bug as
+"the pointer never moved forward" and never write `pointer never moves` or
+`don't need SDL`. One London constraint is the instruction's own definition of
+a constraint, "a limit someone in the transcript stated". The summary stays.
 
 ## What is already known
 
@@ -288,7 +315,7 @@ returns an empty reply. Measured on Ornith-1.5-9B: a yes/no grammar answered
 "no" as reasoning and nothing as content. Constrained requests therefore turn
 thinking off (`chat_template_kwargs.enable_thinking = false`); with it off the
 same model answered "yes", and filled `{"name", "born"}` with
-`"Ada Lovelace", 1815`. M2 itself waits for M0 (#117).
+`"Ada Lovelace", 1815`. The M2 form uses that switch. Its first score is above.
 
 ## Open questions
 

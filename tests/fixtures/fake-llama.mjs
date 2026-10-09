@@ -48,6 +48,19 @@ createServer((req, res) => {
       }
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
       const thinkingOff = body.chat_template_kwargs && body.chat_template_kwargs.enable_thinking === false
+      if (body.response_format) {
+        const text = JSON.stringify({
+          constraints: ['Fedora'],
+          decisions: [{ chose: 'plain C', because: "don't need SDL" }],
+          rejected: [],
+          artifacts: ['gcc -o story engine.c'],
+          openQuestions: []
+        })
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`)
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], timings })}\n\n`)
+        res.end('data: [DONE]\n\n')
+        return
+      }
       if (thinkingOff) {
         const text = 'The earlier turns settled the open questions.'
         res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`)
