@@ -31,9 +31,12 @@ Measured or observed in this repo, so it is not rediscovered.
   select per grant.
 - **A chat gets `--ctx-size ÷ --parallel`, and a coding run will feel it
   harder.** Ornith-1.5-9B on the 8 GB card: 7,424 tokens per chat at four
-  slots, 38,912 at one. With `--mmproj` loaded, `--fit` falls back to 4,096
-  regardless. An agent loop attaches tool results every step; the working set
-  in the architecture's §7 is not optional at these sizes.
+  slots, 38,912 at one. A projector on the GPU made `--fit` use 4,096. On the
+  CPU the fit matches a launch with no projector; the 34,304 against 36,352
+  pair was llama.cpp's own search, 2,048 tokens apart (#164, written up in
+  [structured compaction](structured-compaction.md)). An agent loop attaches
+  tool results every step; the working set in the architecture's §7 is not
+  optional at these sizes.
 - **Reasoning is spent from the same budget.** In a 2,048-token window the
   9B generated ~2,000 tokens of thinking per reply with 30-token prompts. A
   thinking model in an agent loop needs either a large window or a reasoning
