@@ -166,11 +166,11 @@ Q4_K_M, llama.cpp 0.4.0-dev (build 10826), 9 Oct 2026:
 
 | chat | projected | summary | retained |
 |---|---|---|---|
-| london-clock | 3/7 | 4/7 | 6/7 |
+| riverton-clock | 3/7 | 4/7 | 6/7 |
 | sdl-story | 0/7 | 0/7 | 1/7 |
 | total | 3/14 | 4/14 | 7/14 |
 
-The London paragraph kept six of the seven spellings (it lost `Time.now`) and
+The Riverton paragraph kept six of the seven spellings (it lost `Time.now`) and
 the replies quoted four. The SDL paragraph kept `700000` and retold the rest
 in its own words: the pointer bug became "the pointer never advanced" and
 "`line++` never executed", which misses `pointer never moves`, and the
@@ -180,7 +180,7 @@ Godot and Unity are absent from that paragraph. The compile command is also
 sitting in one of the four kept turns, and the reply to it was `unknown`.
 The same happened to spellings the projection did contain: `700000` is in the
 verbatim user lines and in the SDL paragraph, and `Claude` and `8th September
-2026` are in the London user lines, and those replies were `unknown` too.
+2026` are in the Riverton user lines, and those replies were `unknown` too.
 That is the number later milestones have to beat.
 
 The harness that produced the table started the server with `--reasoning off`.
@@ -193,11 +193,11 @@ inside the 2,048-token reply cap.
 
 | chat | projected | summary | retained |
 |---|---|---|---|
-| london-clock | 6/7 | 5/7 | 5/7 |
+| riverton-clock | 6/7 | 5/7 | 5/7 |
 | sdl-story | 2/7 | 1/7 | 1/7 |
 | total | 8/14 | 6/14 | 6/14 |
 
-London's replies quoted six spellings and missed `Time.now`. The paragraph
+Riverton's replies quoted six spellings and missed `Time.now`. The paragraph
 kept five: it also dropped `Claude`. SDL's projection quoted the compile
 command and `700000`. The paragraph kept `700000`. The other SDL spellings
 were paraphrased or absent, as in the baseline. The first table remains the
