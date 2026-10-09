@@ -12,9 +12,14 @@
 # On a pull request that touches packaging, the same job builds without
 # publishing and keeps the packages as workflow artifacts, so the release
 # path is exercised before a tag ever depends on it.
+#
+# workflow_dispatch runs only the signing rehearsal: a throwaway key, dummy
+# release files, sign, verify, and no GitHub release. The tag job never sets
+# GPG_FINGERPRINT, so it still signs with the key in the repository.
 name: Release
 
 on:
+  workflow_dispatch:
   push:
     tags: ['v*']
   pull_request:
@@ -31,6 +36,7 @@ on:
 
 jobs:
   release:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -154,3 +160,44 @@ jobs:
             dist/latest-linux.yml
             dist/SHA256SUMS
           retention-days: 7
+
+  # The tag steps above are the first time the real key would sign anything.
+  # This job runs that same sign-and-verify command with a key created here
+  # and deleted here. It does not read GPG_PRIVATE_KEY or create a release.
+  signing-rehearsal:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install gnupg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gnupg
+
+      - name: Sign and verify with a throwaway key
+        run: |
+          umask 077
+          gnupg=$(mktemp -d)
+          chmod 700 "$gnupg"
+          passphrase=$(openssl rand -base64 24 | tr -d '\n')
+          printf '%s' "$passphrase" | gpg --homedir "$gnupg" --batch --pinentry-mode loopback --passphrase-fd 0 \
+            --quick-gen-key "Lowerbeam signing test <signing-test@example.invalid>" ed25519 sign 1d
+          fingerprint=$(gpg --homedir "$gnupg" --batch --with-colons --list-keys | awk -F: '/^fpr:/ {print $10; exit}')
+          public=$(gpg --homedir "$gnupg" --armor --export "$fingerprint")
+          mkdir -p dist
+          printf 'appimage\n' > dist/Lowerbeam.AppImage
+          printf 'rpm\n' > dist/lowerbeam-test.x86_64.rpm
+          printf 'version: 0.0.0\n' > dist/latest-linux.yml
+          GNUPGHOME="$gnupg" \
+            GPG_PASSPHRASE="$passphrase" \
+            GPG_FINGERPRINT="$fingerprint" \
+            GPG_PUBLIC_KEY="$public" \
+            node scripts/checksums.mjs dist --sign
+          test -f dist/SHA256SUMS.asc
+          rm -rf "$gnupg" dist

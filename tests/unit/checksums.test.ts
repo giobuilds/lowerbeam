@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 // @ts-expect-error a plain .mjs script, without type declarations
-import { RELEASE_FINGERPRINT, releaseFiles, checksumText, writeChecksums, signChecksums, verifyChecksums } from '../../scripts/checksums.mjs'
+import { RELEASE_FINGERPRINT, releaseFiles, checksumText, writeChecksums, signChecksums, verifyChecksums, signingIdentity } from '../../scripts/checksums.mjs'
 
 let n = 0; const ok = (m: string) => { n++; console.log('  ok', m) }
 
@@ -59,6 +59,34 @@ console.log('\na signature has to be from the release key')
   assert.ok(published.split('\n').some((line) => line.startsWith('fpr:') && line.split(':')[9] === RELEASE_FINGERPRINT)); ok('the key in the repository is the one a release is signed with')
   rmSync(release.homedir, { recursive: true, force: true })
   rmSync(other.homedir, { recursive: true, force: true })
+  rmSync(dir, { recursive: true, force: true })
+}
+
+console.log('\na rehearsal can sign with a key that is not the release key')
+{
+  const passphrase = 'rehearsal-passphrase'
+  const homedir = mkdtempSync(join(tmpdir(), 'lowerbeam-rehearsal-'))
+  chmodSync(homedir, 0o700)
+  const pass = join(homedir, 'pass')
+  writeFileSync(pass, passphrase, { mode: 0o600 })
+  execFileSync('gpg', ['--homedir', homedir, '--batch', '--pinentry-mode', 'loopback', '--passphrase-file', pass, '--quick-gen-key', 'Lowerbeam signing test <signing-test@example.invalid>', 'ed25519', 'sign', '1d'], { stdio: 'pipe' })
+  const listed = execFileSync('gpg', ['--homedir', homedir, '--batch', '--with-colons', '--list-keys'], { encoding: 'utf8' })
+  const fingerprint = listed.split('\n').find((line) => line.startsWith('fpr:'))!.split(':')[9]
+  const publicKey = execFileSync('gpg', ['--homedir', homedir, '--armor', '--export', fingerprint], { encoding: 'utf8' })
+  assert.notEqual(fingerprint, RELEASE_FINGERPRINT)
+  assert.throws(() => signingIdentity({ GPG_FINGERPRINT: fingerprint }), /must be set together/); ok('one override without the other is refused')
+  assert.equal(signingIdentity({}).fingerprint, RELEASE_FINGERPRINT); ok('no override is the key in the repository')
+  const dir = mkdtempSync(join(tmpdir(), 'lowerbeam-rehearsal-dist-'))
+  writeFileSync(join(dir, 'Lowerbeam.AppImage'), 'appimage')
+  writeFileSync(join(dir, 'lowerbeam-test.x86_64.rpm'), 'rpm')
+  writeFileSync(join(dir, 'latest-linux.yml'), 'version: 0.0.0\n')
+  const out = execFileSync(process.execPath, [join(process.cwd(), 'scripts/checksums.mjs'), dir, '--sign'], {
+    encoding: 'utf8',
+    env: { ...process.env, GNUPGHOME: homedir, GPG_PASSPHRASE: passphrase, GPG_FINGERPRINT: fingerprint, GPG_PUBLIC_KEY: publicKey }
+  })
+  assert.match(out, new RegExp(`Signed ${dir}/SHA256SUMS with ${fingerprint}\\.`)); ok('the command signs and verifies the throwaway key')
+  assert.throws(() => verifyChecksums(join(dir, 'SHA256SUMS'), join(dir, 'SHA256SUMS.asc'), readFileSync(join(process.cwd(), 'release-signing-key.asc'), 'utf8'), RELEASE_FINGERPRINT), /does not verify|is from/); ok('that signature is not a signature by the release key')
+  rmSync(homedir, { recursive: true, force: true })
   rmSync(dir, { recursive: true, force: true })
 }
 
