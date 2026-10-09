@@ -88,10 +88,19 @@ Measured or observed in this repo, so it is not rediscovered.
   Sixteen passes were tainted. Workspaces now exclude the harness and this
   plan. Anything that names the answers has to be kept out of what the model
   can read, every time, and checked by looking at what was read.
-- **Containment is available on the development machine.** bubblewrap 0.12,
-  unprivileged user namespaces, Landlock in the LSM list (ABI 9). The probe is
-  `tests/harness/probe-sandbox.mjs`; it has not yet been run on a clean
-  install of the RPM, which is the result that counts.
+- **Containment is available on the development machine, and on a clean
+  install of the RPM.** bubblewrap 0.12, unprivileged user namespaces,
+  Landlock in the LSM list. The probe is `tests/harness/probe-sandbox.mjs`,
+  and it starts the same empty box `probeSandbox` does. Run on 9 October
+  2026 in a fresh Fedora 44 Cloud VM (kernel 6.19.10, SELinux enforcing,
+  an unconfined user) after installing `lowerbeam-0.13.0.x86_64.rpm`: the
+  probe passed, using the packaged app's own binary as its node. The home
+  directory was absent inside the box, loopback was unreachable, `/usr` was
+  read-only, a write to the workspace was visible outside, the lent
+  dependency tree was read-only, and an unprivileged overlay worked. No
+  SELinux denial was logged. bubblewrap was not a dependency of the
+  package itself; `glycin-loaders`, pulled in with the GTK stack, required
+  it, so it was there before anyone installed it by hand.
 
 ## Stage 0 — decide with numbers
 
@@ -233,9 +242,10 @@ Two outcomes are findings, not failures:
   symbol. Stage 1 is worth shipping for it only with edits gated off, and the
   capability record has to say so per model.
 
-Also in Stage 0, not model-dependent: **probe the sandbox.** Confirm the
-isolation mechanism the chosen library needs is present on a clean Fedora
-install of the RPM. If it is not, Coding launches read-only and says why.
+Also in Stage 0, not model-dependent: **probe the sandbox.** Done on a
+clean Fedora 44 install of the RPM, above. The box starts, and the
+boundaries the executor claims hold there. Where they do not, Coding
+launches read-only and says why.
 
 ## Stage 1 — read-only project intelligence
 
@@ -428,7 +438,8 @@ inside, and a command's background children are gone once it ends. A third
 mode, *edit and run*, gives the loop `run_command` — full output kept as an
 artifact beside the journal, the tail shown to the model — and is offered in
 the interface only where the probe passes; the main process refuses it
-otherwise. The probe has still not been run on a clean RPM install.
+otherwise. The probe has been run on a clean Fedora 44 RPM install; see
+Stage 0.
 
 **Test evidence.** Shipped as `src/shared/evidence.ts` and an Evidence
 panel above the Changes panel of a run-mode run. The verification is
