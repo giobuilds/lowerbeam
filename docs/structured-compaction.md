@@ -228,8 +228,10 @@ Measured while building the current implementation, and worth not rediscovering:
 
 - A chat gets `--ctx-size ÷ --parallel`, not the whole context. Ornith-1.5-9B on
   an 8 GB card: 7,424 tokens per chat at `--parallel 4`, 38,912 at `--parallel 1`.
-- With `--mmproj` loaded, `--fit` stops sizing the context and falls back to the
-  default 4,096 regardless of slot count.
+- A projector on the GPU is what cut the context to 4,096. On the CPU, or with
+  no projector, `--fit` still sizes the context, and the two launches match.
+  The 34,304 / 36,352 pair is explained under "Context with the projector on
+  the CPU" below.
 - Prior reasoning is never resent, so prompts stay small. In a 2,048-token
   window the measured prompts were 28–144 tokens while replies generated
   ~2,000 — **the window was consumed by one reply's thinking, not by history.**
@@ -239,6 +241,42 @@ Measured while building the current implementation, and worth not rediscovering:
   characters-over-four estimate.
 - Summarising 1,795 tokens with a 9B costs ~22s. Run in the background after a
   reply, that is free; run in front of the next question, it is a stall.
+
+### Context with the projector on the CPU
+
+The 34,304-token context with no projector, and the 36,352 with the projector
+on the CPU, are llama.cpp `--fit` results from the #148 measurement, both with
+34 of 34 layers on the RX 6600. The planner does not choose them. `planVram`
+charges a projector only when that projector is on the GPU. `fitParams` runs
+`llama fit-params --model` and passes no projector, so it cannot be the source
+of a projector launch having the larger context.
+
+`--no-mmproj-offload` adds the projector's estimate to the CPU fit target. For
+this file the server logs `adding 1127.09 MiB to fit_params_target for device
+CPU`. The GPU target stays put.
+
+Re-run on 9 Oct 2026 with llama.cpp 0.4.0-dev build 10826 (`73a43d1f6`), back
+to back, idle VRAM 1,705 MiB, `--fit on --flash-attn on`, f16 KV cache, the
+same model file:
+
+| launch | parallel | context | what fit kept |
+|---|---|---|---|
+| no projector | 4 | 16,384 total, 4,096 a slot | 31 layers |
+| projector on the CPU | 4 | 16,384 total, 4,096 a slot | 31 layers |
+| no projector | 1 | 13,568 | the whole model |
+| projector on the CPU | 1 | 13,568 | the whole model |
+
+At each slot count the two launches fitted the same context. The published
+pair is 2,048 tokens apart, which is 64 MiB of this model's f16 KV. That is
+the width of a small change in free memory between two separate `--fit` runs.
+A launch with no projector does not come out behind.
+
+The older note that a loaded `--mmproj` makes `--fit` stop searching and use
+4,096 is the projector-on-GPU row from that same measurement: 4,096 tokens and
+33 of 34 layers. With the projector on the CPU, `--fit` still searches. At
+four slots the search reduced the context from 1,048,576 to 16,384 and then
+kept 31 layers; 4,096 a slot is that result, and it happens to equal the
+default.
 
 ### Constrained decoding, as shipped for chat
 
