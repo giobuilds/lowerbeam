@@ -33,6 +33,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
   With thinking on, that cap used to finish the turn before any summary was
   written, and the chat was left unchanged. (#153)
 
+### Changed
+
+- The speculative-decoding speeds in 0.13.0 now say which launch they came
+  from. The +70% and +13% were outside the app, with `-ngl 999`. In the app,
+  prose went from 18.8 to 18.7 tok/s. (#162)
+
 ## [0.13.0] - 2026-10-07
 
 ### Added
@@ -58,9 +64,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
   multi-token-prediction head when the file has one, an n-gram lookup (no
   VRAM), or a smaller draft model with the same tokenizer. The VRAM plan
   counts what it adds, and *Measure the gain* launches the model with and
-  without it and times a code rewrite and a short story on each. On Ornith
-  9B the MTP head was 70% faster on the code rewrite and 13% on prose, for
-  about 570 MiB with one slot (#111).
+  without it and times a code rewrite and a short story on each. Outside
+  the app, with `-ngl 999 -c 16384` and one slot, the 9B's MTP head went
+  from 36.0 to 61 tok/s on the rewrite (70% faster, 73% of drafts accepted)
+  and from 36.3 to 41 on prose (13% faster). In the app the same button
+  uses `--fit on` and one slot: before the projector stayed on the CPU,
+  the rewrite went from 18.6 to 31.5 tok/s and prose from 18.8 to 18.7,
+  with 56% of drafted tokens accepted. The plan counted about 570 MiB at
+  one slot (#111).
 
 ### Fixed
 
