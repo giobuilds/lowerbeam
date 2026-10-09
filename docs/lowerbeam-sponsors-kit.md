@@ -269,7 +269,7 @@ Show HN fit: Lowerbeam qualifies (something people can run; you made it; "early 
 | Week | Do | Don't |
 |---|---|---|
 | **1 (this week)** | Enable 2FA, apply to Sponsors, submit Stripe and W-8BEN (approval "may take a few days"). Rewrite and publish the long-form post on your own site or blog. Start commenting helpfully on r/LocalLLaMA (VRAM and 8 GB questions). | Don't add FUNDING.yml until the profile is live. |
-| **2** | Once approved: merge FUNDING.yml and the README section via a normal PR. Post the r/LocalLLaMA text post (weekday morning US Eastern is typical; that is early afternoon in London). Stay in the thread. | Don't cross-post the same text to several subreddits on the same day. |
+| **2** | Once approved: merge FUNDING.yml and the README section via a normal PR. Post the r/LocalLLaMA text post (weekday morning US Eastern is typical). Stay in the thread. | Don't cross-post the same text to several subreddits on the same day. |
 | **3** | Show HN on a weekday, linking the repo; first comment written by you. Publish follow-up post 1. | Don't ask anyone to upvote. Don't post on HN and Reddit the same day. |
 | **4** | Publish follow-up post 2. Write a short "what I learned from posting" note in the Lab notes repo if anyone has sponsored. Review: stars, issues from new users, sponsors. | Don't change tier prices yet (published prices cannot be edited, only retired). |
 

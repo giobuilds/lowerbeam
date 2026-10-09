@@ -1,6 +1,6 @@
 {
-  "id": "london-clock",
-  "corpus": "london-clock.json",
+  "id": "riverton-clock",
+  "corpus": "riverton-clock.json",
   "contextPerSlot": 7424,
   "questions": [
     {
