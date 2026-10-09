@@ -10,6 +10,10 @@
  * of the machine could see it). The signature is checked against
  * `release-signing-key.asc` before the command returns, so a release cannot
  * be published with a signature the published key does not verify.
+ *
+ * A rehearsal can set `GPG_FINGERPRINT` and `GPG_PUBLIC_KEY` together to sign
+ * and verify with a throwaway key. Leaving both unset is the release path:
+ * the fingerprint below and the key committed in the repository.
  */
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
@@ -98,6 +102,22 @@ export function verifyChecksums(sumsPath, signaturePath, publicKey, fingerprint 
   }
 }
 
+/**
+ * Who a `--sign` run signs as, and which public key the check uses.
+ *
+ * Both overrides or neither. A release workflow sets neither, so it can only
+ * succeed with the key in the repository. A rehearsal sets both to a key
+ * created for that run and thrown away with it.
+ */
+export function signingIdentity(env = process.env) {
+  const fingerprint = env['GPG_FINGERPRINT']?.trim().toUpperCase() || ''
+  const publicKey = env['GPG_PUBLIC_KEY'] || ''
+  if (!fingerprint && !publicKey) return { fingerprint: RELEASE_FINGERPRINT, publicKey: null }
+  if (!fingerprint || !publicKey) throw new Error('GPG_FINGERPRINT and GPG_PUBLIC_KEY must be set together.')
+  if (!/^[0-9A-F]{40}$/.test(fingerprint)) throw new Error('GPG_FINGERPRINT must be 40 hex characters.')
+  return { fingerprint, publicKey }
+}
+
 function main() {
   const dir = process.argv[2]
   if (!dir) {
@@ -111,9 +131,12 @@ function main() {
   const homedir = process.env['GNUPGHOME']
   if (!passphrase) throw new Error('GPG_PASSPHRASE is not set.')
   if (!homedir) throw new Error('GNUPGHOME is not set.')
-  signChecksums(sums, { homedir, passphrase })
-  verifyChecksums(sums, `${sums}.asc`, readFileSync(PUBLIC_KEY_PATH))
-  console.log(`Signed ${sums} with ${RELEASE_FINGERPRINT}.`)
+  const identity = signingIdentity()
+  const fingerprint = identity.fingerprint
+  const publicKey = identity.publicKey ?? readFileSync(PUBLIC_KEY_PATH, 'utf8')
+  signChecksums(sums, { homedir, passphrase, fingerprint })
+  verifyChecksums(sums, `${sums}.asc`, publicKey, fingerprint)
+  console.log(`Signed ${sums} with ${fingerprint}.`)
 }
 
 if (/scripts[/\\]checksums\.mjs$/.test(process.argv[1] ?? '')) {
