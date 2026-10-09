@@ -1,0 +1,72 @@
+{
+  "id": "london-clock",
+  "corpus": "london-clock.json",
+  "contextPerSlot": 7424,
+  "questions": [
+    {
+      "id": "author",
+      "ask": "Who did the person say actually built the program?",
+      "facts": [
+        { "id": "claude", "anyOf": ["Claude"], "in": "user" }
+      ]
+    },
+    {
+      "id": "name",
+      "ask": "What name for the program did the person dislike?",
+      "facts": [
+        { "id": "llama-gui", "anyOf": ["llama-gui"], "in": "user" }
+      ]
+    },
+    {
+      "id": "date",
+      "ask": "Which calendar date did the person insist on?",
+      "facts": [
+        {
+          "id": "corrected-date",
+          "anyOf": ["8th September 2026", "September 8, 2026"],
+          "in": "either"
+        }
+      ]
+    },
+    {
+      "id": "wrong-date",
+      "ask": "Which date did the assistant give before being corrected?",
+      "facts": [
+        { "id": "stale-date", "anyOf": ["October 26, 2023"], "in": "assistant" }
+      ]
+    },
+    {
+      "id": "credited",
+      "ask": "Whom did the assistant credit with the program before the correction?",
+      "facts": [
+        { "id": "gerganov", "anyOf": ["Georgi Gerganov"], "in": "assistant" }
+      ]
+    },
+    {
+      "id": "homegpt",
+      "ask": "What product name was looked up as possibly already used?",
+      "facts": [
+        { "id": "homegpt", "anyOf": ["HomeGPT"], "in": "user" }
+      ]
+    },
+    {
+      "id": "clock-site",
+      "ask": "Which live clock site did the assistant name?",
+      "facts": [
+        { "id": "time-now", "anyOf": ["Time.now"], "in": "assistant" }
+      ]
+    }
+  ],
+  "heldBack": [
+    {
+      "id": "city",
+      "why": "The user saying they are in London is inside the four turns kept verbatim at this window.",
+      "anyOf": ["I am in London"]
+    },
+    {
+      "id": "clock",
+      "why": "The clock time the user stated is inside those same four turns. The summary is of everything older, which does not contain it.",
+      "anyOf": ["18:32"]
+    }
+  ]
+}

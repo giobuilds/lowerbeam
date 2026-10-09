@@ -1,0 +1,94 @@
+{
+  "id": "sdl-story",
+  "corpus": "sdl-story.json",
+  "contextPerSlot": 7424,
+  "questions": [
+    {
+      "id": "opening",
+      "ask": "What sentence opens the story the program prints?",
+      "facts": [
+        {
+          "id": "opening-line",
+          "anyOf": ["You wake in a small, dark room."],
+          "in": "assistant"
+        }
+      ]
+    },
+    {
+      "id": "stdio",
+      "ask": "What did the notes set aside a graphics library in favour of?",
+      "facts": [
+        {
+          "id": "set-aside",
+          "anyOf": ["don't need SDL"],
+          "in": "assistant"
+        }
+      ]
+    },
+    {
+      "id": "compile",
+      "ask": "Which shell command builds the story program and then runs it?",
+      "facts": [
+        {
+          "id": "compile-command",
+          "anyOf": ["gcc -o story engine.c"],
+          "in": "assistant"
+        }
+      ]
+    },
+    {
+      "id": "engines",
+      "ask": "Which three engines were named before the plain C program?",
+      "facts": [
+        { "id": "roblox", "anyOf": ["Roblox"], "in": "assistant" },
+        { "id": "godot", "anyOf": ["Godot"], "in": "assistant" },
+        { "id": "unity", "anyOf": ["Unity"], "in": "assistant" }
+      ]
+    },
+    {
+      "id": "pointer",
+      "ask": "What was wrong with the pointer in the word-by-word loop?",
+      "facts": [
+        {
+          "id": "pointer-stuck",
+          "anyOf": ["pointer never moves"],
+          "in": "assistant"
+        }
+      ]
+    },
+    {
+      "id": "buffering",
+      "ask": "What earlier explanation of the repeating word was later withdrawn?",
+      "facts": [
+        {
+          "id": "withdrawn",
+          "anyOf": ["diagnosis was wrong"],
+          "in": "assistant"
+        },
+        {
+          "id": "buffering",
+          "anyOf": ["isn't buffering"],
+          "in": "assistant"
+        }
+      ]
+    },
+    {
+      "id": "pause",
+      "ask": "What pause, in microseconds, did the person settle on?",
+      "facts": [
+        {
+          "id": "pause-us",
+          "anyOf": ["700000"],
+          "in": "user"
+        }
+      ]
+    }
+  ],
+  "heldBack": [
+    {
+      "id": "good-story",
+      "why": "The question about what makes a story good is one of the four turns kept verbatim at this window, so a summary is not asked to carry it.",
+      "anyOf": ["what makes a story a good story?"]
+    }
+  ]
+}
