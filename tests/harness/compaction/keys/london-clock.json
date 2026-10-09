@@ -60,13 +60,13 @@
   "heldBack": [
     {
       "id": "city",
-      "why": "The user saying they are in London is inside the four turns kept verbatim at this window.",
-      "anyOf": ["I am in London"]
+      "why": "The user saying which city they are in is inside the four turns kept verbatim at this window.",
+      "anyOf": ["I am in Riverton"]
     },
     {
       "id": "clock",
       "why": "The clock time the user stated is inside those same four turns. The summary is of everything older, which does not contain it.",
-      "anyOf": ["18:32"]
+      "anyOf": ["09:15"]
     }
   ]
 }

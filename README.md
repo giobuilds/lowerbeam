@@ -224,9 +224,7 @@ in place, so a shortcut to it keeps working.
 The signing key is not in the repository. Its public half is
 [release-signing-key.asc](release-signing-key.asc). The private half and its
 passphrase are the Actions secrets `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE`;
-without them the workflow stops before creating the release. A copy of the
-key is kept at `~/.config/lowerbeam/release-signing` on the machine that
-created it.
+without them the workflow stops before creating the release.
 
 ## Checking a download
 

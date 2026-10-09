@@ -146,9 +146,9 @@ The corpus is `tests/harness/compaction/corpus/`. Reasoning, attached images
 and fetched pages are left out. The questions live in `keys/`, and a unit test
 checks that none of them is a substring of the corpus and that every spelling
 sits in the turns a summary replaces. Two facts sit in the four turns the app
-keeps verbatim at this window — the user saying they are in London, and the
-clock time they stated — so a summary is not asked to carry them, and they
-are not scored.
+keeps verbatim at this window — which city they are in, and the clock time
+they stated — so a summary is not asked to carry them, and they are not
+scored.
 
 A fact hits when the reply contains one of its spellings, ignoring case. A
 paraphrase that drops the transcript's wording is a miss. Each question is
