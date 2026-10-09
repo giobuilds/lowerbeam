@@ -239,13 +239,17 @@ CB72 2EF2 60C3 0897 756B  9229 CAC0 53DD 7A01 8445
 The app's updater does not check that signature. It checks the AppImage
 against the sha512 inside `latest-linux.yml`, and that file comes from the
 same GitHub release. To check a download yourself, from a directory holding
-the release files and a copy of the public key:
+the files you downloaded and a copy of the public key:
 
 ```bash
 gpg --import release-signing-key.asc
 gpg --verify SHA256SUMS.asc SHA256SUMS
-sha256sum -c SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
 ```
+
+`--ignore-missing` checks only the files in that directory. A line in
+`SHA256SUMS` for a file you did not download is skipped, so checking the
+AppImage on its own does not fail for want of the RPM or `latest-linux.yml`.
 
 `gpg --verify` prints the fingerprint above when the signature is good. It
 also warns that the key is not certified, which means you have not signed it
