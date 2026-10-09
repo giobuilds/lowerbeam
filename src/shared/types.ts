@@ -87,14 +87,32 @@ export interface LaunchConfig {
 
 export type SpeculativeMode = 'off' | 'mtp' | 'ngram' | 'draft'
 
+/** One of the two launches *Measure the gain* times. */
+export interface SpeculationRun {
+  /** Tokens a second on the code rewrite. */
+  code: number
+  /** Tokens a second on the short story. */
+  prose: number
+  /** Drafted and accepted tokens on the rewrite. */
+  codeDrafted: number
+  codeAccepted: number
+  /** Drafted and accepted tokens on the story. */
+  proseDrafted: number
+  proseAccepted: number
+  /** Both requests, so one acceptance rate is still available. */
+  drafted: number
+  accepted: number
+  /** Context `--fit` chose for this launch, from `/props` `n_ctx`. */
+  context: number
+}
+
 /** Generation speed with and without speculative decoding, on the same launch and requests. */
 export interface SpeculationMeasure {
   mode: SpeculativeMode
   modelPath: string
   draftModelPath: string | null
-  /** Tokens a second on a code rewrite and on prose; drafted and accepted tokens over both. */
-  without: { code: number; prose: number; drafted: number; accepted: number }
-  with: { code: number; prose: number; drafted: number; accepted: number }
+  without: SpeculationRun
+  with: SpeculationRun
   measuredAt: number
 }
 
