@@ -50,7 +50,9 @@ to be.
   leaking to other accounts on the machine, or the API listening on the
   network when that was not turned on.
 - **Update integrity**: getting the app to install something that is not a
-  Lowerbeam release.
+  Lowerbeam release. A download can be checked against the signed checksums
+  in the README. The in-app updater checks the sha512 in the release's
+  `latest-linux.yml`, which is published alongside the files it names.
 - **The app's data**: settings, conversations, journals or workspace copies
   readable by other accounts on the machine.
 

@@ -20,6 +20,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- A release includes `SHA256SUMS` for the AppImage, the RPM and
+  `latest-linux.yml`, and `SHA256SUMS.asc`, a detached signature over them.
+  The README says how to check a download against the key in the repository.
+  The in-app updater still follows the GitHub release. (#135)
+
 ## [0.13.0] - 2026-10-07
 
 ### Added
