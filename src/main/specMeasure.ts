@@ -13,9 +13,13 @@ import { ServerSupervisor } from './supervisor.js'
  * a code rewrite, where most of the output repeats the input and a draft is
  * usually right, and a short story, where it is right less often. The gain
  * is the generation speed of one against the other, as the server reports
- * it, with how many drafted tokens it accepted. On Ornith 9B on an RX 6600
- * the MTP head took a code rewrite from 36 to 61 tokens a second and prose
- * from 36 to 41; an n-gram lookup changed neither.
+ * it, with how many drafted tokens it accepted. Outside the app, with
+ * `-ngl 999 -c 16384` and one slot, the 9B's MTP head took a code rewrite
+ * from 36 to 61 tokens a second and prose from 36 to 41. In the app, after
+ * the projector stayed on the CPU, this function's launch (`--fit on`, one
+ * slot, `--no-mmproj-offload`) on 9 Oct 2026 took the rewrite from 36.5 to
+ * 48.4 and prose from 36.5 to 29.8, and accepted 315 of 578 drafted tokens.
+ * An n-gram lookup changed neither.
  */
 
 const CODE = `export function parseLine(line: string): Entry | null {

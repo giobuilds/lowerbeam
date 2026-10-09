@@ -33,6 +33,19 @@ and versions follow [Semantic Versioning](https://semver.org/).
   With thinking on, that cap used to finish the turn before any summary was
   written, and the chat was left unchanged. (#153)
 
+### Changed
+
+- *Measure the gain*, re-run on the 9B after the projector stayed on the CPU.
+  RX 6600, `~/.local/bin/llama` 0.4.0-dev build 10826. What *Measure the
+  gain* launches, forcing one slot: `--fit on --flash-attn on`, f16 KV,
+  `--mmproj` with `--no-mmproj-offload`, then the same launch with
+  `--spec-type draft-mtp`. The two requests are the code rewrite and the
+  short story, 256 tokens, temperature 0.2, `reasoning_budget` 0. The
+  rewrite went from 36.5 to 48.4 tok/s and prose from 36.5 to 29.8. 315 of
+  578 drafted tokens were accepted. Idle, `llama serve --list-devices`
+  reported 6,470 MiB free of 8,176. While generating, the card held 7,140
+  MiB at the peak. (#163)
+
 ## [0.13.0] - 2026-10-07
 
 ### Added
