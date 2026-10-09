@@ -33,6 +33,12 @@ export interface KeyFact {
   anyOf: string[]
   /** Which role inside the summarised turns carries a spelling. */
   in: 'user' | 'assistant' | 'either'
+  /**
+   * mechanical: the spelling is a command, path, flag, literal or error, so
+   * extraction keeps it. speech: a decision or a name, which extraction is
+   * not asked to understand.
+   */
+  layer: 'mechanical' | 'speech'
 }
 
 export interface KeyQuestion {

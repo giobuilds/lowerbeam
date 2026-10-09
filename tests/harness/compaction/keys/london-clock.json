@@ -7,14 +7,14 @@
       "id": "author",
       "ask": "Who did the person say actually built the program?",
       "facts": [
-        { "id": "claude", "anyOf": ["Claude"], "in": "user" }
+        { "id": "claude", "anyOf": ["Claude"], "in": "user", "layer": "speech" }
       ]
     },
     {
       "id": "name",
       "ask": "What name for the program did the person dislike?",
       "facts": [
-        { "id": "llama-gui", "anyOf": ["llama-gui"], "in": "user" }
+        { "id": "llama-gui", "anyOf": ["llama-gui"], "in": "user", "layer": "speech" }
       ]
     },
     {
@@ -24,7 +24,8 @@
         {
           "id": "corrected-date",
           "anyOf": ["8th September 2026", "September 8, 2026"],
-          "in": "either"
+          "in": "either",
+          "layer": "speech"
         }
       ]
     },
@@ -32,28 +33,28 @@
       "id": "wrong-date",
       "ask": "Which date did the assistant give before being corrected?",
       "facts": [
-        { "id": "stale-date", "anyOf": ["October 26, 2023"], "in": "assistant" }
+        { "id": "stale-date", "anyOf": ["October 26, 2023"], "in": "assistant", "layer": "speech" }
       ]
     },
     {
       "id": "credited",
       "ask": "Whom did the assistant credit with the program before the correction?",
       "facts": [
-        { "id": "gerganov", "anyOf": ["Georgi Gerganov"], "in": "assistant" }
+        { "id": "gerganov", "anyOf": ["Georgi Gerganov"], "in": "assistant", "layer": "speech" }
       ]
     },
     {
       "id": "homegpt",
       "ask": "What product name was looked up as possibly already used?",
       "facts": [
-        { "id": "homegpt", "anyOf": ["HomeGPT"], "in": "user" }
+        { "id": "homegpt", "anyOf": ["HomeGPT"], "in": "user", "layer": "speech" }
       ]
     },
     {
       "id": "clock-site",
       "ask": "Which live clock site did the assistant name?",
       "facts": [
-        { "id": "time-now", "anyOf": ["Time.now"], "in": "assistant" }
+        { "id": "time-now", "anyOf": ["Time.now"], "in": "assistant", "layer": "mechanical" }
       ]
     }
   ],

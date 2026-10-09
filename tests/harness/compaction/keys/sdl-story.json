@@ -10,7 +10,8 @@
         {
           "id": "opening-line",
           "anyOf": ["You wake in a small, dark room."],
-          "in": "assistant"
+          "in": "assistant",
+          "layer": "mechanical"
         }
       ]
     },
@@ -21,7 +22,8 @@
         {
           "id": "set-aside",
           "anyOf": ["don't need SDL"],
-          "in": "assistant"
+          "in": "assistant",
+          "layer": "speech"
         }
       ]
     },
@@ -32,7 +34,8 @@
         {
           "id": "compile-command",
           "anyOf": ["gcc -o story engine.c"],
-          "in": "assistant"
+          "in": "assistant",
+          "layer": "mechanical"
         }
       ]
     },
@@ -40,9 +43,9 @@
       "id": "engines",
       "ask": "Which three engines were named before the plain C program?",
       "facts": [
-        { "id": "roblox", "anyOf": ["Roblox"], "in": "assistant" },
-        { "id": "godot", "anyOf": ["Godot"], "in": "assistant" },
-        { "id": "unity", "anyOf": ["Unity"], "in": "assistant" }
+        { "id": "roblox", "anyOf": ["Roblox"], "in": "assistant", "layer": "speech" },
+        { "id": "godot", "anyOf": ["Godot"], "in": "assistant", "layer": "speech" },
+        { "id": "unity", "anyOf": ["Unity"], "in": "assistant", "layer": "speech" }
       ]
     },
     {
@@ -52,7 +55,8 @@
         {
           "id": "pointer-stuck",
           "anyOf": ["pointer never moves"],
-          "in": "assistant"
+          "in": "assistant",
+          "layer": "speech"
         }
       ]
     },
@@ -63,12 +67,14 @@
         {
           "id": "withdrawn",
           "anyOf": ["diagnosis was wrong"],
-          "in": "assistant"
+          "in": "assistant",
+          "layer": "speech"
         },
         {
           "id": "buffering",
           "anyOf": ["isn't buffering"],
-          "in": "assistant"
+          "in": "assistant",
+          "layer": "speech"
         }
       ]
     },
@@ -79,7 +85,8 @@
         {
           "id": "pause-us",
           "anyOf": ["700000"],
-          "in": "user"
+          "in": "user",
+          "layer": "mechanical"
         }
       ]
     }
