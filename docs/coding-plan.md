@@ -346,10 +346,10 @@ round, and then leaves the prefix alone. Measured in an 8,192-token window
 on the 9B: unfolded, two of three tasks overflowed and errored; folded, both
 answered, with one fold event each and occupancy held under 5,700.
 
-The loop still runs in the main process rather than a utility process — it
-has no Electron in it and takes only a grant and a callback, so the move is
-a transport change, and it is read-only, so what it can do from main is
-list, search and read inside one directory.
+A coding run's loop runs in a utility process (#184). The loop still has no
+Electron in it. Events, the model's words and commands cross as messages;
+the journal and the sandbox stay in the main process. The process is not
+the sandbox. The harness and Measure this model still call the loop directly.
 
 **Ships:**
 

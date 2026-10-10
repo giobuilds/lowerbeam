@@ -10,7 +10,15 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: { '@shared': shared, '@context': context } },
-    build: { rollupOptions: { input: resolve('src/main/index.ts') } }
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/main/index.ts'),
+          // Forked for one coding run. It has to be a built file beside index.
+          agentProcess: resolve('src/main/coding/agentProcess.ts')
+        }
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()],

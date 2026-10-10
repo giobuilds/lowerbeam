@@ -6,7 +6,7 @@ import { homedir } from 'node:os'
 import { realpath, stat } from 'node:fs/promises'
 import { DEFAULT_TERMS, JOURNAL_VERSION, type CodingRunSummary, type CodingStartRequest, type GrantTerms, type JournalEvent } from '@shared/coding.js'
 import { Grant, secretReason } from '../../agent/grant.js'
-import { runTask } from '../../agent/loop.js'
+import { runLoopInUtilityProcess } from './agentHost.js'
 import type { ServerSupervisor } from '../supervisor.js'
 import { Journal } from './journal.js'
 import { Workspace } from './workspace.js'
@@ -40,10 +40,10 @@ const RUN_TIMEOUT_MS = 6 * 60_000
  * so a reload can rebuild exactly what the interface had, and a crash leaves
  * a record that says "in progress" rather than one that claims a result.
  *
- * Stage 1: the loop runs in this process. It has no Electron in it and takes
- * nothing from here but a grant and a callback, so moving it to a utility
- * process is a transport change, not a redesign — and it is read-only, so
- * what it can do from here is list, search and read inside one directory.
+ * The loop runs in a utility process (#184). It has no Electron in it. Events,
+ * the model's words and commands come back as messages, and the journal and
+ * the sandbox stay here. A fault in the loop stops the run, not the app. The
+ * process is not the sandbox: commands still run in the box this process starts.
  */
 export class CodingSupervisor extends EventEmitter<{
   event: [JournalEvent]
@@ -219,21 +219,32 @@ export class CodingSupervisor extends EventEmitter<{
     // k-th command from the k-th command.finished event.
     let commands = 0
     try {
-      const result = await runTask({
-        baseUrl,
-        apiKey: this.inference()?.status.apiKey ?? null,
-        model: summary.model,
-        requestModel,
-        task,
-        grant,
-        settings: RUN_SETTINGS,
-        maxRounds: MAX_ROUNDS,
-        timeoutMs: RUN_TIMEOUT_MS,
+      const result = await runLoopInUtilityProcess({
+        job: {
+          baseUrl,
+          apiKey: this.inference()?.status.apiKey ?? null,
+          model: summary.model,
+          requestModel,
+          task,
+          grantRoot: grant.root,
+          mode,
+          alsoRead: grant.alsoRead.map((extra) => extra.root),
+          settings: RUN_SETTINGS,
+          maxRounds: MAX_ROUNDS,
+          timeoutMs: RUN_TIMEOUT_MS,
+          runId: id,
+          contextLimit,
+          terms
+        },
         signal: abort.signal,
-        runId: id,
-        contextLimit,
-        mode,
-        terms,
+        onEvent: (event) => {
+          // Journal first. The renderer is a view of the record, not the
+          // other way round.
+          void journal.append(event).then(() => this.emit('event', event))
+        },
+        // The model's own words, beside the journal: what a run rebuilt as
+        // a training example needs and the record only measures.
+        keep: (round, words) => appendFile(join(this.dir, `${id}.words.jsonl`), JSON.stringify({ round, ...words }) + '\n', { mode: PRIVATE_FILE }),
         execute:
           mode === 'run'
             ? async (command, signal) => {
@@ -261,15 +272,7 @@ export class CodingSupervisor extends EventEmitter<{
                   ms: r.ms
                 }
               }
-            : undefined,
-        onEvent: (event) => {
-          // Journal first. The renderer is a view of the record, not the
-          // other way round.
-          void journal.append(event).then(() => this.emit('event', event))
-        },
-        // The model's own words, beside the journal: what a run rebuilt as
-        // a training example needs and the record only measures.
-        keep: (round, words) => appendFile(join(this.dir, `${id}.words.jsonl`), JSON.stringify({ round, ...words }) + '\n', { mode: PRIVATE_FILE })
+            : undefined
       })
       Object.assign(summary, {
         finishedAt: Date.now(),
