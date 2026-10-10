@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import type { AddressInfo } from 'node:net'
 import { createServer } from 'node:net'
 import { missingFacts } from '@context/answerability.js'
-import { extractSpeech, parseSpeech, speechText } from '@context/speech.js'
+import { compactionRecord, extractSpeech, parseSpeech, speechInstruction, speechPrompt, speechText } from '@context/speech.js'
 import type { ChatMessageView, ConversationView } from '@shared/types.js'
 
 let n = 0
@@ -32,7 +32,16 @@ const chat = (messages: ChatMessageView[]): ConversationView => ({
   settings: { temperature: 0.8, topP: 0.95, topK: 40, minP: 0.05, repeatPenalty: 1.1, maxTokens: -1 }
 })
 
-console.log('reading a record')
+console.log('the directions do not contain the spellings the score looks for')
+{
+  const directions = speechInstruction()
+  for (const spelling of ["don't need SDL", 'pointer never moves', 'diagnosis was wrong', "isn't buffering", 'Claude', 'HomeGPT', 'Georgi Gerganov', 'llama-gui', '8th September 2026', 'October 26, 2023', 'Roblox', 'Godot', 'Unity', '700000', 'Time.now', 'You wake in a small, dark room.', 'gcc -o story engine.c']) {
+    assert.equal(directions.includes(spelling), false, spelling)
+  }
+  ok('the directions name no scored spelling')
+}
+
+console.log('\nreading a record')
 {
   const record = parseSpeech(
     '```json\n{"constraints":[" Fedora "],"decisions":[{"chose":"plain C","because":"don\'t need SDL"}],"rejected":[{"option":"","because":""}],"artifacts":["gcc -o story engine.c","gcc -o story engine.c"],"openQuestions":[]}\n```'
@@ -50,6 +59,31 @@ console.log('reading a record')
 
   assert.throws(() => parseSpeech('We decided to use plain C.'), /not JSON/)
   ok('prose is not a record')
+}
+
+console.log('\nwhat a chat stores')
+{
+  const spoken = "don't need SDL"
+  const mechanical = 'gcc -o story engine.c'
+  const stored = compactionRecord(spoken, mechanical)
+  assert.equal(stored, `${spoken}\n${mechanical}`)
+  assert.equal(missingFacts(stored, [{ id: 'sdl', anyOf: ["don't need SDL"] }]).length, 0)
+  assert.equal(missingFacts(stored, [{ id: 'cmd', anyOf: ['gcc -o story engine.c'] }]).length, 0)
+  assert.equal(compactionRecord('', mechanical), mechanical)
+  assert.equal(compactionRecord(spoken, '  '), spoken)
+  assert.equal(compactionRecord(' \n ', ''), '')
+  ok('the stored record is the speech lines plus the mechanical scan, and an empty side is left out')
+
+  const older = [msg('user', 'Skip the graphics library.'), msg('assistant', "We don't need SDL.")]
+  const plain = speechPrompt(older, null)
+  assert.equal(plain.includes('Notes already kept:'), false)
+  assert.equal(plain.includes("User: Skip the graphics library."), true)
+  assert.equal(plain.includes("Assistant: We don't need SDL."), true)
+  const again = speechPrompt(older, 'gcc -o story engine.c')
+  const inside = again.slice(again.indexOf('<<<TRANSCRIPT'), again.indexOf('TRANSCRIPT>>>'))
+  assert.equal(inside.includes('Notes already kept:\ngcc -o story engine.c'), true)
+  assert.equal(again.includes(speechInstruction()), true)
+  ok('a later compaction can copy the notes, and the first one has none')
 }
 
 console.log('\nfilling the form on a server')

@@ -4,8 +4,8 @@
  * A command, a path, a flag, a signature or an error string is reused later
  * character for character. A summary that paraphrases one has already lost it.
  * These are recognisable by their shape, so the record is the transcript's own
- * spelling, in the order it first appeared. Nothing here is sent to a model,
- * and nothing here replaces the prose summary: that is a later milestone.
+ * spelling, in the order it first appeared. Nothing here is sent to a model.
+ * A chat stores this scan beside the speech record.
  */
 
 export interface MechanicalRecord {

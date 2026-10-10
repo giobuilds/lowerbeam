@@ -248,11 +248,11 @@ export const TASKS: Task[] = [
     family: 'cross-file',
     mode: 'edit',
     prompt: 'Rename the exported function summarise in src/context/compact.ts to summariseOlderTurns and update every caller.',
-    expectFiles: ['src/context/compact.ts', 'src/renderer/src/state/chatStore.ts'],
-    // Narrowed to where the function lives and is called: the coding
-    // supervisor has an unrelated summarise() of its own, which the first
-    // run of this task counted as a failure.
-    check: { suite: 'compaction', typecheck: ['web'], absent: { pattern: '\\bsummarise\\(', under: ['src/context', 'src/renderer'] }, present: { pattern: 'summariseOlderTurns', files: ['src/context/compact.ts', 'src/renderer/src/state/chatStore.ts'] } }
+    expectFiles: ['src/context/compact.ts', 'tests/unit/compaction.test.ts', 'tests/harness/compaction/run.ts'],
+    // Chat no longer calls this. The M0 harness and the compaction unit test
+    // do. The coding supervisor has an unrelated summarise() of its own,
+    // which the first run of this task counted as a failure.
+    check: { suite: 'compaction', typecheck: ['web'], absent: { pattern: '\\bsummarise\\(', under: ['src/context', 'src/renderer'] }, present: { pattern: 'summariseOlderTurns', files: ['src/context/compact.ts', 'tests/unit/compaction.test.ts', 'tests/harness/compaction/run.ts'] } }
   },
   {
     id: 'cross-new-ipc-channel',
@@ -308,8 +308,8 @@ export const TASKS: Task[] = [
     mode: 'run',
     window: 6144,
     prompt: 'Rename the exported function summarise in src/context/compact.ts to summariseOlderTurns and update every caller. Run `node tests/run.mjs compaction` afterwards to confirm nothing broke.',
-    expectFiles: ['src/context/compact.ts', 'src/renderer/src/state/chatStore.ts'],
-    check: { suite: 'compaction', typecheck: ['web'], absent: { pattern: '\\bsummarise\\(', under: ['src/context', 'src/renderer'] }, present: { pattern: 'summariseOlderTurns', files: ['src/context/compact.ts', 'src/renderer/src/state/chatStore.ts'] } }
+    expectFiles: ['src/context/compact.ts', 'tests/unit/compaction.test.ts', 'tests/harness/compaction/run.ts'],
+    check: { suite: 'compaction', typecheck: ['web'], absent: { pattern: '\\bsummarise\\(', under: ['src/context', 'src/renderer'] }, present: { pattern: 'summariseOlderTurns', files: ['src/context/compact.ts', 'tests/unit/compaction.test.ts', 'tests/harness/compaction/run.ts'] } }
   },
   {
     id: 'crossover-new-ipc-channel',

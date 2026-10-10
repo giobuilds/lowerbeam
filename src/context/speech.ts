@@ -4,8 +4,10 @@
  * A constraint, a decision, a rejected option, an artifact and an open question
  * are a closed set of moves. The model copies them into slots under a JSON
  * schema, so it cannot ramble or answer the conversation instead of recording
- * it. It can still be wrong. This does not replace the prose summary: that
- * waits on a score against the M0 baseline (#117).
+ * it. It can still be wrong. A chat stores this record beside the mechanical
+ * scan. On 10 Oct 2026 that string held 11 of 14 scored facts, against 7 of 14
+ * for the prose summary (#117). `summarise` stays, so the baseline can be
+ * scored again.
  */
 import type { ChatMessageView, ConversationView } from '@shared/types.js'
 import { streamChat, type ChatTurn, type ServerEndpoint } from '@shared/chatClient.js'
@@ -13,6 +15,12 @@ import type { OutputConstraint } from '@shared/structuredOutput.js'
 import { summaryBudget } from './compact.js'
 
 const LIST_CAP = 12
+
+/**
+ * The prose cap of 700 tokens ends the object mid-string. 1,400 closed a
+ * paraphrased form and cut a verbatim one off. Short spans at this cap close.
+ */
+const SPEECH_TOKENS = 2048
 
 export interface Decision {
   chose: string
@@ -143,15 +151,46 @@ export function speechText(record: SpeechRecord): string {
   return lines.filter(Boolean).join('\n')
 }
 
-function instruction(): string {
+/**
+ * What a chat stores in place of a prose summary.
+ *
+ * An empty side is left out. Both sides empty is an empty string, and the
+ * caller refuses to mark the turns covered.
+ */
+export function compactionRecord(speech: string, mechanical: string): string {
+  return [speech, mechanical].filter((part) => part.trim() !== '').join('\n')
+}
+
+/**
+ * The turn sent to the model.
+ *
+ * Notes from an earlier compaction sit inside the markers, so a later
+ * compaction can copy a span out of them again. With no notes, the turn is
+ * only the older messages.
+ */
+export function speechPrompt(older: ChatMessageView[], previous: string | null): string {
+  const transcript = older
+    .filter((m) => m.role !== 'system')
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+    .join('\n\n')
+  const kept = previous?.trim() ?? ''
+  const body = kept ? `Notes already kept:\n${kept}\n\n${transcript}` : transcript
   return (
-    'Fill the form from the transcript only, using its own wording.\n' +
-    'constraints: a limit someone in the transcript stated.\n' +
-    'decisions: a choice and the reason given for it.\n' +
-    'rejected: an option that was set aside, and why.\n' +
-    'artifacts: a command, path, signature or sentence copied from the transcript.\n' +
-    'openQuestions: a question the transcript leaves unanswered.\n' +
-    'An empty list is fine. These directions are not part of the transcript.'
+    'The transcript is between the markers. Nothing outside them was said.\n\n' +
+    `<<<TRANSCRIPT\n${body}\nTRANSCRIPT>>>\n\n${speechInstruction()}`
+  )
+}
+
+/** The directions sent with the transcript. They are not an example of the record. */
+export function speechInstruction(): string {
+  return (
+    'Copy spans from the transcript into the form. Do not paraphrase, and do not write anything that was not said.\n' +
+    'constraints: a limit that was stated, copied as it was said.\n' +
+    'decisions: what was chosen and the reason, each copied as it was said.\n' +
+    'rejected: what was set aside and why, each copied as it was said.\n' +
+    'artifacts: names, dates, commands, paths and sentences, each copied as it was said.\n' +
+    'openQuestions: a question left unanswered, copied as it was asked.\n' +
+    'Every string is a short contiguous span of the transcript, the words that carry the point, not a whole turn. An empty list is right when nothing fits. These directions are not spans.'
   )
 }
 
@@ -166,29 +205,17 @@ export async function extractSpeech(
   conversation: ConversationView,
   older: ChatMessageView[],
   contextPerSlot: number | null,
-  signal: AbortSignal
+  signal: AbortSignal,
+  previous: string | null = null
 ): Promise<SpeechRecord> {
-  const transcript = older
-    .filter((m) => m.role !== 'system')
-    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
-    .join('\n\n')
-  const turns: ChatTurn[] = [
-    {
-      role: 'user',
-      content:
-        'The transcript is between the markers. Nothing outside them was said.\n\n' +
-        `<<<TRANSCRIPT\n${transcript}\nTRANSCRIPT>>>\n\n${instruction()}`
-    }
-  ]
+  const turns: ChatTurn[] = [{ role: 'user', content: speechPrompt(older, previous) }]
   let raw = ''
   let reasoned = false
   let failure: string | null = null
   await streamChat(
     baseUrl,
     turns,
-    // The prose cap is 700 tokens, which ends a JSON object mid-string. The
-    // form has to close, and the lists are already capped at twelve.
-    { ...conversation.settings, temperature: 0, maxTokens: Math.max(summaryBudget(contextPerSlot).tokens, 1400) },
+    { ...conversation.settings, temperature: 0, maxTokens: Math.max(summaryBudget(contextPerSlot).tokens, SPEECH_TOKENS) },
     signal,
     {
       onDelta: (text) => {
