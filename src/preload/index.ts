@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc.js'
-import type { ApplyOptions, ApplyResult, ChangeSet, CodingRunSummary, CodingStartRequest, GitState, JournalEvent } from '@shared/coding.js'
+import type { ApplyOptions, ApplyResult, ChangeSet, CodingRunList, CodingRunSummary, CodingRunTicket, CodingStartRequest, GitState, JournalEvent } from '@shared/coding.js'
 import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
 import type {
@@ -61,6 +61,21 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   return () => {
     ipcRenderer.removeListener(channel, listener)
   }
+}
+
+/**
+ * Identities for coding runs. They stay in this isolated preload: the page
+ * names a run by id, and the request that leaves here also carries the
+ * identity issued for it. A reload asks for them again with the run list.
+ */
+const runIdentities = new Map<string, string>()
+
+function rememberRuns(identities: Record<string, string>): void {
+  for (const [id, identity] of Object.entries(identities)) runIdentities.set(id, identity)
+}
+
+function runIdentity(runId: string): string {
+  return runIdentities.get(runId) ?? ''
 }
 
 const api = {
@@ -174,23 +189,31 @@ const api = {
   coding: {
     pickProject: () => invoke<string | null>(IPC.codingPickProject),
     pickReadRoot: () => invoke<string | null>(IPC.codingPickReadRoot),
-    start: (req: CodingStartRequest) => invoke<CodingRunSummary>(IPC.codingStart, req),
-    cancel: (runId: string) => invoke<null>(IPC.codingCancel, runId),
-    list: () => invoke<{ runs: CodingRunSummary[]; lastProject: string | null }>(IPC.codingList),
+    start: async (req: CodingStartRequest) => {
+      const { run, identity } = await invoke<CodingRunTicket>(IPC.codingStart, req)
+      rememberRuns({ [run.id]: identity })
+      return run
+    },
+    cancel: (runId: string) => invoke<null>(IPC.codingCancel, runId, runIdentity(runId)),
+    list: async () => {
+      const { runs, lastProject, identities } = await invoke<CodingRunList>(IPC.codingList)
+      rememberRuns(identities)
+      return { runs, lastProject }
+    },
     /** The journal so far, for reconnecting after a reload. */
-    get: (runId: string) => invoke<JournalEvent[]>(IPC.codingGet, runId),
+    get: (runId: string) => invoke<JournalEvent[]>(IPC.codingGet, runId, runIdentity(runId)),
     /** An edit run's changes against its baseline; null for an inspect run. */
-    changes: (runId: string) => invoke<ChangeSet | null>(IPC.codingChanges, runId),
-    apply: (runId: string, options?: ApplyOptions) => invoke<ApplyResult>(IPC.codingApply, runId, options ?? {}),
-    git: (runId: string) => invoke<GitState | null>(IPC.codingGit, runId),
-    undo: (runId: string) => invoke<ApplyResult>(IPC.codingUndo, runId),
-    discard: (runId: string) => invoke<null>(IPC.codingDiscard, runId),
+    changes: (runId: string) => invoke<ChangeSet | null>(IPC.codingChanges, runId, runIdentity(runId)),
+    apply: (runId: string, options?: ApplyOptions) => invoke<ApplyResult>(IPC.codingApply, runId, runIdentity(runId), options ?? {}),
+    git: (runId: string) => invoke<GitState | null>(IPC.codingGit, runId, runIdentity(runId)),
+    undo: (runId: string) => invoke<ApplyResult>(IPC.codingUndo, runId, runIdentity(runId)),
+    discard: (runId: string) => invoke<null>(IPC.codingDiscard, runId, runIdentity(runId)),
     /** Whether commands can be run on this machine, with the reason when not. */
     sandbox: () => invoke<{ ok: boolean; reason: string | null; toolchain: string }>(IPC.codingSandbox),
     capability: (model?: string | null) => invoke<CapabilityStatus>(IPC.codingCapability, model ?? null),
     capabilityOf: (modelPath: string) => invoke<CapabilityStatus>(IPC.codingCapabilityOf, modelPath),
-    evidence: (runId: string) => invoke<Evidence | null>(IPC.codingEvidence, runId),
-    checkBaseline: (runId: string) => invoke<Evidence | null>(IPC.codingCheckBaseline, runId),
+    evidence: (runId: string) => invoke<Evidence | null>(IPC.codingEvidence, runId, runIdentity(runId)),
+    checkBaseline: (runId: string) => invoke<Evidence | null>(IPC.codingCheckBaseline, runId, runIdentity(runId)),
     measure: (model?: string | null) => invoke<MeasureProgress>(IPC.codingMeasure, model ?? null),
     cancelMeasure: () => invoke<null>(IPC.codingMeasureCancel),
     measureState: () => invoke<MeasureProgress | null>(IPC.codingMeasureState),

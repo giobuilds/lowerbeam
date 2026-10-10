@@ -181,7 +181,9 @@ worth carrying forward as constraints:
 - The generic IPC wrapper did not validate the sender; only the reader
   handlers did. Since 0.9.19 every handler, and the context menu's
   listener, serves only the app's own page in its own window as the top
-  frame (`src/main/sender.ts`, #76).
+  frame (`src/main/sender.ts`, #76). A request that names a coding run also
+  carries the identity issued for that run (#182). The identity is not the
+  run id, and it is not written in the journal.
 - MCP servers started with the host's environment; since 0.9.20 they get
   only `PATH`, `HOME`, the locale, `TMPDIR` and `XDG_*`, plus what their
   config names (#77). They still expose every discovered tool. Chat asks

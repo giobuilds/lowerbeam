@@ -23,7 +23,12 @@ Measured or observed in this repo, so it is not rediscovered.
 - **The IPC wrapper did not validate the sender.** `handle()` ignored the
   event; only the reader's `handleFrom()` bound to a window. Since 0.9.19
   both serve only the app's own page, in its own window, as the top frame
-  (`src/main/sender.ts`, #76). A run identity per request is still to come.
+  (`src/main/sender.ts`, #76). A request that names a coding run must also
+  carry the identity issued for that run (`src/main/coding/identity.ts`,
+  #182). The identity is held in memory and by the preload. It is not the
+  run id, it is not written in the journal, and it is not part of the run
+  summary the page sees. A missing or wrong one is refused. Listing runs,
+  starting one, and the channels that are not about one run do not take one.
 - **MCP servers expose every tool.** Since 0.9.20 they no longer inherit the
   host environment: only `PATH`, `HOME`, the locale, `TMPDIR` and `XDG_*`,
   plus what their config names (`src/shared/mcpEnv.ts`, #77). Chat is offered

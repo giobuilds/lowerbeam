@@ -23,6 +23,7 @@ import { RUN_FILE } from '../appData.js'
 import type { ApplyOptions, ApplyResult, ChangeSet, GitState } from '@shared/coding.js'
 import { checkNewBranch, checkRevertable, commitInfo, commitPaths, gitState, revertMessage, switchToNewBranch, uncommitted } from './git.js'
 import { PRIVATE_DIR, PRIVATE_FILE } from '../private.js'
+import { RunIdentities } from './identity.js'
 
 /** What every coding run is given, and so what a measurement measures. */
 const RUN_SETTINGS = { temperature: 0.2, topP: 0.95, topK: 40, minP: 0.05, repeatPenalty: 1.1, maxTokens: -1 }
@@ -50,6 +51,8 @@ export class CodingSupervisor extends EventEmitter<{
   measure: [MeasureProgress]
 }> {
   private readonly runs = new Map<string, CodingRunSummary>()
+  /** Issued when a run is loaded or started. Not written to the journal. */
+  private readonly identities = new RunIdentities()
   private readonly live = new Map<string, { abort: AbortController; journal: Journal }>()
   private readonly workspaces = new Map<string, Workspace>()
   private readonly identifier: ModelIdentifier
@@ -74,13 +77,34 @@ export class CodingSupervisor extends EventEmitter<{
     for (const name of await readdir(this.dir)) {
       if (!name.endsWith('.jsonl')) continue
       const summary = summarise(await Journal.read(join(this.dir, name)))
-      if (summary) this.runs.set(summary.id, summary)
+      if (summary) {
+        this.runs.set(summary.id, summary)
+        this.identities.issue(summary.id)
+      }
     }
     this.emit('runs', this.list())
   }
 
   list(): CodingRunSummary[] {
     return [...this.runs.values()].sort((a, b) => a.startedAt - b.startedAt)
+  }
+
+  /**
+   * Refuse a request that does not carry the identity issued for this run.
+   * The run id alone is not enough: it is in the journal and the events.
+   */
+  authorise(id: string, presented: unknown): void {
+    this.identities.assert(id, presented)
+  }
+
+  /** Identities for these runs. A run this process has not loaded is absent. */
+  issuedIdentities(ids: readonly string[]): Record<string, string> {
+    const out: Record<string, string> = {}
+    for (const id of ids) {
+      const token = this.identities.token(id)
+      if (token !== null) out[id] = token
+    }
+    return out
   }
 
   async events(id: string): Promise<JournalEvent[]> {
@@ -152,6 +176,7 @@ export class CodingSupervisor extends EventEmitter<{
       ...(masked.length ? { masked } : {})
     }
     this.runs.set(id, summary)
+    this.identities.issue(id)
     this.emit('runs', this.list())
 
     // Not awaited: the caller gets the summary at once and follows events.
@@ -608,6 +633,7 @@ export class CodingSupervisor extends EventEmitter<{
     await rm(join(this.dir, 'workspaces'), { recursive: true, force: true })
     await rm(join(this.dir, 'measure'), { recursive: true, force: true })
     this.runs.clear()
+    this.identities.clear()
     this.workspaces.clear()
     this.lastMeasure = null
     this.emit('runs', this.list())
