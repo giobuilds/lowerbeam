@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { readdir, readFile, rm, stat, symlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import type { Task } from './tasks.js'
 
@@ -27,9 +29,9 @@ export async function runChecks(root: string, repo: string, task: Task): Promise
   } catch {
     /* already linked */
   }
-  const sh = (cmd: string, args: string[]): { ok: boolean; out: string } => {
+  const sh = (cmd: string, args: string[], input?: string): { ok: boolean; out: string } => {
     try {
-      const out = execFileSync(cmd, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], timeout: 180_000 }).toString()
+      const out = execFileSync(cmd, args, { cwd: root, input, stdio: ['pipe', 'pipe', 'pipe'], timeout: 180_000 }).toString()
       return { ok: true, out }
     } catch (err) {
       const e = err as { stdout?: Buffer; stderr?: Buffer }
@@ -53,6 +55,22 @@ export async function runChecks(root: string, repo: string, task: Task): Promise
       for (const file of await walkFiles(join(root, dir))) {
         if (re.test(await readFile(file, 'utf8'))) failures.push(`still present: ${check.absent.pattern} in ${relative(root, file)}`)
       }
+    }
+  }
+  if (check.program) {
+    const dir = mkdtempSync(join(tmpdir(), 'lowerbeam-story-'))
+    const bin = join(dir, 'program')
+    try {
+      const compiled = sh('gcc', ['-Wall', '-Werror', '-o', bin, ...check.program.sources])
+      if (!compiled.ok) {
+        failures.push(`compile: ${(compiled.out.split('\n').find((l) => l.trim()) ?? 'gcc failed').trim().slice(0, 120)}`)
+      } else {
+        const ran = sh(bin, [], check.program.input)
+        if (!ran.ok) failures.push(`program exited non-zero: ${ran.out.trim().slice(0, 120)}`)
+        else if (!ran.out.includes(check.program.includes)) failures.push(`program output did not include ${check.program.includes}`)
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
   }
   if (check.present) {

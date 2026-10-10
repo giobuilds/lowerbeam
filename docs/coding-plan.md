@@ -121,9 +121,12 @@ Two repositories, chosen because their outcomes can be checked mechanically:
 
 - **This one.** TypeScript, Electron, 349 assertions across 26 suites. A task
   passes when the suite still passes and the acceptance check does.
-- **A small C project** — the interactive-fiction engine from the chat that
-  first ran out of context is a good candidate: one file, a `gcc` command, no
-  dependencies, a different language and toolchain.
+- **A small C project.** `tests/harness/corpora/story` is one file, compiled
+  with `gcc -Wall -Werror`, with no dependencies. `node tests/harness/run.mjs
+  --corpus story` copies that directory alone, so the answer key stays out of
+  the workspace. Three tasks: where the room table is, why south from the cell
+  is a wall, and a north exit planted shut. The fix is checked by compiling
+  and running, not by a suite. It has not been scored on a model. (#180)
 
 ### The tasks
 
@@ -413,7 +416,8 @@ run that has changed nothing, measured in Stage 3's crossover family, is
 the answer to it that worked.
 Details in [stage0-results.md](stage0-results.md).
 
-Not yet: the C corpus, and command execution, which is Stage 3.
+The C corpus is `tests/harness/corpora/story` (#180). Command execution is
+Stage 3.
 
 - Isolated task workspace from a **clean baseline**, or dirty state captured
   explicitly. Never discarded silently. One writer per workspace.
