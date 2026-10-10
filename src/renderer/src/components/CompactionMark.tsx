@@ -20,7 +20,7 @@ export function CompactionMark({ compaction }: { compaction: CompactionView }): 
           onClick={() => setOpen(!open)}
           className="rounded-full border border-edge px-2.5 py-0.5 text-[11px] text-muted hover:text-slate-200"
         >
-          {compaction.messageCount} earlier messages summarised for the model
+          {compaction.messageCount} earlier messages kept as a record for the model
           <span className="ml-1 opacity-60">{open ? '▾' : '▸'}</span>
         </button>
         <span className="h-px flex-1 bg-edge" />

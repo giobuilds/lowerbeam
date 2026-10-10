@@ -1,10 +1,9 @@
 /**
  * M2: fill the speech-act form on the M0 chats and score the spellings it kept.
  *
- * This does not ask the questions back to the model, and it does not replace
- * the prose summary. Retained is the same check as the M0 column: a fact hits
- * when the record contains one of its spellings. Mechanical is the M1 scan of
- * the same turns, included because a replacement summary would send both.
+ * This does not ask the questions back to the model. Retained is the same
+ * check as the M0 column: a fact hits when the record contains one of its
+ * spellings. Mechanical is the M1 scan of the same turns. A chat stores both.
  *
  *   node tests/harness/compaction/speech.mjs
  */
@@ -71,7 +70,7 @@ function report(chats: ChatScore[]): string {
     '# Compaction M2 record',
     '',
     'Spellings present in the form. Combined adds the M1 mechanical scan of the same turns.',
-    'The prose summary is unchanged.',
+    'A chat stores the combined record in place of a prose summary.',
     '',
     '| chat | speech | speech + mechanical |',
     '|---|---|---|',

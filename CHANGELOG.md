@@ -22,6 +22,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Compacting a chat keeps a record of what was said — constraints, decisions,
+  names, dates and commands copied from the transcript, plus the commands,
+  paths and errors a scan can keep without a model — instead of a prose
+  paragraph. On 10 Oct 2026 that record held 8 of 14 scored facts on its own
+  and 11 of 14 with the scan, against 7 of 14 for the prose summary. (#117)
 - Chat asks before it runs a tool from an MCP server. Allow runs that call;
   Don’t run tells the model the person declined, and the reply continues.
   Web search and reading a page still run when the model names them. A

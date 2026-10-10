@@ -13,9 +13,10 @@ import {
   PREEMPT_AT,
   projectedPromptTokens,
   shouldCompact,
-  summarise,
   verbatimUserMessages
 } from '@context/compact.js'
+import { extractMechanics, mechanicalText } from '@context/extract.js'
+import { compactionRecord, extractSpeech, speechText } from '@context/speech.js'
 import { DEFAULT_OUTPUT, outputConstraint, type OutputSetting } from '@shared/structuredOutput.js'
 import { projectConversation } from '@context/project.js'
 import { declinedMcpCall, isMcpTool, mcpDecisions } from '@shared/mcpConfirm.js'
@@ -373,14 +374,23 @@ async function compactNow(id: string, set: Setter, get: Getter): Promise<void> {
 
     set({ compacting: { ...get().compacting, [id]: true } })
     try {
-      const summary = await summarise(
+      // The same two texts the M2 harness scores. Notes from an earlier
+      // compaction go back into the transcript and the scan, and the new
+      // record replaces them, so a long chat does not append forever.
+      const previous = conversation.compaction?.summary ?? null
+      const speech = await extractSpeech(
         { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey, model: served?.id },
         conversation,
         older,
-        conversation.compaction?.summary ?? null,
         limit,
-        AbortSignal.timeout(120_000)
+        AbortSignal.timeout(180_000),
+        previous
       )
+      const turns = older.map((m) => m.content).join('\n')
+      const kept = previous?.trim() ?? ''
+      const mechanical = mechanicalText(extractMechanics(kept ? `${kept}\n${turns}` : turns))
+      const summary = compactionRecord(speechText(speech), mechanical)
+      if (!summary) throw new Error('The record was empty.')
       const current = get().byId[id]
       if (!current) return
       const next: ConversationView = {
