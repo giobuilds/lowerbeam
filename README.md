@@ -105,6 +105,14 @@ what was granted. An Evidence panel compares the last test run after the
 last edit with the same command before any edit, and names any test file
 the run changed. The box is a second layer, not a VM: the kernel is shared.
 
+The same run can be started without the window. Quit the app first.
+`lowerbeam run --project DIR --task TEXT` uses the model you last launched
+there (or a server that launch left running), prints the run as it happens,
+and stops the model when it exits. The default mode is inspect. `--mode edit`
+and `--mode run` work on a copy and leave it unapplied; open the Coding tab
+to apply it. From a source checkout, after `npm run build`, the same command
+is `npx electron . run --task TEXT`.
+
 **MCP servers** — any program that speaks the Model Context Protocol over stdin
 and stdout can supply more tools. Give Lowerbeam its command and it starts it,
 lists what it offers, and adds those tools to the same list chat picks from —

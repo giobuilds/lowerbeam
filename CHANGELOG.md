@@ -22,6 +22,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `lowerbeam run --task TEXT` asks a coding run from the command line, without
+  opening the window. It uses the model last launched in the app. The default
+  mode is inspect. `--mode edit` and `--mode run` still work on a copy and do
+  not change the project; apply that copy from the Coding tab.
 - Compacting a chat keeps a record of what was said — constraints, decisions,
   names, dates and commands copied from the transcript, plus the commands,
   paths and errors a scan can keep without a model — instead of a prose
