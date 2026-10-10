@@ -120,7 +120,9 @@ export const codingStartSchema = z.object({
 
 export const toolRunSchema = z.object({
   name: z.string().min(1).max(64),
-  args: z.record(z.string(), z.unknown()).default({})
+  args: z.record(z.string(), z.unknown()).default({}),
+  /** Set only after the person allows an MCP call. Absent or false refuses one. */
+  confirmed: z.boolean().optional()
 })
 
 /** A download request from the renderer. */

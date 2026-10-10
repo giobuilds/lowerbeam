@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ToolCallView } from '@shared/types.js'
+import { mcpDecisions } from '@shared/mcpConfirm.js'
 
 const LABELS: Record<string, string> = {
   web_search: 'Searched the web',
@@ -30,7 +31,8 @@ export function ToolCalls({ calls }: { calls: ToolCallView[] }): React.JSX.Eleme
                 {LABELS[call.name] ?? call.name}
               </span>
               {query && <span className="min-w-0 flex-1 truncate text-slate-300">{query}</span>}
-              {call.summary === undefined && (
+              {call.awaiting && <span className="text-amber-200">waiting for you</span>}
+              {call.summary === undefined && !call.awaiting && (
                 <span className="animate-pulse text-muted">working…</span>
               )}
               {call.approxTokens !== undefined && (
@@ -48,6 +50,35 @@ export function ToolCalls({ calls }: { calls: ToolCallView[] }): React.JSX.Eleme
                 </button>
               )}
             </div>
+
+            {call.awaiting && (
+              <div className="mt-1.5">
+                <p className="text-[11px] leading-snug text-slate-300">
+                  This runs a tool from an MCP server. It does not run until you allow it.
+                </p>
+                {call.argumentsJson && call.argumentsJson !== '{}' && (
+                  <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-ink p-2 text-[11px] text-muted">
+                    {formatArgs(call.argumentsJson)}
+                  </pre>
+                )}
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => mcpDecisions.decide(call.id, true)}
+                    className="rounded border border-edge px-2 py-1 text-[11px] text-slate-200 hover:border-accent"
+                  >
+                    Allow
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => mcpDecisions.decide(call.id, false)}
+                    className="rounded px-2 py-1 text-[11px] text-muted hover:text-slate-200"
+                  >
+                    Don’t run
+                  </button>
+                </div>
+              </div>
+            )}
 
             {call.sources && call.sources.length > 0 && (
               <ul className="mt-1 space-y-0.5">
@@ -71,6 +102,14 @@ export function ToolCalls({ calls }: { calls: ToolCallView[] }): React.JSX.Eleme
       })}
     </div>
   )
+}
+
+function formatArgs(argumentsJson: string): string {
+  try {
+    return JSON.stringify(JSON.parse(argumentsJson), null, 2)
+  } catch {
+    return argumentsJson
+  }
 }
 
 function readQuery(call: ToolCallView): string {

@@ -516,6 +516,8 @@ export interface ToolDefinition {
   name: string
   /** Short name for the settings list. */
   label: string
+  /** Built-in tools run when the model calls them. An MCP tool waits for the person. */
+  source?: 'builtin' | 'mcp'
   description: string
   parameters: {
     type: 'object'
@@ -553,6 +555,8 @@ export interface ToolCallView {
   content?: string
   /** Roughly how many tokens the full result occupied. */
   approxTokens?: number
+  /** Set while chat is waiting for the person to allow an MCP call. Not stored. */
+  awaiting?: boolean
 }
 
 /**

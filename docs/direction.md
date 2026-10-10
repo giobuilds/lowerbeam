@@ -184,9 +184,9 @@ worth carrying forward as constraints:
   frame (`src/main/sender.ts`, #76).
 - MCP servers started with the host's environment; since 0.9.20 they get
   only `PATH`, `HOME`, the locale, `TMPDIR` and `XDG_*`, plus what their
-  config names (#77). They still expose every discovered tool. That is
-  acceptable for chat and not for a coding run, which should select servers
-  and tools per grant.
+  config names (#77). They still expose every discovered tool. Chat asks
+  before one runs (#178). A coding run should select servers and tools per
+  grant, and does not ask mid-run.
 
 Both were Stage 1 work. What remains of the second, choosing servers and
 tools per grant, comes with MCP in coding runs, which do not use it yet.

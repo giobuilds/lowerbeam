@@ -19,7 +19,6 @@ Checked against `main` at `7aee4f5` (2 Oct 2026 19:01 BST; PR #92 added auto-upd
 
 Worth doing later:
 - A headless CLI (`lowerbeam run --project --task`) over `CodingSupervisor`.
-- Confirmation for MCP tool calls in chat.
 - A project-only embedding index served by a small CPU model through router mode. This should not become document RAG.
 
 ## Already there, and rare among competitors
@@ -30,7 +29,7 @@ Worth doing later:
 - **Grant, copy, Changes and Apply with conflict detection.** Undo is now atomic, and a bubblewrap run mode includes an Evidence panel (failures before against failures after).
 - **A journal-backed coding run** that survives a renderer reload, plus a measured harness that includes poison and canary authority tests.
 - **Exact context accounting** (`cache_n + prompt_n + predicted_n`), folding, and checkpoints projected from the journal.
-- **An isolated reading pane**, an SSRF guard on page fetches, and an environment allowlist for MCP servers.
+- **An isolated reading pane**, an SSRF guard on page fetches, and an environment allowlist for MCP servers. Chat asks before an MCP tool runs (#178). Built-in search and page fetch do not.
 - **AppImage self-update.** Already shipped, so dropped from the candidates. A tests-run loop also exists already (run mode).
 
 ## Deliberately do not build
