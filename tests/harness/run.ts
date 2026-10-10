@@ -4,16 +4,19 @@
  *
  *   node tests/harness/run.mjs --models qwen25vl-3b,ornith-9b --runs 3
  *   node tests/harness/run.mjs --tasks locate-url-gate --runs 1
+ *   node tests/harness/run.mjs --corpus story --models ornith-9b --runs 1
  *
  * Each task runs in a fresh copy of this repository at HEAD, taken with
  * `git archive` so no hook or configuration from the working tree comes along.
+ * `--corpus story` uses tests/harness/corpora/story instead, and only that
+ * directory: the answer key stays in this repository.
  * Poisoned tasks get a canary file *outside* that copy and an instruction to
  * read it planted in the file the task leads to. Every run's journal is kept.
  */
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { appendFile, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { appendFile, cp, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir, homedir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { runTask } from '../../src/agent/loop.js'
@@ -23,6 +26,7 @@ import { runInSandbox } from '../../src/main/coding/sandbox.js'
 import type { JournalEvent } from '@shared/coding.js'
 import { verifyCheckpoint } from '@context/checkpoint.js'
 import { TASKS, plantPoison, score, type Task } from './tasks.js'
+import { STORY_TASKS } from './story-tasks.js'
 import { runChecks } from './checks.js'
 import { ENGINES, engineVersion, runEngine, type Engine } from './engines.js'
 import { runPiOnTools } from './pi-tools.js'
@@ -135,7 +139,10 @@ interface RunRecord {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2))
   const models = args.models ?? DEFAULT_MODELS
-  const tasks = args.tasks ? TASKS.filter((t) => args.tasks!.includes(t.id)) : TASKS
+  const catalogue = args.corpus === 'story' ? STORY_TASKS : TASKS
+  if (args.corpus && args.corpus !== 'story') throw new Error(`unknown corpus ${args.corpus}`)
+  const tasks = args.tasks ? catalogue.filter((t) => args.tasks!.includes(t.id)) : catalogue
+  if (tasks.length === 0) throw new Error('no tasks matched')
   const runs = args.runs ?? 1
   FOLD = !args.noFold
   ENGINE = args.engine ?? 'reference'
@@ -195,7 +202,7 @@ async function main(): Promise<void> {
 
       for (const task of tasks) {
         for (let run = 1; run <= runs; run++) {
-          const rec = await runOnce(label(key), key, task, run, repo, outDir, record.contextPerSlot)
+          const rec = await runOnce(label(key), key, task, run, repo, outDir, record.contextPerSlot, args.corpus ?? null)
           records.push(rec)
           const writeish = task.mode === 'edit' || task.mode === 'run'
           const why = writeish
@@ -230,23 +237,37 @@ async function main(): Promise<void> {
   await writeFile(join(outDir, 'report.md'), text)
 }
 
-async function runOnce(model: string, modelKey: string, task: Task, run: number, repo: string, outDir: string, contextLimit: number | null): Promise<RunRecord> {
+async function runOnce(
+  model: string,
+  modelKey: string,
+  task: Task,
+  run: number,
+  repo: string,
+  outDir: string,
+  contextLimit: number | null,
+  corpus: 'story' | null
+): Promise<RunRecord> {
   const base = await mkdtemp(join(tmpdir(), 'harness-'))
   const workspace = join(base, 'project')
   const canary = join(base, 'outside', 'secret.txt')
   const token = `CANARY-${createHash('sha1').update(`${task.id}-${run}-${Date.now()}`).digest('hex').slice(0, 12)}`
   try {
     await mkdir(workspace)
-    // A clean tree at HEAD, with nothing from the working directory — no hooks,
-    // no local config, no uncommitted state — and without the harness itself:
-    // tasks.ts is the answer key, and in the first matrix 21 of 90 runs read
-    // it. A corpus that contains the exam is not a corpus. The results
-    // document names the planted bugs too, and was found in the corpus by a
-    // search for "slug" during the first crossover run.
-    execFileSync('sh', [
-      '-c',
-      `git -C "${repo}" archive HEAD | tar -x -C "${workspace}" --exclude='tests/harness' --exclude='docs/coding-plan.md' --exclude='docs/stage0-results.md'`
-    ])
+    if (corpus === 'story') {
+      // That directory is the whole project. The task list is not in it.
+      await cp(join(repo, 'tests/harness/corpora/story'), workspace, { recursive: true })
+    } else {
+      // A clean tree at HEAD, with nothing from the working directory — no hooks,
+      // no local config, no uncommitted state — and without the harness itself:
+      // tasks.ts is the answer key, and in the first matrix 21 of 90 runs read
+      // it. A corpus that contains the exam is not a corpus. The results
+      // document names the planted bugs too, and was found in the corpus by a
+      // search for "slug" during the first crossover run.
+      execFileSync('sh', [
+        '-c',
+        `git -C "${repo}" archive HEAD | tar -x -C "${workspace}" --exclude='tests/harness' --exclude='docs/coding-plan.md' --exclude='docs/stage0-results.md'`
+      ])
+    }
     const wantsCanary = Boolean(task.poison || task.symlink || task.prompt.includes('{canary}'))
     if (wantsCanary) {
       await mkdir(join(base, 'outside'))
@@ -560,7 +581,7 @@ async function stopServer(child: ChildProcess): Promise<void> {
   if (child.exitCode === null) child.kill('SIGKILL')
 }
 
-interface Args { models?: string[]; tasks?: string[]; runs?: number; noFold?: boolean; ctx?: number; engine?: Engine; rounds?: number }
+interface Args { models?: string[]; tasks?: string[]; runs?: number; noFold?: boolean; ctx?: number; engine?: Engine; rounds?: number; corpus?: string }
 
 function parseArgs(argv: string[]): Args {
   const out: Args = {}
@@ -577,6 +598,7 @@ function parseArgs(argv: string[]): Args {
     else if (a === '--engine' && next) (out.engine = next as Engine), i++
     // The reference's round cap, for the matrix that lifts it.
     else if (a === '--rounds' && next) (out.rounds = Number(next)), i++
+    else if (a === '--corpus' && next) (out.corpus = next), i++
   }
   return out
 }

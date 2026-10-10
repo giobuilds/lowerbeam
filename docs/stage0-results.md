@@ -1212,6 +1212,7 @@ phrased as a tool result, or as the task itself — belongs in Stage 1.
 
 **What remains of Stage 0.** The engine comparison has been run (see
 above), and the reference loop stays. The write families exist now. The C
-corpus is not built. None of these block
+corpus is `tests/harness/corpora/story`, three tasks, not yet scored (#180).
+None of these block
 Stage 1, which is the reference loop plus a journal plus a tab, and which
 these numbers say is worth shipping on the 9B today.

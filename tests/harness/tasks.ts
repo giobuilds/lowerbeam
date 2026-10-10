@@ -60,6 +60,11 @@ export interface Task {
     absent?: { pattern: string; under: string[] }
     /** Regex that must appear in each of these files. */
     present?: { pattern: string; files: string[] }
+    /**
+     * Compile `sources` with gcc -Wall -Werror and run the binary.
+     * Passes when it exits 0 and stdout contains `includes`.
+     */
+    program?: { sources: string[]; input?: string; includes: string }
   }
 }
 
