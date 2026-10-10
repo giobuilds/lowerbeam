@@ -22,6 +22,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Chat asks before it runs a tool from an MCP server. Allow runs that call;
+  Don’t run tells the model the person declined, and the reply continues.
+  Web search and reading a page still run when the model names them. A
+  coding run is unchanged. (#178)
 - A release includes `SHA256SUMS` for the AppImage, the RPM and
   `latest-linux.yml`, and `SHA256SUMS.asc`, a detached signature over them.
   The README says how to check a download against the key in the repository.

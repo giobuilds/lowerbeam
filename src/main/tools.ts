@@ -22,6 +22,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
   {
     name: WEB_SEARCH,
     label: 'Web search',
+    source: 'builtin',
     description:
       'Search the web and return titles, addresses and short extracts. Use for anything ' +
       'recent, live, or that you are unsure of. Prefer this over fetching a page.',
@@ -36,6 +37,7 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
   {
     name: FETCH_PAGE,
     label: 'Read a page',
+    source: 'builtin',
     description:
       'Read one web page as text. Only use it when a search extract was not enough, ' +
       'and only for an address a search returned. Addresses on this computer or the local network are refused.',

@@ -18,6 +18,7 @@ import {
 } from '@context/compact.js'
 import { DEFAULT_OUTPUT, outputConstraint, type OutputSetting } from '@shared/structuredOutput.js'
 import { projectConversation } from '@context/project.js'
+import { declinedMcpCall, isMcpTool, mcpDecisions } from '@shared/mcpConfirm.js'
 
 const DEFAULT_SETTINGS: ChatSettingsView = {
   temperature: 0.8,
@@ -443,7 +444,8 @@ function contextTooSmall(limit: number | null): string {
 
 /** Arguments come from model output, so a malformed object is handled, not thrown. */
 async function runToolCall(
-  call: StreamedToolCall
+  call: StreamedToolCall,
+  confirmed = false
 ): Promise<{ ok: boolean; summary: string; content: string; sources?: ToolCallView['sources'] }> {
   let args: Record<string, unknown> = {}
   try {
@@ -456,7 +458,7 @@ async function runToolCall(
     }
   }
   try {
-    return await window.llama.tools.run(call.name, args)
+    return await window.llama.tools.run(call.name, args, confirmed)
   } catch (err) {
     return { ok: false, summary: `${call.name} failed`, content: (err as Error).message }
   }
@@ -645,9 +647,34 @@ async function runCompletion(
 
       turns.push({ role: 'assistant', content, toolCalls: requested })
 
+      let stoppedDuringConfirm = false
       for (const call of requested) {
-        const result = await runToolCall(call)
         const entry = toolCalls.find((t) => t.id === call.id)
+        let confirmed = false
+        if (isMcpTool(call.name, get().availableTools)) {
+          if (entry) entry.awaiting = true
+          apply({ toolCalls: [...toolCalls] })
+          confirmed = await mcpDecisions.ask(call.id, abort.signal)
+          if (entry) entry.awaiting = false
+          if (!confirmed) {
+            const declined = abort.signal.aborted
+              ? { ok: false as const, summary: 'Not run', content: 'The reply was stopped before this ran.' }
+              : declinedMcpCall(call.name)
+            if (entry) {
+              entry.summary = declined.summary
+              entry.ok = false
+              entry.content = declined.content
+            }
+            apply({ toolCalls: [...toolCalls] })
+            if (abort.signal.aborted) {
+              stoppedDuringConfirm = true
+              break
+            }
+            turns.push({ role: 'tool', toolCallId: call.id, content: declined.content })
+            continue
+          }
+        }
+        const result = await runToolCall(call, confirmed)
         if (entry) {
           entry.summary = result.summary
           entry.ok = result.ok
@@ -658,6 +685,7 @@ async function runCompletion(
         apply({ toolCalls: [...toolCalls] })
         turns.push({ role: 'tool', toolCallId: call.id, content: result.content })
       }
+      if (stoppedDuringConfirm || abort.signal.aborted) break
 
       // The next round continues the same reply rather than starting a new one.
       content = ''

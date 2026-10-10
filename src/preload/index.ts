@@ -224,8 +224,8 @@ const api = {
   },
   tools: {
     list: () => invoke<ToolDefinition[]>(IPC.toolsList),
-    run: (name: string, args: Record<string, unknown>) =>
-      invoke<ToolResult>(IPC.toolsRun, { name, args })
+    run: (name: string, args: Record<string, unknown>, confirmed = false) =>
+      invoke<ToolResult>(IPC.toolsRun, { name, args, confirmed })
   },
   chat: {
     list: () => invoke<ConversationSummaryView[]>(IPC.chatList),

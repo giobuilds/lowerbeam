@@ -140,6 +140,7 @@ export class McpServer extends EventEmitter<McpEvents> {
         // model can tell whose tool it is calling.
         name: `${this.config.id}__${t.name}`,
         label: t.name,
+        source: 'mcp',
         description: t.description ?? `${t.name} (from ${this.config.name})`,
         parameters: normaliseSchema(t.inputSchema)
       }))

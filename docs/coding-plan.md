@@ -26,9 +26,9 @@ Measured or observed in this repo, so it is not rediscovered.
   (`src/main/sender.ts`, #76). A run identity per request is still to come.
 - **MCP servers expose every tool.** Since 0.9.20 they no longer inherit the
   host environment: only `PATH`, `HOME`, the locale, `TMPDIR` and `XDG_*`,
-  plus what their config names (`src/shared/mcpEnv.ts`, #77). All discovered
-  tools are still offered to chat. Acceptable for chat; a coding run must
-  select per grant.
+  plus what their config names (`src/shared/mcpEnv.ts`, #77). Chat is offered
+  every discovered tool and asks before one runs (#178). A coding run must
+  select per grant, and does not ask mid-run.
 - **A chat gets `--ctx-size ÷ --parallel`, and a coding run will feel it
   harder.** Ornith-1.5-9B on the 8 GB card: 7,424 tokens per chat at four
   slots, which is the slot the compaction budgets use. One slot is not a

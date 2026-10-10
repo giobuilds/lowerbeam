@@ -98,6 +98,9 @@ function ToolToggles({ onConfigure }: { onConfigure: () => void }): React.JSX.El
             <span>
               <span className="text-xs text-slate-200">{t.label}</span>
               <span className="block text-[11px] leading-snug text-muted">{t.description}</span>
+              {t.source === 'mcp' && (
+                <span className="block text-[11px] text-muted">Asks before it runs.</span>
+              )}
               {t.name === 'web_search' && enabled.includes(t.name) && <SearchProvider onConfigure={onConfigure} />}
             </span>
           </label>

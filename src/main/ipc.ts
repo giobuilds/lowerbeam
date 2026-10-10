@@ -75,6 +75,7 @@ import { totalmem } from 'node:os'
 import { BenchRunner } from './bench.js'
 import { BUILT_IN_TOOLS, runTool, setSearxngUrl } from './tools.js'
 import type { McpRegistry } from './mcpRegistry.js'
+import { unconfirmedMcpCall } from '@shared/mcpConfirm.js'
 import { benchRequestSchema } from '@shared/schema.js'
 import { downloadRequestSchema } from '@shared/schema.js'
 import {
@@ -744,7 +745,12 @@ export function registerIpc(
     // Tools reach the network and spawn subprocesses, neither of which the
     // renderer can do: its CSP allows loopback only, and a page that renders
     // model output is the wrong place for either.
-    if (mcp.owns(req.name)) return mcp.call(req.name, req.args)
+    // The renderer asks first and only then sets confirmed. A call that skips
+    // that prompt does not reach the server.
+    if (mcp.owns(req.name)) {
+      if (req.confirmed !== true) return unconfirmedMcpCall(req.name)
+      return mcp.call(req.name, req.args)
+    }
     return runTool(req.name, req.args)
   })
 
