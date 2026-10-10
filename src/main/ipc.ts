@@ -59,7 +59,7 @@ import type { CodingSupervisor } from './coding/supervisor.js'
 import type { SandboxProbe } from './coding/sandbox.js'
 import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
-import type { ApplyResult, ChangeSet, CodingRunSummary, GitState, JournalEvent } from '@shared/coding.js'
+import type { ApplyResult, ChangeSet, CodingRunList, CodingRunTicket, GitState, JournalEvent } from '@shared/coding.js'
 import type { ProfileStore } from './profiles.js'
 import {
   searchModels,
@@ -574,6 +574,15 @@ export function registerIpc(
   // Coding runs. The supervisor owns the grant, the journal and cancellation;
   // these only translate requests, and the start request is validated like
   // every other payload that crosses from the renderer.
+  //
+  // A request that names a run also carries the identity issued for it. The
+  // preload attaches that; the run id, which is in the journal, is not enough.
+  const handleRun = <T>(channel: string, fn: (id: string, ...args: unknown[]) => Promise<T> | T): void => {
+    handle<T>(channel, (id, identity, ...args) => {
+      coding.authorise(String(id ?? ''), identity)
+      return fn(String(id ?? ''), ...args)
+    })
+  }
   handle<string | null>(IPC.codingPickProject, async () => {
     const r = await dialog.showOpenDialog({
       title: 'Choose the project the model may read',
@@ -590,38 +599,44 @@ export function registerIpc(
     })
     return r.canceled ? null : (r.filePaths[0] ?? null)
   })
-  handle<CodingRunSummary>(IPC.codingStart, async (raw) => {
+  handle<CodingRunTicket>(IPC.codingStart, async (raw) => {
     const req = codingStartSchema.parse(raw)
     const run = await coding.start(req)
     await settings.patch({ lastProject: req.projectRoot })
-    return run
+    const identity = coding.issuedIdentities([run.id])[run.id]
+    if (!identity) throw new Error('This run has no identity.')
+    return { run, identity }
   })
-  handle<null>(IPC.codingCancel, (id) => {
-    coding.cancel(String(id ?? ''))
+  handleRun<null>(IPC.codingCancel, (id) => {
+    coding.cancel(id)
     return null
   })
-  handle<{ runs: CodingRunSummary[]; lastProject: string | null }>(IPC.codingList, () => ({
-    runs: coding.list(),
-    lastProject: settings.current.lastProject ?? null
-  }))
-  handle<JournalEvent[]>(IPC.codingGet, (id) => coding.events(String(id ?? '')))
-  handle<ChangeSet | null>(IPC.codingChanges, (id) => coding.changes(String(id ?? '')))
+  handle<CodingRunList>(IPC.codingList, () => {
+    const runs = coding.list()
+    return {
+      runs,
+      lastProject: settings.current.lastProject ?? null,
+      identities: coding.issuedIdentities(runs.map((run) => run.id))
+    }
+  })
+  handleRun<JournalEvent[]>(IPC.codingGet, (id) => coding.events(id))
+  handleRun<ChangeSet | null>(IPC.codingChanges, (id) => coding.changes(id))
   handle<SandboxProbe>(IPC.codingSandbox, () => coding.sandbox())
   handle<CapabilityStatus>(IPC.codingCapability, (model) => coding.capability(typeof model === 'string' ? model : null))
   handle<CapabilityStatus>(IPC.codingCapabilityOf, (path) => coding.capabilityOf(String(path ?? '')))
-  handle<Evidence | null>(IPC.codingEvidence, (id) => coding.evidence(String(id ?? '')))
-  handle<Evidence | null>(IPC.codingCheckBaseline, (id) => coding.checkBaseline(String(id ?? '')))
+  handleRun<Evidence | null>(IPC.codingEvidence, (id) => coding.evidence(id))
+  handleRun<Evidence | null>(IPC.codingCheckBaseline, (id) => coding.checkBaseline(id))
   handle<MeasureProgress>(IPC.codingMeasure, (model) => coding.measure(typeof model === 'string' ? model : null))
   handle<null>(IPC.codingMeasureCancel, () => {
     coding.cancelMeasure()
     return null
   })
   handle<MeasureProgress | null>(IPC.codingMeasureState, () => coding.measureState())
-  handle<ApplyResult>(IPC.codingApply, (id, options) => coding.apply(String(id ?? ''), applyOptionsSchema.parse(options ?? {})))
-  handle<GitState | null>(IPC.codingGit, (id) => coding.git(String(id ?? '')))
-  handle<ApplyResult>(IPC.codingUndo, (id) => coding.undo(String(id ?? '')))
-  handle<null>(IPC.codingDiscard, async (id) => {
-    await coding.discard(String(id ?? ''))
+  handleRun<ApplyResult>(IPC.codingApply, (id, options) => coding.apply(id, applyOptionsSchema.parse(options ?? {})))
+  handleRun<GitState | null>(IPC.codingGit, (id) => coding.git(id))
+  handleRun<ApplyResult>(IPC.codingUndo, (id) => coding.undo(id))
+  handleRun<null>(IPC.codingDiscard, async (id) => {
+    await coding.discard(id)
     return null
   })
 

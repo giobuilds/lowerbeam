@@ -283,6 +283,25 @@ export interface CodingRunSummary {
   masked?: string[]
 }
 
+/**
+ * `coding:start` on the wire. The page receives `run` only. The preload keeps
+ * `identity` and attaches it to later requests about this run.
+ */
+export interface CodingRunTicket {
+  run: CodingRunSummary
+  identity: string
+}
+
+/**
+ * `coding:list` on the wire. `identities` is keyed by run id. It is not part
+ * of a run summary and is not given to the page.
+ */
+export interface CodingRunList {
+  runs: CodingRunSummary[]
+  lastProject: string | null
+  identities: Record<string, string>
+}
+
 export interface CodingStartRequest {
   projectRoot: string
   task: string
