@@ -15,6 +15,7 @@ import {
   shouldCompact,
   verbatimUserMessages
 } from '@context/compact.js'
+import { evictRecord, evictionBudgetChars } from '@context/evict.js'
 import { extractMechanics, mechanicalText } from '@context/extract.js'
 import { compactionRecord, extractSpeech, speechText } from '@context/speech.js'
 import { DEFAULT_OUTPUT, outputConstraint, type OutputSetting } from '@shared/structuredOutput.js'
@@ -388,8 +389,17 @@ async function compactNow(id: string, set: Setter, get: Getter): Promise<void> {
       )
       const turns = older.map((m) => m.content).join('\n')
       const kept = previous?.trim() ?? ''
-      const mechanical = mechanicalText(extractMechanics(kept ? `${kept}\n${turns}` : turns))
-      const summary = compactionRecord(speechText(speech), mechanical)
+      // Notes count as a source for extraction, so an old command can be seen
+      // again, and not as a reference. A spelling the turns never repeat is
+      // dropped, which is what keeps the record from growing without limit.
+      const evicted = evictRecord({
+        speech,
+        mechanical: extractMechanics(kept ? `${kept}\n${turns}` : turns),
+        source: turns,
+        budgetChars: evictionBudgetChars(limit)
+      })
+      const mechanical = mechanicalText(evicted.mechanical)
+      const summary = compactionRecord(speechText(evicted.speech), mechanical)
       if (!summary) throw new Error('The record was empty.')
       const current = get().byId[id]
       if (!current) return
