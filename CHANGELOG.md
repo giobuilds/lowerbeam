@@ -53,6 +53,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Compacting a chat keeps a constraint, a decision and a rejected option, and
+  it drops a function body down to the signature. A path, flag or command
+  stays only while the turns still mention it, so an older note that nothing
+  refers to any more does not stay in the record. A question stays until a
+  later decision answers it.
 - The speculative-decoding speeds in 0.13.0 now say which launch they came
   from. The +70% and +13% were outside the app, with `-ngl 999`. In the app,
   prose went from 18.8 to 18.7 tok/s. (#162)
