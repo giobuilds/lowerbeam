@@ -16,3 +16,8 @@ tests/harness/dataset/
 # The engine comparison's engines and their tools, installed by engines/setup.sh
 tests/harness/engines/bin/
 tests/harness/engines/dl/
+
+# Drafts kept on the maintainer's machine
+docs/lowerbeam-sponsors-kit.md
+docs/lowerbeam-telemetry-design.md
+docs/lowerbeam-oss-checklist.md
