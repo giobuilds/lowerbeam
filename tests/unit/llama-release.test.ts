@@ -520,18 +520,23 @@ console.log('\ndownload')
     })
   })
 
-  await withGithub({}, async ({ apiBase }) => {
+  await withGithub({}, async ({ apiBase, cdnHits }) => {
     await withDir(async (root) => {
       const client = clientFor(apiBase)
       const installed = await client.install({ root, backend: 'vulkan', channel: 'pinned', glibc: () => '2.39' })
+      const archives = (): number => cdnHits.filter((hit) => hit.url === `/dl/${VULKAN_NAME}`).length
+      const before = archives()
+      const again = await client.install({ root, backend: 'vulkan', channel: 'pinned', glibc: () => '2.39' })
+      assert.equal(again.llamaPath, installed.llamaPath)
+      assert.equal(archives(), before)
       await writeFile(installed.llamaPath, 'kept')
       await rejects(
         client.install({ root, backend: 'vulkan', channel: 'pinned', glibc: () => '2.39' }),
-        'exists',
-        /already exists/
+        'probe',
+        /Use your own build/
       )
       assert.equal(await readFile(installed.llamaPath, 'utf8'), 'kept')
-      ok('a build that is already there is left in place')
+      ok('a build that is already there is used again, and a broken one is not deleted')
     })
   })
 

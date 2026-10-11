@@ -303,6 +303,27 @@ export interface BinaryInfo {
   label: string
 }
 
+/** The official build kept in the app's data folder, after a probe has passed. */
+export interface ManagedBuild {
+  tag: string
+  backend: 'vulkan' | 'cpu'
+  path: string
+  digest: string
+  installedAt: string
+}
+
+/** The binary now in use, and the list the picker shows. */
+export interface BinarySelection {
+  binary: BinaryInfo
+  binaries: BinaryInfo[]
+}
+
+/** Bytes received of an official-build download. `total` is the asset size. */
+export interface LlamaDownloadProgress {
+  received: number
+  total: number
+}
+
 export interface GpuDevice {
   /** e.g. "ROCm0" */
   id: string
@@ -492,6 +513,8 @@ export interface DataUsage {
   workspaces: { count: number; bytes: number }
   /** Long chats' server slots, saved when you left them. */
   slots: { count: number; bytes: number }
+  /** Official llama.cpp builds downloaded into the data folder. */
+  llamaCpp: { bytes: number }
   /** Everything in the folder, Electron's own storage included. */
   total: number
   /** Workspace copies and command outputs of runs finished longer ago than this are removed on start; null keeps them. */

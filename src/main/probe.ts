@@ -265,6 +265,21 @@ export async function probeBinary(candidate: Candidate): Promise<BinaryInfo> {
   }
 }
 
+/** What the window shows when nothing runnable was found. The app still opens. */
+export function missingBinary(): BinaryInfo {
+  return {
+    path: '',
+    kind: 'unified',
+    argvPrefix: [],
+    version: 'not found',
+    flags: [],
+    flagDocs: [],
+    flashAttnStyle: 'bare',
+    devices: [],
+    label: 'no llama.cpp found'
+  }
+}
+
 /** Probe every candidate, dropping any that fail to run at all. */
 export async function probeAll(explicit?: string): Promise<BinaryInfo[]> {
   const results = await Promise.allSettled(discoverBinaries(explicit).map(probeBinary))

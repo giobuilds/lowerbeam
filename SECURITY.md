@@ -53,6 +53,12 @@ to be.
   Lowerbeam release. A download can be checked against the signed checksums
   in the README. The in-app updater checks the sha512 in the release's
   `latest-linux.yml`, which is published alongside the files it names.
+- **Official llama.cpp download**: an archive that is not the GitHub release
+  asset it claims to be, or that writes outside the app's data folder. The
+  bytes are checked against the sha256 GitHub publishes for that asset, and
+  the unpack refuses paths that escape, links that leave the folder, and
+  setuid bits. That digest is published next to the file, so it does not
+  prove llama.cpp's release pipeline was uncompromised.
 - **The app's data**: settings, conversations, journals or workspace copies
   readable by other accounts on the machine.
 

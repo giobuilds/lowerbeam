@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
+import { managedBuildSchema } from '@shared/schema.js'
 import { writeFileAtomic, WriteQueue } from './atomicWrite.js'
 import { addSample, calibrationSchema, EMPTY_CALIBRATION, type Calibration, type Sample } from './calibration.js'
 
@@ -8,6 +9,8 @@ const settingsSchema = z.object({
   calibration: calibrationSchema.default(EMPTY_CALIBRATION),
   /** Explicit llama.cpp binary chosen by the user, overriding auto-discovery. */
   binaryPath: z.string().optional(),
+  /** The official build downloaded into the data folder, when there is one. */
+  managedBuild: managedBuildSchema.nullable().default(null),
   /** The project the Coding tab last had open. */
   lastProject: z.string().optional(),
   /** Model Context Protocol servers the user has configured. */
@@ -84,7 +87,8 @@ const DEFAULTS: Settings = {
   promptPresets: [],
   localApi: { port: null, apiKey: '', lan: false },
   updateChecks: true,
-  retentionDays: null
+  retentionDays: null,
+  managedBuild: null
 }
 
 /** Small JSON-backed settings file. Corrupt or missing files fall back to defaults. */
@@ -123,7 +127,11 @@ export class SettingsStore {
   }
 
   async patch(patch: Partial<Settings>): Promise<Settings> {
-    this.cache = settingsSchema.parse({ ...this.cache, ...patch })
+    const next = { ...this.cache, ...patch }
+    // A cleared selection has to leave the key out. Spreading `undefined`
+    // keeps it, and the schema would then preserve the old path.
+    if ('binaryPath' in patch && patch.binaryPath === undefined) delete next.binaryPath
+    this.cache = settingsSchema.parse(next)
     await this.writes.run(() => writeFileAtomic(this.path, JSON.stringify(this.cache, null, 2)))
     return this.cache
   }

@@ -17,6 +17,17 @@ launch it, and chat — without touching a terminal.
 *Low beam is the dipped headlight: the one you use close to home, lighting the
 road ahead without dazzling anyone.*
 
+## Install
+
+Download `Lowerbeam.AppImage` from [Releases](https://github.com/giobuilds/lowerbeam/releases), mark it executable, and run it:
+
+```bash
+chmod +x Lowerbeam.AppImage
+./Lowerbeam.AppImage
+```
+
+Or install the RPM on Fedora and its relatives. On first run, if no llama.cpp is found, Lowerbeam offers to download the official Vulkan build (about 30 MB) or the CPU build into its own data folder. That build needs glibc 2.34 or newer. You can point it at a build of your own instead. ROCm, CUDA, SYCL and OpenVINO builds are not downloaded; use one you installed yourself.
+
 ## What it does
 
 **Server** — launches llama.cpp on a free port and tracks it through an explicit
@@ -145,7 +156,7 @@ and there is no validated equivalent for them yet. ARM builds are not made.
 |---|---|---|
 | Distribution | Any x86_64 Linux the AppImage runs on; the RPM is for Fedora and its relatives | Fedora 44 Workstation (kernel 7.2, glibc 2.43), September–October 2026. CI builds and runs the suites on Ubuntu (GitHub's `ubuntu-latest`) |
 | glibc | 2.25 or later: the newest symbol version the Electron 44 binary asks for | 2.43 |
-| llama.cpp | The unified `llama` CLI or the standalone `llama-server`, from a build recent enough for `--jinja` and `/props` (the router needs `--models-preset`) | `llama` 0.4.0-dev, build 10826 (commit 73a43d1f6) |
+| llama.cpp | The unified `llama` CLI or the standalone `llama-server`, from a build recent enough for `--jinja` and `/props` (the router needs `--models-preset`), or let Lowerbeam download the official build (needs glibc 2.34+) | `llama` 0.4.0-dev, build 10826 (commit 73a43d1f6) |
 | GPU backend | Whatever your llama.cpp build was compiled for — Vulkan, ROCm, CUDA, or none. Lowerbeam does not ship llama.cpp; it drives the one you have | Vulkan (RADV) on an AMD Radeon RX 6600, 8 GB. ROCm, CUDA and CPU-only builds are expected to work and have not been tested here |
 | Memory | Enough for the model you launch: the Server tab says what fits before launching | 8 GB VRAM and 32 GB RAM: a 9B at Q4_K_M with 16k context fully on the GPU, or a 30B-A3B with its experts in RAM |
 | Node | 22.12 or later, to build from source or to run project tests in run mode | 24 |
