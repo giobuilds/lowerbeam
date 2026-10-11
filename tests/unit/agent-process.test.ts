@@ -94,6 +94,7 @@ console.log('a run’s loop is the other side of the messages')
   const event = { v: 1, run: runId, seq: 0, ts: 1, type: 'run.started', task: 'where is it', model: 'm', grantRoot: project } as JournalEvent
   const fake = async (req: RunRequest): Promise<RunResult> => {
     assert.equal(req.runId, runId); assert.equal(req.grant.mode, 'run'); ok('the run id and the mode cross')
+    assert.equal(req.embedModel ?? null, null); ok('a run without an embedding model does not name one')
     assert.equal(req.grant.realRoot, await realpath(project)); ok('the grant is opened on the copy, in that process')
     assert.equal(req.grant.alsoRead[0]?.realRoot, await realpath(extra)); ok('an extra read root is opened there too')
     assert.equal(req.maxRounds, 12); assert.equal(req.contextLimit, 4096); ok('the round cap and the window cross')
@@ -121,6 +122,22 @@ console.log('a run’s loop is the other side of the messages')
   assert.deepEqual(events.map((e) => e.type), ['run.started']); ok('an event comes back, and the page is not involved')
   assert.deepEqual(commands, ['npm test']); ok('the command is run by the caller, not by the loop’s process')
   assert.deepEqual(kept, [{ round: 1, content: 'say' }]); ok('the model’s words come back for the journal')
+}
+
+console.log('\nan embedding model is named for the run')
+{
+  const { parent, child } = link()
+  const served = serveAgent(child, async (req) => {
+    assert.equal(req.embedModel, 'bge'); ok('the embedding model crosses to the loop')
+    return answered()
+  })
+  await driveAgent(parent, {
+    job: { ...job('inspect'), embedModel: 'bge' },
+    signal: new AbortController().signal,
+    onEvent: () => {},
+    keep: () => {}
+  })
+  await served
 }
 
 console.log('\na command that fails is the loop’s error')

@@ -30,6 +30,8 @@ export function cliHelp(): string {
     'that session left running, and it is stopped when the run ends.',
     'The default mode is inspect: list, search and read. edit and run work on a',
     'copy and do not change the project; apply the copy from the Coding tab.',
+    'When the running server is a router with a CPU embedding model, the run can',
+    'also find code by what it is about. That stays inside the project.',
     '',
     '--project DIR   Project folder. Defaults to the Coding tab\'s last project.',
     '--task TEXT     What to ask. Required.',

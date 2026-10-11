@@ -3,7 +3,8 @@ import { rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { ServerSupervisor, initialRouterModels, routerPreset } from '../../src/main/supervisor.js'
 import { routerWorstCase } from '../../src/main/planner.js'
-import { modelIdOf, routerIds, servedModel, servedModels } from '@shared/served.js'
+import { embeddingLaunch } from '@shared/embed.js'
+import { embeddingModel, generationModels, modelIdOf, routerIds, servedModel, servedModels } from '@shared/served.js'
 import { routerLaunchSchema, serverHandoffSchema } from '@shared/schema.js'
 import { DEFAULT_LAUNCH_CONFIG, type LaunchConfig, type ServerPhase, type ServerStatus } from '@shared/types.js'
 
@@ -43,6 +44,37 @@ console.log('names and the preset')
   assert.throws(() => routerLaunchSchema.parse({ models: [], modelsMax: 1 })); assert.throws(() => routerLaunchSchema.parse({ models: launch.models, modelsMax: 0 })); ok('an empty router, or one that may load nothing, is refused')
   const old = serverHandoffSchema.parse({ pid: 1, port: 8080, startedAt: 1, config: launch.models[0], apiKey: null, lan: false })
   assert.equal(old.router, null); ok('a handoff from before router mode still reads, as one model')
+  assert.equal(old.config?.embed, false); ok('a saved launch from before embeddings still parses, and it still chats')
+
+  const embedLaunch = {
+    models: [
+      model('/models/chat.gguf', { autoFit: false, gpuLayers: 999, contextSize: 16384 }),
+      embeddingLaunch(
+        model('/models/bge.gguf', {
+          autoFit: true,
+          gpuLayers: 999,
+          contextSize: 0,
+          parallel: 4,
+          extraArgs: '--gpu-layers 40',
+          speculative: 'mtp',
+          mmprojPath: '/models/mmproj.gguf'
+        }),
+        true
+      )
+    ],
+    modelsMax: 2
+  }
+  const embedIni = routerPreset(embedLaunch, bin('/x', 'unified'))
+  const bge = embedIni.split(/\n(?=\[)/)[1]!
+  for (const line of ['embeddings = 1', 'gpu-layers = 0', 'parallel = 1', 'ctx-size = 512', 'model = /models/bge.gguf']) {
+    assert.ok(bge.split('\n').includes(line), `bge has ${line}`)
+  }
+  assert.ok(!bge.includes('fit') && !bge.includes('mmproj') && !bge.includes('spec-type') && !bge.includes('gpu-layers = 40') && !bge.includes('gpu-layers = 999'))
+  ok('an embedding model is CPU-only: embeddings on, no fit, no projector, and a saved gpu-layers cannot put it on the card')
+  const embedModels = initialRouterModels(embedLaunch)
+  assert.equal(embedModels[0]!.embed, false); assert.equal(embedModels[1]!.embed, true); ok('the router remembers which model only embeds')
+  const kept = embeddingLaunch(model('/models/chat.gguf', { embed: true, gpuLayers: 20, extraArgs: '--mlock' }), false)
+  assert.equal(kept.embed, false); assert.equal(kept.gpuLayers, 20); assert.equal(kept.extraArgs, '--mlock'); ok('leaving the box unchecked does not turn a chat launch into embeddings, or throw its flags away')
 }
 
 console.log('\nthe model a request uses')
@@ -59,6 +91,15 @@ console.log('\nthe model a request uses')
   assert.equal(servedModel(routed, 'a')!.id, 'a'); ok('a router: the model asked for, loaded or not')
   assert.equal(servedModel(routed, null)!.id, 'b'); assert.equal(servedModel(routed, 'gone')!.id, 'b'); ok('nothing asked for, or a name it does not have: a loaded one')
   assert.deepEqual(servedModels({ ...routed, phase: 'stopped' }), []); ok('a stopped server serves nothing')
+  const mixed = [
+    { id: 'bert', modelPath: '/m/bert.gguf', state: 'loaded' as const, contextPerSlot: 512, supportsTools: false, modalities: null, embed: true },
+    { id: 'chat', modelPath: '/m/chat.gguf', state: 'unloaded' as const, contextPerSlot: null, supportsTools: true, modalities: null, embed: false },
+    { id: 'bert2', modelPath: '/m/bert2.gguf', state: 'unloaded' as const, contextPerSlot: null, supportsTools: false, modalities: null, embed: true }
+  ]
+  const withEmbed: ServerStatus = { ...routed, router: { modelsMax: 2, models: mixed } }
+  assert.equal(embeddingModel(withEmbed)!.id, 'bert'); ok('two embedding models: the run uses the first')
+  assert.equal(servedModel(withEmbed, null)!.id, 'chat'); assert.equal(servedModel(withEmbed, 'bert')!.id, 'bert'); ok('chat does not default to the embedding model, and naming it still finds it')
+  assert.deepEqual(generationModels(withEmbed).map((m) => m.id), ['chat']); ok('the picker’s list is the models that chat')
 }
 
 console.log('\nwhat can be resident at once')

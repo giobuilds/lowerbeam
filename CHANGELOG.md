@@ -22,6 +22,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- A coding run can find project code by what it is about, when the server is a
+  router and a model is marked for CPU embeddings. The tool returns path and
+  line excerpts from that project, the way search does. The embedding model
+  stays on the CPU, is not offered for chat, and is not saved as the way that
+  file launches on its own. Nothing outside the project is indexed.
 - `lowerbeam run --task TEXT` asks a coding run from the command line, without
   opening the window. It uses the model last launched in the app. The default
   mode is inspect. `--mode edit` and `--mode run` still work on a copy and do

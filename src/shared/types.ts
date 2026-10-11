@@ -83,6 +83,14 @@ export interface LaunchConfig {
    * llama.cpp does.
    */
   mmprojOffload?: boolean
+  /**
+   * This process only embeds text, for the coding `find` tool. It is launched
+   * on the CPU and is not a model anyone chats with. Absent means it generates.
+   * A saved one-model launch does not carry this: turning it on there would
+   * make the file unable to chat the next time it was launched alone.
+   * False when a launch predates the flag; the schema fills that in.
+   */
+  embed: boolean
 }
 
 export type SpeculativeMode = 'off' | 'mtp' | 'ngram' | 'draft'
@@ -143,7 +151,8 @@ export const DEFAULT_LAUNCH_CONFIG: Omit<LaunchConfig, 'modelPath'> = {
   parallel: 4,
   threads: -1,
   cpuMoeLayers: 0,
-  extraArgs: ''
+  extraArgs: '',
+  embed: false
 }
 
 /** Everything the UI needs to render the server panel. */
@@ -213,6 +222,11 @@ export interface ServedModel {
   contextPerSlot: number | null
   supportsTools: boolean
   modalities: { vision: boolean; audio: boolean; video: boolean } | null
+  /**
+   * True when this model only embeds project text for the coding `find` tool.
+   * Chat and coding do not select it. Absent means it generates.
+   */
+  embed?: boolean
 }
 
 /** A router-mode launch: each model with its own launch, and how many may be resident at once. */

@@ -6,6 +6,7 @@ import { JOURNAL_VERSION, DEFAULT_TERMS, describeTerms, sameTerms, type GrantTer
 import { streamChat, windowUsed, type ChatTurn, type StreamedToolCall } from '@shared/chatClient.js'
 import type { Grant } from './grant.js'
 import { AGENT_TOOLS, WRITE_TOOLS, readBudgetBytes, runAgentTool } from './tools.js'
+import { FIND_TOOL, findInGrant } from './find.js'
 import { projectFacts } from './facts.js'
 import { foldToolTurns, nextFoldIndex } from '@context/fold.js'
 import { checkpointFrom, renderCheckpoint, renderReminder, compactWorkingSet } from '@context/checkpoint.js'
@@ -81,6 +82,12 @@ export interface RunRequest {
    * poison the model never read tests nothing.
    */
   observe?: (name: string, args: Record<string, unknown>, content: string) => void
+  /**
+   * Router model that embeds project text for `find`. Absent, the tool is
+   * not declared, so a measured run and the harness see the same tools as
+   * before.
+   */
+  embedModel?: string | null
 }
 
 export interface Executed {
@@ -198,13 +205,17 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
   // first two messages, so the notes outlast it.
   const facts = req.facts === false ? null : await projectFacts(req.grant, Math.floor(readBudgetBytes(req.contextLimit) / 2))
   if (facts) emit({ type: 'project.facts', files: facts.files, chars: facts.text.length })
+  // Said only when the tool exists. The harness and a measurement leave
+  // embedModel unset, and their prompt stays the one they were scored with.
+  const findNote = req.embedModel
+    ? ' When the wording may differ from the code, use find: it returns path:line excerpts from this project only, and it does not look outside the project.'
+    : ''
   let turns: ChatTurn[] = [
-    { role: 'system', content: granted ? `${policy} ${granted}` : policy },
+    { role: 'system', content: `${granted ? `${policy} ${granted}` : policy}${findNote}` },
     { role: 'user', content: facts ? `${facts.text}\n\nThe task:\n${req.task}` : req.task }
   ]
   const canRun = mode === 'run' && Boolean(req.execute)
-  const tools =
-    mode === 'inspect' ? AGENT_TOOLS : canRun ? [...AGENT_TOOLS, ...WRITE_TOOLS, RUN_COMMAND_TOOL] : [...AGENT_TOOLS, ...WRITE_TOOLS]
+  const tools = toolsForRun(mode, canRun, req.embedModel)
   const toolSpec = tools.map((t) => ({
     type: 'function',
     function: { name: t.name, description: t.description, parameters: t.parameters }
@@ -382,7 +393,16 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
       const result =
         call.name === 'run_command' && canRun
           ? await runCommand(req.execute!, args, deadline, emit)
-          : await runAgentTool(req.grant, call.name, args, { contextLimit: req.contextLimit })
+          : call.name === 'find' && req.embedModel
+            ? await findInGrant({
+                grant: req.grant,
+                query: typeof args.query === 'string' ? args.query : '',
+                baseUrl: req.baseUrl,
+                apiKey: req.apiKey ?? null,
+                model: req.embedModel,
+                signal: deadline
+              })
+            : await runAgentTool(req.grant, call.name, args, { contextLimit: req.contextLimit })
       req.observe?.(call.name, args, result.content)
       if (result.denied) denials += 1
       if ((call.name === 'edit_file' || call.name === 'write_file') && result.ok) edited = true
@@ -417,6 +437,17 @@ export const RUN_COMMAND_TOOL: ToolDefinition = {
     },
     required: ['command']
   }
+}
+
+/**
+ * The tools a run is offered. `find` is added only when an embedding model
+ * was named, so a run without one — the harness, a measurement — declares
+ * exactly what it did before.
+ */
+export function toolsForRun(mode: CodingMode, canRun: boolean, embedModel?: string | null): ToolDefinition[] {
+  const base =
+    mode === 'inspect' ? AGENT_TOOLS : canRun ? [...AGENT_TOOLS, ...WRITE_TOOLS, RUN_COMMAND_TOOL] : [...AGENT_TOOLS, ...WRITE_TOOLS]
+  return embedModel ? [...base, FIND_TOOL] : base
 }
 
 /** The tail of the output is what the model gets; the whole of it is an artifact. */
