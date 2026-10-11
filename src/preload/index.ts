@@ -234,6 +234,12 @@ const api = {
     git: (runId: string) => invoke<GitState | null>(IPC.codingGit, runId, runIdentity(runId)),
     undo: (runId: string) => invoke<ApplyResult>(IPC.codingUndo, runId, runIdentity(runId)),
     discard: (runId: string) => invoke<null>(IPC.codingDiscard, runId, runIdentity(runId)),
+    /** Remove one run from the Coding list. The identity is dropped only after that succeeds. */
+    remove: async (runId: string) => {
+      const result = await invoke<null>(IPC.codingDelete, runId, runIdentity(runId))
+      runIdentities.delete(runId)
+      return result
+    },
     /** Whether commands can be run on this machine, with the reason when not. */
     sandbox: () => invoke<{ ok: boolean; reason: string | null; toolchain: string }>(IPC.codingSandbox),
     capability: (model?: string | null) => invoke<CapabilityStatus>(IPC.codingCapability, model ?? null),

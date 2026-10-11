@@ -831,6 +831,10 @@ export function registerIpc(
     await coding.discard(id)
     return null
   })
+  handleRun<null>(IPC.codingDelete, async (id) => {
+    await coding.deleteRun(id)
+    return null
+  })
 
   const updateView = (): UpdateState => ({ ...updater.state, enabled: settings.current.updateChecks })
   handle<UpdateState>(IPC.updateState, () => updateView())

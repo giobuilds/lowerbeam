@@ -640,6 +640,27 @@ export class CodingSupervisor extends EventEmitter<{
   }
 
   /**
+   * One run gone from the Coding list: its journal, the model's words,
+   * command outputs, baseline and workspace copy. A change already written
+   * into the project stays there. The undo record goes with the copy.
+   * Refused while this run is still going. Measurements and the capability
+   * record stay.
+   */
+  async deleteRun(id: string): Promise<void> {
+    if (!/^[a-f0-9-]{36}$/i.test(id)) throw new Error('invalid run id')
+    if (this.live.has(id)) throw new Error('Stop this run before deleting it.')
+    if (!this.runs.has(id)) return
+    for (const name of await readdir(this.dir).catch(() => [] as string[])) {
+      if (name.startsWith(`${id}.`) && RUN_FILE.test(name)) await rm(join(this.dir, name), { force: true })
+    }
+    await rm(this.workspaceDir(id), { recursive: true, force: true })
+    this.workspaces.delete(id)
+    this.runs.delete(id)
+    this.identities.forget(id)
+    this.emit('runs', this.list())
+  }
+
+  /**
    * Every coding run gone: journals, the model's words, command outputs,
    * baselines, measurements' journals and every workspace copy. The record
    * of what was measured on a model, and the cache of model hashes, are not

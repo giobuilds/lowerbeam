@@ -24,6 +24,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 - When no llama.cpp is found, the Server panel can download the official Vulkan or CPU build from GitHub into the app's data folder, check its digest, and use it. A build you already have is left alone, and that download is not requested until you click it. About → Data shows the download's size, and Delete all app data removes it. (#194)
 - The Server panel can check once a day for a newer official llama.cpp build. The check is off until you turn it on, it only looks at the build Lowerbeam installed, and nothing is installed until you click Install. The previous build stays so you can go back. (#194)
+- A coding run can be deleted from its row in the Coding list, the way a chat can. That removes the run's journal, the model's words, its command output and its workspace copy. Changes already written into the project are left there. A run that is still going has to be stopped first.
 
 ## [0.14.0] - 2026-10-11
 

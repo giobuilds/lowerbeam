@@ -71,6 +71,7 @@ export const IPC = {
   codingUndo: 'coding:undo',
   codingGit: 'coding:git',
   codingDiscard: 'coding:discard',
+  codingDelete: 'coding:delete',
   codingSandbox: 'coding:sandbox',
   codingCapability: 'coding:capability',
   codingCapabilityOf: 'coding:capability-of',
