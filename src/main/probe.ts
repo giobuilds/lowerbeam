@@ -206,6 +206,18 @@ export function parseVersion(versionText: string): string {
 }
 
 /**
+ * The build number llama.cpp prints in its version line.
+ * `0.6.0-dev (build 11429, commit d81235049)` and the same line with a
+ * `version:` prefix both yield 11429. Absent when the binary did not say.
+ */
+export function parseBuildNumber(version: string): number | null {
+  const m = /\bbuild\s+(\d+)\b/.exec(version)
+  if (!m) return null
+  const n = Number(m[1])
+  return Number.isSafeInteger(n) ? n : null
+}
+
+/**
  * Newer builds document `--flash-attn [on|off|auto]`; older ones show the flag
  * with no value. Passing a value to the old form (or omitting it on the new
  * form) makes llama.cpp exit during argument parsing.
