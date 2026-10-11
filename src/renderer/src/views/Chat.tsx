@@ -10,6 +10,7 @@ import { Attachments } from '../components/Attachments.js'
 import { useAutoSize } from '../components/useAutoSize.js'
 import { SlotMeter } from '../components/SlotMeter.js'
 import { servedModel } from '@shared/served.js'
+import { transcriptThrough } from '@context/verify.js'
 
 export function Chat({ onConfigureTools }: { onConfigureTools: () => void }): React.JSX.Element {
   const active = useChatStore(activeConversation)
@@ -160,7 +161,10 @@ export function Chat({ onConfigureTools }: { onConfigureTools: () => void }): Re
             messages.map((m) => (
               <div key={m.id}>
                 {m.id === active?.compaction?.throughMessageId && (
-                  <CompactionMark compaction={active.compaction} />
+                  <CompactionMark
+                    compaction={active.compaction}
+                    source={transcriptThrough(messages, active.compaction.throughMessageId)}
+                  />
                 )}
                 <Message
                 message={m}

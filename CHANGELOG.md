@@ -22,6 +22,9 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Opening a compaction record shows which of its lines are not in the
+  transcript it replaced. The mark names the count, and those lines are set
+  apart from the ones that were copied.
 - A coding run can find project code by what it is about, when the server is a
   router and a model is marked for CPU embeddings. The tool returns path and
   line excerpts from that project, the way search does. The embedding model
