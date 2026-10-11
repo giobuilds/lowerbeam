@@ -324,6 +324,19 @@ export interface LlamaDownloadProgress {
   total: number
 }
 
+/**
+ * The daily llama.cpp check, as the Server panel shows it.
+ * The renderer reads this. It does not send a tag, a path or a URL back.
+ */
+export interface LlamaUpdateView {
+  /** Off unless the person turned the check on. */
+  enabled: boolean
+  /** A newer pinned tag, such as `b11430`, or null when nothing should be offered. */
+  offerTag: string | null
+  /** The previous managed tag kept on disk, such as `b11429`, or null. */
+  rollbackTag: string | null
+}
+
 export interface GpuDevice {
   /** e.g. "ROCm0" */
   id: string

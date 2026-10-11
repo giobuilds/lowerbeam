@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { DownloadChoice } from '@shared/llamaOffer.js'
-import { downloadRecovery } from '@shared/llamaOffer.js'
-import type { BinarySelection, LlamaDownloadProgress } from '@shared/types.js'
+import { downloadRecovery, LLAMA_UPDATE_LABEL, offerSentence, rollbackSentence } from '@shared/llamaOffer.js'
+import type { BinarySelection, LlamaDownloadProgress, LlamaUpdateView } from '@shared/types.js'
 import { useServerStore } from '../state/serverStore.js'
 
 const RELEASES = 'https://github.com/ggml-org/llama.cpp/releases'
@@ -265,6 +265,134 @@ export function ManagedBuildRow({
         )}
       </div>
       {error && <p className="mt-1 text-rose-300">{error}</p>}
+    </div>
+  )
+}
+
+/**
+ * The daily check sits with the managed build. It is hidden when the selected
+ * binary is one the person chose. Nothing is installed until Install.
+ */
+export function OfficialUpdate({ disabled }: { disabled: boolean }): React.JSX.Element | null {
+  const managed = useServerStore((s) => s.managed)
+  const binary = useServerStore((s) => s.binary)
+  const adopt = useServerStore((s) => s.adoptBinaries)
+  const [view, setView] = useState<LlamaUpdateView | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [which, setWhich] = useState<'install' | 'back' | null>(null)
+  const [progress, setProgress] = useState<LlamaDownloadProgress | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let epoch = 0
+    let live = true
+    const stop = window.llama.official.onUpdate((next) => {
+      epoch += 1
+      setView(next)
+    })
+    const seen = epoch
+    void window.llama.official.update().then((next) => {
+      if (live && epoch === seen) setView(next)
+    })
+    return () => {
+      live = false
+      stop()
+    }
+  }, [binary?.path, managed?.path])
+
+  useEffect(() => window.llama.official.onProgress(setProgress), [])
+
+  if (!managed || !binary || binary.path !== managed.path || !view) return null
+
+  const run = async (action: 'install' | 'back'): Promise<void> => {
+    setError(null)
+    setBusy(true)
+    setWhich(action)
+    setProgress(null)
+    try {
+      adopt(action === 'install' ? await window.llama.official.installUpdate() : await window.llama.official.restoreUpdate())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      try {
+        setView(await window.llama.official.update())
+      } catch {
+        // The action's error is the one to show.
+      }
+      setBusy(false)
+    }
+  }
+
+  const received = progress?.received ?? 0
+  const total = progress?.total ?? 0
+  const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0
+
+  return (
+    <div className="mt-2">
+      <label className="flex items-center gap-1.5 text-slate-200">
+        <input
+          type="checkbox"
+          checked={view.enabled}
+          disabled={busy}
+          onChange={(e) => {
+            const enabled = e.target.checked
+            setView((prev) => (prev ? { ...prev, enabled, offerTag: enabled ? prev.offerTag : null } : prev))
+            const choice = enabled ? 'on' : 'off'
+            void window.llama.official
+              .setUpdate(choice)
+              .then(setView)
+              .catch((err: Error) => setError(err.message))
+          }}
+        />
+        {LLAMA_UPDATE_LABEL}
+      </label>
+      <p className="mt-1 text-[11px] leading-snug text-muted">
+        When this is on, Lowerbeam asks GitHub once a day about the build it installed. Nothing is
+        installed until you click Install. GitHub sees your IP address and a Lowerbeam user agent.
+      </p>
+      {view.offerTag && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-slate-200">{offerSentence(view.offerTag)}</span>
+          <button
+            type="button"
+            disabled={disabled || busy}
+            title={disabled ? 'Stop the server before changing the binary.' : undefined}
+            onClick={() => void run('install')}
+            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-ink hover:brightness-110 disabled:opacity-40"
+          >
+            Install
+          </button>
+        </div>
+      )}
+      {view.rollbackTag && (
+        <button
+          type="button"
+          disabled={disabled || busy}
+          title={disabled ? 'Stop the server before changing the binary.' : undefined}
+          onClick={() => void run('back')}
+          className="mt-1 block text-accent hover:underline disabled:opacity-40"
+        >
+          {rollbackSentence(view.rollbackTag)}
+        </button>
+      )}
+      {busy && (
+        <p className="mt-1 text-[11px] text-muted">
+          {which === 'back' || (total > 0 && received >= total)
+            ? 'Checking the build…'
+            : total > 0
+              ? `${megabytes(received)} of ${megabytes(total)}`
+              : 'Contacting GitHub…'}
+        </p>
+      )}
+      {busy && total > 0 && (
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink">
+          <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      {error && <p className="mt-1 text-rose-300">{error}</p>}
+      {disabled && (view.offerTag || view.rollbackTag) && (
+        <p className="mt-1 text-[11px] text-muted">Stop the server before changing the binary.</p>
+      )}
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import { lstat, realpath, rm } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
+import { newerOfficialBuild, tagBuildNumber } from '@shared/llamaOffer.js'
 import type { ManagedBuild } from '@shared/types.js'
 import type { SettingsStore } from './settings.js'
 
@@ -29,7 +30,18 @@ export async function rememberManagedBuild(
     digest: installed.digest,
     installedAt
   }
-  await settings.patch({ binaryPath: installed.llamaPath, managedBuild: managed })
+  const offer = settings.current.llamaUpdateOffer
+  const keepOffer =
+    offer !== null &&
+    offer.backend === installed.backend &&
+    newerOfficialBuild(tagBuildNumber(installed.tag), tagBuildNumber(offer.tag)) !== null
+  const rollback = settings.current.llamaRollback
+  await settings.patch({
+    binaryPath: installed.llamaPath,
+    managedBuild: managed,
+    ...(keepOffer ? {} : { llamaUpdateOffer: null }),
+    ...(rollback && rollback.path === installed.llamaPath ? { llamaRollback: null } : {})
+  })
   return managed
 }
 
@@ -41,7 +53,12 @@ export async function forgetManagedBuild(settings: SettingsStore): Promise<boole
   const managed = settings.current.managedBuild
   if (!managed) return false
   const clearPath = settings.current.binaryPath === managed.path
-  const next: { managedBuild: null; binaryPath?: undefined } = { managedBuild: null }
+  const next: {
+    managedBuild: null
+    llamaUpdateOffer: null
+    llamaRollback: null
+    binaryPath?: undefined
+  } = { managedBuild: null, llamaUpdateOffer: null, llamaRollback: null }
   if (clearPath) next.binaryPath = undefined
   await settings.patch(next)
   return clearPath

@@ -12,7 +12,7 @@ import { recordSuccessfulLaunches } from './profileRecorder.js'
 import { DownloadManager } from './downloads.js'
 import { McpRegistry } from './mcpRegistry.js'
 import { setSearxngUrl } from './tools.js'
-import { registerIpc, wireEvents } from './ipc.js'
+import { registerIpc, stopLlamaUpdates, wireEvents } from './ipc.js'
 import { buildAppMenu } from './menu.js'
 import { migrateLegacyUserData } from './migrate.js'
 import { attachContextMenu, registerContextMenuCommands } from './contextMenu.js'
@@ -243,6 +243,7 @@ if (cli.kind === 'help' || cli.kind === 'error') {
     quitting = true
     // Every child has to be stopped whether or not a llama-server is among
     // them: MCP servers are spawned detached, so nothing else would reap them.
+    stopLlamaUpdates()
     downloads?.shutdown()
     mcp?.shutdown()
     coding?.shutdown()

@@ -26,7 +26,7 @@ chmod +x Lowerbeam.AppImage
 ./Lowerbeam.AppImage
 ```
 
-Or install the RPM on Fedora and its relatives. On first run, if no llama.cpp is found, Lowerbeam offers to download the official Vulkan build (about 30 MB) or the CPU build into its own data folder. That build needs glibc 2.34 or newer. You can point it at a build of your own instead. ROCm, CUDA, SYCL and OpenVINO builds are not downloaded; use one you installed yourself.
+Or install the RPM on Fedora and its relatives. On first run, if no llama.cpp is found, Lowerbeam offers to download the official Vulkan build (about 30 MB) or the CPU build into its own data folder. That build needs glibc 2.34 or newer. You can point it at a build of your own instead. Checking for a newer official build is off until you turn it on. It then runs once a day and waits for you to click Install. ROCm, CUDA, SYCL and OpenVINO builds are not downloaded; use one you installed yourself.
 
 ## What it does
 

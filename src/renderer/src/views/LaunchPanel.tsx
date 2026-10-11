@@ -9,7 +9,7 @@ import { ModelPicker } from '../components/ModelPicker.js'
 import { VramBar } from '../components/VramBar.js'
 import { HealthCheck } from '../components/HealthCheck.js'
 import { ProfileBadge } from '../components/ProfileBadge.js'
-import { ManagedBuildRow, OfficialBuild } from '../components/OfficialBuild.js'
+import { ManagedBuildRow, OfficialBuild, OfficialUpdate } from '../components/OfficialBuild.js'
 import { managedLabel, showFirstRunOffer } from '@shared/llamaOffer.js'
 
 /** Phases in which a new launch must not be attempted. */
@@ -360,6 +360,7 @@ export function LaunchPanel(): React.JSX.Element {
               onRemoved={(selection) => adoptBinaries(selection)}
             />
           )}
+          <OfficialUpdate disabled={live} />
           {status?.port && (
             <a
               href={`http://127.0.0.1:${status.port}`}

@@ -11,6 +11,7 @@ import type {
   BinaryInfo,
   BinarySelection,
   LlamaDownloadProgress,
+  LlamaUpdateView,
   ManagedBuild,
   ConversationSummaryView,
   ConversationView,
@@ -115,7 +116,16 @@ const api = {
     remove: () => invoke<BinarySelection>(IPC.llamaRemove),
     /** A file dialog in the main process, then the same probe as selecting a binary. */
     pick: () => invoke<BinarySelection | null>(IPC.binaryPick),
-    onProgress: (cb: (progress: LlamaDownloadProgress) => void) => subscribe(IPC.llamaProgress, cb)
+    onProgress: (cb: (progress: LlamaDownloadProgress) => void) => subscribe(IPC.llamaProgress, cb),
+    /** Whether a newer pinned build is offered. The page does not send a tag. */
+    update: () => invoke<LlamaUpdateView>(IPC.llamaUpdateView),
+    /** `on` or `off` only. */
+    setUpdate: (choice: 'on' | 'off') => invoke<LlamaUpdateView>(IPC.llamaUpdateSet, choice),
+    /** Install the offered pinned build. No path, tag or URL. */
+    installUpdate: () => invoke<BinarySelection>(IPC.llamaUpdateInstall),
+    /** Go back to the previous managed build. No path, tag or URL. */
+    restoreUpdate: () => invoke<BinarySelection>(IPC.llamaUpdateBack),
+    onUpdate: (cb: (view: LlamaUpdateView) => void) => subscribe(IPC.llamaUpdateChanged, cb)
   },
   models: {
     list: () => invoke<ModelEntryView[]>(IPC.modelsList),
