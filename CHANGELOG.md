@@ -20,6 +20,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-11
+
 ### Added
 
 - Opening a compaction record shows which of its lines are not in the
