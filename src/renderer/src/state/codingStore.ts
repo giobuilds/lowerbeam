@@ -50,6 +50,8 @@ interface CodingState {
   apply: (runId: string, options?: ApplyOptions) => Promise<void>
   undo: (runId: string) => Promise<void>
   discard: (runId: string) => Promise<void>
+  /** Remove one run from the list. A run that is still going is refused. */
+  remove: (runId: string) => Promise<void>
   pickProject: () => Promise<void>
   setTask: (task: string) => void
   start: () => Promise<void>
@@ -200,6 +202,30 @@ export const useCodingStore = create<CodingState>((set, get) => ({
     set({ changes })
   },
 
+  async remove(runId) {
+    try {
+      await window.llama.coding.remove(runId)
+    } catch (err) {
+      set({ error: (err as Error).message })
+      return
+    }
+    const state = get()
+    const { [runId]: _events, ...events } = state.events
+    const { [runId]: _changes, ...changes } = state.changes
+    const { [runId]: _evidence, ...evidence } = state.evidence
+    const { [runId]: _applied, ...applyResults } = state.applyResults
+    const { [runId]: _busy, ...busy } = state.busy
+    const runs = state.runs.filter((r) => r.id !== runId)
+    const wasActive = state.activeRunId === runId
+    set({ events, changes, evidence, applyResults, busy, runs, error: null })
+    // The run on screen is gone: open the newest one still listed.
+    if (wasActive) {
+      const next = runs.at(-1)
+      if (next) await get().open(next.id)
+      else set({ activeRunId: null })
+    }
+  },
+
   async start() {
     const { project, task } = get()
     if (!project || !task.trim()) return
@@ -252,7 +278,13 @@ export function subscribeToCoding(): () => void {
     if (list.some((e) => e.seq === event.seq)) return
     useCodingStore.setState({ events: { ...events, [event.run]: [...list, event] } })
   })
-  const offRuns = window.llama.coding.onRunsChanged((runs) => useCodingStore.setState({ runs }))
+  const offRuns = window.llama.coding.onRunsChanged((runs) => {
+    const { activeRunId } = useCodingStore.getState()
+    const gone = activeRunId !== null && !runs.some((r) => r.id === activeRunId)
+    const next = gone ? (runs.at(-1) ?? null) : null
+    useCodingStore.setState(gone ? { runs, activeRunId: next?.id ?? null } : { runs })
+    if (next) void useCodingStore.getState().open(next.id)
+  })
   const offMeasure = window.llama.coding.onMeasure((measure) => {
     useCodingStore.setState({ measure })
     // A finished measurement is a new entry for the loaded file.

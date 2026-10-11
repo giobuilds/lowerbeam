@@ -23,6 +23,7 @@ export function Coding(): React.JSX.Element {
   const runs = useCodingStore((s) => s.runs)
   const activeRunId = useCodingStore((s) => s.activeRunId)
   const open = useCodingStore((s) => s.open)
+  const remove = useCodingStore((s) => s.remove)
   const error = useCodingStore((s) => s.error)
   const clearError = useCodingStore((s) => s.clearError)
   const loadCapability = useCodingStore((s) => s.loadCapability)
@@ -56,24 +57,33 @@ export function Coding(): React.JSX.Element {
           </button>
           <ModeBadge />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {runs.length === 0 && <p className="p-3 text-[11px] text-muted">No runs yet.</p>}
+        <ul className="min-h-0 flex-1 overflow-y-auto">
+          {runs.length === 0 && <li className="p-3 text-[11px] text-muted">No runs yet.</li>}
           {[...runs].reverse().map((run) => (
-            <button
-              key={run.id}
-              type="button"
-              onClick={() => void open(run.id)}
-              className={`block w-full border-b border-edge px-3 py-2 text-left hover:bg-ink/60 ${
-                run.id === activeRunId ? 'bg-ink' : ''
-              }`}
-            >
-              <p className="truncate text-xs text-slate-200">{run.task}</p>
-              <p className="mt-0.5 text-[11px] text-muted">
-                <Outcome outcome={run.outcome} /> · {run.model}
-              </p>
-            </button>
+            <li key={run.id} className="group relative border-b border-edge">
+              <button
+                type="button"
+                onClick={() => void open(run.id)}
+                className={`block w-full px-3 py-2 text-left hover:bg-ink/60 ${
+                  run.id === activeRunId ? 'bg-ink' : ''
+                }`}
+              >
+                <p className="truncate pr-4 text-xs text-slate-200">{run.task}</p>
+                <p className="mt-0.5 truncate pr-4 text-[11px] text-muted">
+                  <Outcome outcome={run.outcome} /> · {run.model}
+                </p>
+              </button>
+              <button
+                type="button"
+                title={run.outcome === 'running' ? 'Stop this run before deleting it.' : 'Delete run'}
+                onClick={() => void remove(run.id)}
+                className="absolute right-1 top-1 hidden rounded px-1.5 text-[11px] text-muted hover:text-rose-300 group-hover:block"
+              >
+                ✕
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
