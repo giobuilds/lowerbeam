@@ -310,29 +310,6 @@ npm dependencies, so there is no rebuild step to break on an Electron bump.
 
 ## Design notes
 
-Five documents, meant to be read in this order:
-
-- [Lowerbeam Coding Architecture](docs/Lowerbeam_Coding_Architecture.pdf) — a
-  project-scoped coding agent runtime: permission broker, sandbox, durable
-  jobs, reviewable changes.
-- [Structured compaction](docs/structured-compaction.md) — replacing prose
-  summaries with a typed, checkable record of a conversation.
-- [Direction](docs/direction.md) — how the two fit: one schema, the journal as
-  the record compaction is checked against, and the order to build it in.
-- [Coding: the plan](docs/coding-plan.md) — what is actually committed to from
-  the architecture, stage by stage, with the trial that picks the engine and
-  the gates each stage has to pass.
-- [Stage 0 results](docs/stage0-results.md) — the numbers behind each
-  decision: read-only, write, recover and crossover tasks on local
-  models, the memory a task needs against what a launch supplies, a held-out
-  set for a fine-tune, and Pi and OpenCode run on the same tasks against the
-  reference loop, which stays.
-
-Beside them, [feature gaps](docs/lowerbeam-feature-gaps.md) compares
-Lowerbeam with other local-model apps and coding harnesses: ten gaps ranked
-by value against effort, each tracked as an issue, what is already rare among
-them, and what is deliberately not built.
-
 Stages 1 and 2 are built: the Coding tab, its journal, and edits in a copy
 that you review and apply. Stage 3 is built in first form: *edit and run*
 runs commands in a bubblewrap box with no network, offered only where the

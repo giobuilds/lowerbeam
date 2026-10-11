@@ -17,7 +17,5 @@ tests/harness/dataset/
 tests/harness/engines/bin/
 tests/harness/engines/dl/
 
-# Drafts kept on the maintainer's machine
-docs/lowerbeam-sponsors-kit.md
-docs/lowerbeam-telemetry-design.md
-docs/lowerbeam-oss-checklist.md
+# Design notes and drafts, kept on the maintainer's machine
+docs/
