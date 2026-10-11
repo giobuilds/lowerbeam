@@ -12,6 +12,7 @@ import type {
   BinaryInfo,
   BinarySelection,
   LlamaDownloadProgress,
+  LlamaUpdateView,
   ManagedBuild,
   ConversationSummaryView,
   ConversationSearchHitView,
@@ -45,13 +46,14 @@ import type {
   RouterPlanView
 } from '@shared/types.js'
 import { IPC } from '@shared/ipc.js'
-import { applyOptionsSchema, launchConfigSchema, llamaInstallSchema, routerLaunchSchema } from '@shared/schema.js'
+import { applyOptionsSchema, launchConfigSchema, llamaInstallSchema, llamaUpdateSetSchema, routerLaunchSchema } from '@shared/schema.js'
 import { dataUsage, deleteOwnData } from './appData.js'
 import { measureSpeculation } from './specMeasure.js'
 import type { SlotCache } from './slots.js'
 import type { ServerSupervisor } from './supervisor.js'
 import { missingBinary, probeBinary, readDevices } from './probe.js'
 import { LlamaRelease } from './llamaRelease.js'
+import { expectNoChoice, installOfferedUpdate, LlamaUpdateSchedule, restorePreviousBuild } from './llamaUpdate.js'
 import {
   deleteManagedDir,
   forgetManagedBuild,
@@ -224,6 +226,18 @@ export function registerIpc(
     }
   }
 
+  // The check reads the binary now in use. It does not download, and it does
+  // not run for a binary the person chose themselves.
+  llamaSchedule = new LlamaUpdateSchedule(
+    settings,
+    (backend) => new LlamaRelease().resolve(backend, 'pinned'),
+    () => supervisor.binaryInfo.path
+  )
+  const noteBinary = (): void => {
+    llamaSchedule?.publishView()
+    llamaSchedule?.nudge()
+  }
+
   /** Re-probe and select. The renderer supplies a path only for a build it was shown. */
   const selectProbed = async (path: string): Promise<BinaryInfo> => {
     assertServerStopped()
@@ -234,6 +248,7 @@ export function registerIpc(
     const idx = discovered.findIndex((b) => b.path === path)
     if (idx >= 0) discovered[idx] = info
     else discovered.push(info)
+    noteBinary()
     return info
   }
 
@@ -281,6 +296,7 @@ export function registerIpc(
       const idx = discovered.findIndex((item) => item.path === installed.llamaPath)
       if (idx >= 0) discovered[idx] = installed.binary
       else discovered.unshift(installed.binary)
+      noteBinary()
       return selection()
     } finally {
       if (llamaAbort === abort) llamaAbort = null
@@ -315,7 +331,79 @@ export function registerIpc(
       const next = discovered.find((item) => item.path)
       supervisor.setBinary(next ?? missingBinary())
     }
+    noteBinary()
     return selection()
+  })
+
+  const placeBinary = (info: BinaryInfo): void => {
+    supervisor.setBinary(info)
+    const idx = discovered.findIndex((item) => item.path === info.path)
+    if (idx >= 0) discovered[idx] = info
+    else discovered.unshift(info)
+    noteBinary()
+  }
+
+  handle<LlamaUpdateView>(IPC.llamaUpdateView, () => {
+    return llamaSchedule?.view() ?? { enabled: settings.current.llamaUpdateCheck, offerTag: null, rollbackTag: null }
+  })
+
+  handle<LlamaUpdateView>(IPC.llamaUpdateSet, async (raw) => {
+    const choice = llamaUpdateSetSchema.parse(raw)
+    await settings.patch({ llamaUpdateCheck: choice === 'on' })
+    await llamaSchedule?.settle()
+    llamaSchedule?.publishView()
+    return llamaSchedule?.view() ?? { enabled: choice === 'on', offerTag: null, rollbackTag: null }
+  })
+
+  // The tag was stored by the check. The renderer sends no tag, path or URL.
+  handle<BinarySelection>(IPC.llamaUpdateInstall, async (...args) => {
+    expectNoChoice(args)
+    assertServerStopped()
+    if (llamaAbort) throw new Error('A download is already running.')
+    const abort = new AbortController()
+    llamaAbort = abort
+    let lastProgress = 0
+    try {
+      const installed = await installOfferedUpdate({
+        settings,
+        client: new LlamaRelease(),
+        root: llamaRoot(app.getPath('userData')),
+        currentPath: supervisor.binaryInfo.path,
+        assertStopped: assertServerStopped,
+        signal: abort.signal,
+        onProgress: (received, total) => {
+          const now = Date.now()
+          if (received !== total && now - lastProgress < 100) return
+          lastProgress = now
+          broadcastLlama({ received, total })
+        }
+      })
+      placeBinary(installed.binary)
+      return selection()
+    } finally {
+      if (llamaAbort === abort) llamaAbort = null
+    }
+  })
+
+  handle<BinarySelection>(IPC.llamaUpdateBack, async (...args) => {
+    expectNoChoice(args)
+    assertServerStopped()
+    if (llamaAbort) throw new Error('A download is already running.')
+    const abort = new AbortController()
+    llamaAbort = abort
+    try {
+      const binary = await restorePreviousBuild({
+        settings,
+        root: llamaRoot(app.getPath('userData')),
+        currentPath: supervisor.binaryInfo.path,
+        assertStopped: assertServerStopped,
+        probe: (path) => probeBinary({ path, kind: 'unified' })
+      })
+      placeBinary(binary)
+      return selection()
+    } finally {
+      if (llamaAbort === abort) llamaAbort = null
+    }
   })
 
   handle<GpuDevice[]>(IPC.binaryDevices, () => readDevices(supervisor.binaryInfo))
@@ -931,6 +1019,13 @@ export function registerIpc(
 let broadcastBench: (run: BenchRunView) => void = () => {}
 let broadcastMcp: (snap: McpSnapshot) => void = () => {}
 let broadcastLlama: (progress: LlamaDownloadProgress) => void = () => {}
+/** Created in registerIpc and started from wireEvents, after the broadcaster exists. */
+let llamaSchedule: LlamaUpdateSchedule | null = null
+
+/** Stop the daily llama.cpp check. A no-op until the app has registered IPC. */
+export function stopLlamaUpdates(): void {
+  llamaSchedule?.stop()
+}
 
 /** Push status and log-availability events to every open window. */
 export function wireEvents(
@@ -958,6 +1053,8 @@ export function wireEvents(
   coding.on('runs', (runs) => broadcast(IPC.codingRunsChanged, runs))
   coding.on('measure', (progress) => broadcast(IPC.codingMeasureChanged, progress))
   updater.on('state', (state: UpdateState) => broadcast(IPC.updateChanged, { ...state, enabled: settings.current.updateChecks }))
+  llamaSchedule?.setPublisher((view) => broadcast(IPC.llamaUpdateChanged, view))
+  llamaSchedule?.start()
 
   // llama-server can emit hundreds of lines per second; coalesce the "there is
   // new output" hint so the renderer polls at most ~10x/sec instead of per line.

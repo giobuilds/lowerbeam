@@ -122,11 +122,17 @@ export interface InstallOptions {
   channel: ReleaseChannel
   signal?: AbortSignal
   onProgress?: (received: number, total: number) => void
-  /** A server is running this binary. That build's directory is not removed. */
+  /**
+   * Keep this binary's directory when older builds are pruned.
+   * A caller passes the build a server is running from, or the managed build an update is replacing.
+   */
   runningPath?: string
   /** Overrides the client's glibc read. Tests pass a fixed version. */
   glibc?: () => string | null
 }
+
+/** `install` without the channel: the asset is already chosen. */
+export type InstallTreeOptions = Omit<InstallOptions, 'channel'>
 
 export interface InstalledBuild {
   tag: string
@@ -354,15 +360,23 @@ export class LlamaRelease {
    * is left in place and reported, so the caller can offer the CPU build.
    */
   async install(options: InstallOptions): Promise<InstalledBuild> {
-    const glibc = (options.glibc ?? this.readGlibc)()
-    if (glibcOlderThan(glibc)) {
-      const found = glibc ? ` (this system has ${glibc})` : ''
-      throw new LlamaReleaseError(
-        'glibc',
-        `The official build needs glibc ${MIN_GLIBC} or newer${found}. Use your own build.`
-      )
-    }
+    this.requireGlibc(options.glibc)
     const asset = await this.resolve(options.backend, options.channel, options.signal)
+    return this.installResolved(asset, options)
+  }
+
+  /**
+   * Download, extract and probe an asset that was already resolved.
+   * Does not change settings, and does not ask GitHub which tag to use,
+   * so an Install click does not repeat the check's requests.
+   * The new directory is kept only when the probe passes. Pass the build
+   * being replaced as `runningPath` so pruning cannot remove it.
+   */
+  async installResolved(asset: ResolvedAsset, options: InstallTreeOptions): Promise<InstalledBuild> {
+    this.requireGlibc(options.glibc)
+    if (asset.backend !== options.backend || !BUILD_TAG.test(asset.tag)) {
+      throw new LlamaReleaseError('no-asset', 'Choose the Vulkan build or the CPU build.')
+    }
     const dest = join(options.root, `${asset.tag}-${asset.backend}`)
     if (await exists(dest)) {
       // Already unpacked. Probe it and use it; do not download again and do
@@ -413,6 +427,16 @@ export class LlamaRelease {
       }
       throw err
     }
+  }
+
+  private requireGlibc(override?: () => string | null): void {
+    const glibc = (override ?? this.readGlibc)()
+    if (!glibcOlderThan(glibc)) return
+    const found = glibc ? ` (this system has ${glibc})` : ''
+    throw new LlamaReleaseError(
+      'glibc',
+      `The official build needs glibc ${MIN_GLIBC} or newer${found}. Use your own build.`
+    )
   }
 
   private async resolvePinned(backend: LlamaBackend, signal?: AbortSignal): Promise<ResolvedAsset> {

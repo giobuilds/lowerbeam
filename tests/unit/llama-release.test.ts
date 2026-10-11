@@ -7,7 +7,10 @@ import { join } from 'node:path'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import { lstat, mkdir, mkdtemp, readFile, readlink, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { parseBuildNumber } from '../../src/main/probe.js'
+import { parseBuildNumber, probeBinary } from '../../src/main/probe.js'
+import { rememberManagedBuild } from '../../src/main/llamaManage.js'
+import { SettingsStore } from '../../src/main/settings.js'
+import { installOfferedUpdate, restorePreviousBuild, runLlamaUpdateCheck } from '../../src/main/llamaUpdate.js'
 import {
   LlamaRelease,
   LlamaReleaseError,
@@ -111,14 +114,14 @@ function paxRecord(key: string, value: string): Buffer {
   return Buffer.from(`${length}${suffix}`)
 }
 
-function archiveWith(script: string, extra: TarItem[] = []): Buffer {
+function archiveWith(script: string, extra: TarItem[] = [], tag = 'b1'): Buffer {
   return tarGz([
-    { name: 'llama-b1/', type: '5', mode: 0o755 },
-    { name: 'llama-b1/llama', mode: 0o755, body: script },
-    { name: 'llama-b1/readme', mode: 0o644, body: 'notes' },
-    { name: 'llama-b1/libllama.so.0.6.0', mode: 0o755, body: 'lib' },
-    { name: 'llama-b1/libllama.so.0', type: '2', mode: 0o777, linkname: 'libllama.so.0.6.0' },
-    { name: 'llama-b1/libllama.so', type: '2', mode: 0o777, linkname: 'libllama.so.0' },
+    { name: `llama-${tag}/`, type: '5', mode: 0o755 },
+    { name: `llama-${tag}/llama`, mode: 0o755, body: script },
+    { name: `llama-${tag}/readme`, mode: 0o644, body: 'notes' },
+    { name: `llama-${tag}/libllama.so.0.6.0`, mode: 0o755, body: 'lib' },
+    { name: `llama-${tag}/libllama.so.0`, type: '2', mode: 0o777, linkname: 'libllama.so.0.6.0' },
+    { name: `llama-${tag}/libllama.so`, type: '2', mode: 0o777, linkname: 'libllama.so.0' },
     ...extra
   ])
 }
@@ -848,6 +851,128 @@ async function resumePair(body: Buffer, digest: string, name: string): Promise<{
     await api.close()
     await cdn.close()
   }
+}
+
+function versionedLlama(build: number): string {
+  return LLAMA_SH.replace('build 1', `build ${build}`)
+}
+
+function pointAt(fx: Fixture, tag: string, script: string): void {
+  fx.pointer = `${tag}\n`
+  fx.tag = tag
+  fx.archiveName = `llama-${tag}-bin-ubuntu-vulkan-x64.tar.gz`
+  fx.archive = archiveWith(script, [], tag)
+  fx.archiveDigest = undefined
+  fx.archiveSize = undefined
+  fx.transfer = 'normal'
+}
+
+console.log('\nupdate check')
+{
+  await withGithub({}, async ({ apiBase, apiHits, cdnHits, fx }) => {
+    await withDir(async (root) => {
+      const client = clientFor(apiBase)
+      const settings = new SettingsStore(join(root, 'settings.json'))
+      await settings.load()
+      const installed = await client.install({ root, backend: 'vulkan', channel: 'pinned', glibc: () => '2.39' })
+      await rememberManagedBuild(settings, installed, '2026-10-11T00:00:00.000Z')
+      await settings.patch({ llamaUpdateCheck: true })
+      const archives = (): number => cdnHits.filter((hit) => hit.url.includes('/dl/llama-')).length
+      assert.equal(archives(), 1)
+      const resolve = (backend: 'vulkan' | 'cpu') => client.resolve(backend, 'pinned')
+      let now = new Date('2026-10-11T00:00:00.000Z')
+      const current = (): string => settings.current.managedBuild?.path ?? ''
+
+      const quiet = apiHits.length
+      assert.equal(
+        await runLlamaUpdateCheck({ settings, currentPath: '/usr/bin/llama', now, resolve }),
+        'skipped'
+      )
+      await settings.patch({ llamaUpdateCheck: false })
+      assert.equal(await runLlamaUpdateCheck({ settings, currentPath: current(), now, resolve }), 'skipped')
+      await settings.patch({ llamaUpdateCheck: true })
+      assert.equal(apiHits.length, quiet)
+      ok('the check does not ask GitHub for a binary the person chose, or while it is off')
+
+      assert.equal(await runLlamaUpdateCheck({ settings, currentPath: current(), now, resolve }), 'checked')
+      assert.equal(settings.current.llamaUpdateOffer, null)
+      assert.equal(archives(), 1)
+      const asked = apiHits.length
+      assert.equal(await runLlamaUpdateCheck({ settings, currentPath: current(), now, resolve }), 'skipped')
+      assert.equal(apiHits.length, asked)
+      ok('an equal pinned build is not offered, and the same day does not ask again')
+
+      const saved = settings.current.managedBuild
+      assert.ok(saved)
+      await settings.patch({ managedBuild: { ...saved, tag: 'b2' } })
+      now = new Date(now.getTime() + 24 * 60 * 60 * 1000 + 1000)
+      assert.equal(await runLlamaUpdateCheck({ settings, currentPath: current(), now, resolve }), 'checked')
+      assert.equal(settings.current.llamaUpdateOffer, null)
+      await settings.patch({ managedBuild: saved })
+      ok('an older pinned build is not offered')
+
+      pointAt(fx, 'b2', versionedLlama(2))
+      now = new Date(now.getTime() + 24 * 60 * 60 * 1000 + 1000)
+      const beforeOffer = archives()
+      assert.equal(await runLlamaUpdateCheck({ settings, currentPath: current(), now, resolve }), 'checked')
+      assert.equal(settings.current.llamaUpdateOffer?.tag, 'b2')
+      assert.equal(archives(), beforeOffer)
+      ok('a newer pinned build is offered without downloading the archive')
+
+      pointAt(fx, 'b2', BROKEN_SH)
+      await assert.rejects(
+        installOfferedUpdate({
+          settings,
+          client,
+          root,
+          currentPath: current(),
+          assertStopped: () => {}
+        }),
+        (err: unknown) => err instanceof LlamaReleaseError && err.code === 'probe'
+      )
+      assert.equal(settings.current.managedBuild?.tag, 'b1')
+      assert.equal(settings.current.binaryPath, saved.path)
+      assert.equal(settings.current.llamaRollback, null)
+      assert.equal(await exists(join(root, 'b2-vulkan')), false)
+      assert.match(await readFile(join(root, 'b1-vulkan', 'llama'), 'utf8'), /build 1/)
+      ok('a new build that fails the probe does not replace the managed one')
+
+      pointAt(fx, 'b2', versionedLlama(2))
+      const updated = await installOfferedUpdate({
+        settings,
+        client,
+        root,
+        currentPath: current(),
+        assertStopped: () => {}
+      })
+      assert.equal(updated.tag, 'b2')
+      assert.equal(parseBuildNumber(updated.binary.version), 2)
+      assert.equal(settings.current.managedBuild?.tag, 'b2')
+      assert.equal(settings.current.binaryPath, updated.llamaPath)
+      assert.equal(settings.current.llamaRollback?.tag, 'b1')
+      assert.equal(settings.current.llamaUpdateOffer, null)
+      assert.equal(await exists(join(root, 'b1-vulkan', 'llama')), true)
+      assert.match(await readFile(join(root, 'b1-vulkan', 'llama'), 'utf8'), /build 1/)
+      ok('the managed build changes only after the new probe passes, and the previous build stays')
+
+      const beforeBack = archives()
+      const back = await restorePreviousBuild({
+        settings,
+        root,
+        currentPath: updated.llamaPath,
+        assertStopped: () => {},
+        probe: (path) => probeBinary({ path, kind: 'unified' })
+      })
+      assert.equal(parseBuildNumber(back.version), 1)
+      assert.equal(settings.current.managedBuild?.tag, 'b1')
+      assert.equal(settings.current.binaryPath, saved.path)
+      assert.equal(settings.current.llamaRollback, null)
+      assert.equal(settings.current.llamaUpdateOffer?.tag, 'b2')
+      assert.equal(archives(), beforeBack)
+      assert.equal(await exists(join(root, 'b2-vulkan', 'llama')), true)
+      ok('go back selects the kept build and does not download it')
+    })
+  })
 }
 
 console.log(`\n${n} assertions passed`)

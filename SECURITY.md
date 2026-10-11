@@ -58,7 +58,9 @@ to be.
   bytes are checked against the sha256 GitHub publishes for that asset, and
   the unpack refuses paths that escape, links that leave the folder, and
   setuid bits. That digest is published next to the file, so it does not
-  prove llama.cpp's release pipeline was uncompromised.
+  prove llama.cpp's release pipeline was uncompromised. A newer build is
+  never installed on its own: the daily check only looks, and only when
+  you have turned it on.
 - **The app's data**: settings, conversations, journals or workspace copies
   readable by other accounts on the machine.
 

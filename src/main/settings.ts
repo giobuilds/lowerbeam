@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
-import { managedBuildSchema } from '@shared/schema.js'
+import { llamaOfferSchema, managedBuildSchema } from '@shared/schema.js'
 import { writeFileAtomic, WriteQueue } from './atomicWrite.js'
 import { addSample, calibrationSchema, EMPTY_CALIBRATION, type Calibration, type Sample } from './calibration.js'
 
@@ -11,6 +11,21 @@ const settingsSchema = z.object({
   binaryPath: z.string().optional(),
   /** The official build downloaded into the data folder, when there is one. */
   managedBuild: managedBuildSchema.nullable().default(null),
+  /**
+   * Look once a day for a newer official build. Off unless turned on, and it
+   * only applies while the selected binary is the managed one.
+   */
+  llamaUpdateCheck: z.boolean().default(false),
+  /** When the last check asked GitHub. Null until the first one, so a restart does not ask again the same day. */
+  llamaCheckedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/)
+    .nullable()
+    .default(null),
+  /** The newer pinned tag from the last check, if it was newer. Null hides the offer. */
+  llamaUpdateOffer: llamaOfferSchema.nullable().default(null),
+  /** The managed build an update replaced, kept so the person can go back. */
+  llamaRollback: managedBuildSchema.nullable().default(null),
   /** The project the Coding tab last had open. */
   lastProject: z.string().optional(),
   /** Model Context Protocol servers the user has configured. */
@@ -88,7 +103,11 @@ const DEFAULTS: Settings = {
   localApi: { port: null, apiKey: '', lan: false },
   updateChecks: true,
   retentionDays: null,
-  managedBuild: null
+  managedBuild: null,
+  llamaUpdateCheck: false,
+  llamaCheckedAt: null,
+  llamaUpdateOffer: null,
+  llamaRollback: null
 }
 
 /** Small JSON-backed settings file. Corrupt or missing files fall back to defaults. */

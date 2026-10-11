@@ -28,6 +28,17 @@ export const llamaInstallSchema = z
   })
   .strict()
 
+/** The Server panel may turn the daily check on or off. A tag or a URL is rejected. */
+export const llamaUpdateSetSchema = z.enum(['on', 'off'])
+
+/** A newer pinned build the main process remembered. The renderer does not send this. */
+export const llamaOfferSchema = z
+  .object({
+    tag: z.string().regex(/^b\d+$/),
+    backend: z.enum(['vulkan', 'cpu'])
+  })
+  .strict()
+
 export const launchConfigSchema = z.object({
   modelPath: z.string().min(1),
   autoFit: z.boolean(),
