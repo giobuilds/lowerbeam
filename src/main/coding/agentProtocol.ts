@@ -25,6 +25,13 @@ export interface AgentJob {
   runId: string
   contextLimit: number | null
   terms: GrantTerms
+  /**
+   * Router model that embeds project text for `find`. Absent, the tool is
+   * not declared. Not loaded up front: the first find request loads it, so a
+   * router that may keep only one model resident is not made to unload the
+   * model the run is about to talk to.
+   */
+  embedModel?: string | null
 }
 
 export type ParentToChild =

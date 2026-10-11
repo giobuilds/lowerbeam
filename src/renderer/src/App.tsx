@@ -251,16 +251,18 @@ function ModelPicker(): React.JSX.Element | null {
   const models = useServerStore((s) => s.status?.router?.models ?? null)
   const active = useServerStore((s) => servedModel(s.status, s.activeModel)?.id ?? '')
   const setActiveModel = useServerStore((s) => s.setActiveModel)
-  if (!models) return null
+  const generation = models?.filter((m) => !m.embed) ?? null
+  if (!generation || generation.length === 0) return null
   const label = (state: string): string => (state === 'loaded' ? '' : state === 'loading' ? ' (loading)' : state === 'failed' ? ' (failed)' : ' (not loaded)')
+  const shown = generation.some((m) => m.id === active) ? active : (generation.find((m) => m.state === 'loaded')?.id ?? generation[0]?.id ?? '')
   return (
     <select
-      value={active}
+      value={shown}
       onChange={(e) => setActiveModel(e.target.value)}
-      title="The model chat and coding use. One that is not loaded is loaded on the next request."
+      title="The model chat and coding use. One that is not loaded is loaded on the next request. An embedding model is not listed."
       className="max-w-[22rem] rounded border border-edge bg-ink px-1.5 py-0.5 text-[11px] text-slate-200"
     >
-      {models.map((m) => (
+      {generation.map((m) => (
         <option key={m.id} value={m.id}>
           {m.id}
           {label(m.state)}

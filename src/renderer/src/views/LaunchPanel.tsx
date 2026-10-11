@@ -620,6 +620,7 @@ function RouterSetup({ disabled }: { disabled: boolean }): React.JSX.Element {
   const chosen = useServerStore((s) => s.routerDraft)
   const plan = useServerStore((s) => s.routerPlan)
   const toggle = useServerStore((s) => s.toggleRouterModel)
+  const toggleEmbed = useServerStore((s) => s.toggleEmbed)
   const setMax = useServerStore((s) => s.setRouterMax)
   const usable = models.filter((m) => !m.error && !m.isProjector)
   const mib = (n: number): string => `${(n / 1024).toFixed(1)} GiB`
@@ -627,17 +628,31 @@ function RouterSetup({ disabled }: { disabled: boolean }): React.JSX.Element {
     <section className="space-y-2 rounded-md border border-edge bg-ink/60 p-3">
       <p className="text-[11px] leading-snug text-muted">
         Requests name the model they want; one that is not loaded is loaded then, with the settings it last ran with here. Past the limit, the least recently
-        used model is unloaded to make room.
+        used model is unloaded to make room. Mark a chosen model for CPU embeddings and a coding run can find code by what it is about: path and line
+        excerpts from that project, not a document library. That model is not offered for chat. If more than one is marked, the run uses the earliest. Raise
+        “loaded at once” if it should stay loaded beside the model that chats.
       </p>
       <div className="max-h-56 space-y-1 overflow-y-auto">
         {usable.map((m) => {
           const planned = plan?.models.find((p) => p.modelPath === m.path)
           return (
-            <label key={m.path} className="flex items-baseline gap-2 text-[11px]" title={m.path}>
-              <input type="checkbox" disabled={disabled} checked={chosen.models.includes(m.path)} onChange={() => toggle(m.path)} />
-              <span className="min-w-0 flex-1 truncate text-slate-200">{m.path.split('/').pop()}</span>
-              {planned && <span className="shrink-0 text-muted">{planned.error ? planned.error : mib(planned.totalMiB)}</span>}
-            </label>
+            <div key={m.path}>
+              <label className="flex items-baseline gap-2 text-[11px]" title={m.path}>
+                <input type="checkbox" disabled={disabled} checked={chosen.models.includes(m.path)} onChange={() => toggle(m.path)} />
+                <span className="min-w-0 flex-1 truncate text-slate-200">{m.path.split('/').pop()}</span>
+                {planned && (
+                  <span className="shrink-0 text-muted">
+                    {planned.error ? planned.error : chosen.embed.includes(m.path) ? 'CPU' : mib(planned.totalMiB)}
+                  </span>
+                )}
+              </label>
+              {chosen.models.includes(m.path) && (
+                <label className="ml-5 flex items-baseline gap-2 text-[11px] text-muted" title="On the CPU. Not offered for chat. Uses no GPU memory.">
+                  <input type="checkbox" disabled={disabled} checked={chosen.embed.includes(m.path)} onChange={() => toggleEmbed(m.path)} />
+                  CPU embeddings
+                </label>
+              )}
+            </div>
           )
         })}
         {usable.length === 0 && <p className="text-[11px] text-muted">No models found. Add a folder or download one first.</p>}

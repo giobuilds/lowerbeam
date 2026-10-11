@@ -16,6 +16,7 @@ import type {
   VramPlanView
 } from '@shared/types.js'
 import { DEFAULT_LAUNCH_CONFIG } from '@shared/types.js'
+import { embeddingLaunch } from '@shared/embed.js'
 import { servedModel } from '@shared/served.js'
 
 const MAX_RENDERED_LOGS = 2000
@@ -41,8 +42,12 @@ interface ServerState {
   draft: LaunchConfig
   /** One model, or several behind a router. */
   launchMode: 'single' | 'router'
-  /** The router's models, by file, and how many may be resident at once. */
-  routerDraft: { models: string[]; modelsMax: number }
+  /**
+   * The router's models, by file, how many may be resident at once, and which
+   * of those files embed project text for the coding find tool. The embedding
+   * choice is not saved onto the model's launch profile.
+   */
+  routerDraft: { models: string[]; modelsMax: number; embed: string[] }
   routerPlan: RouterPlanView | null
   /** In router mode, the model chat and coding send their requests to; null picks a loaded one. */
   activeModel: string | null
@@ -67,6 +72,7 @@ interface ServerState {
   start: () => Promise<void>
   setLaunchMode: (mode: 'single' | 'router') => void
   toggleRouterModel: (path: string) => void
+  toggleEmbed: (path: string) => void
   setRouterMax: (n: number) => void
   refreshRouterPlan: () => Promise<void>
   setActiveModel: (id: string | null) => void
@@ -94,7 +100,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   lastSeq: 0,
   draft: { modelPath: '', ...DEFAULT_LAUNCH_CONFIG },
   launchMode: 'single',
-  routerDraft: { models: [], modelsMax: 1 },
+  routerDraft: { models: [], modelsMax: 1, embed: [] },
   routerPlan: null,
   activeModel: null,
   speculation: { running: false, step: null, result: null, error: null },
@@ -111,7 +117,14 @@ export const useServerStore = create<ServerState>((set, get) => ({
     set({ status, binary, binaries, devices: binary.devices })
     // An adopted router is shown as the router it is.
     if (status.router) {
-      set({ launchMode: 'router', routerDraft: { models: status.router.models.map((m) => m.modelPath), modelsMax: status.router.modelsMax } })
+      set({
+        launchMode: 'router',
+        routerDraft: {
+          models: status.router.models.map((m) => m.modelPath),
+          modelsMax: status.router.modelsMax,
+          embed: status.router.models.filter((m) => m.embed).map((m) => m.modelPath)
+        }
+      })
     }
     // Adopting a running server means its config is the truth, not our defaults.
     if (status.config) {
@@ -349,7 +362,16 @@ export const useServerStore = create<ServerState>((set, get) => ({
   toggleRouterModel(path) {
     const { routerDraft } = get()
     const models = routerDraft.models.includes(path) ? routerDraft.models.filter((p) => p !== path) : [...routerDraft.models, path]
-    set({ routerDraft: { models, modelsMax: Math.min(routerDraft.modelsMax, Math.max(1, models.length)) } })
+    const embed = routerDraft.embed.filter((p) => models.includes(p))
+    set({ routerDraft: { models, embed, modelsMax: Math.min(routerDraft.modelsMax, Math.max(1, models.length)) } })
+    void get().refreshRouterPlan()
+  },
+
+  toggleEmbed(path) {
+    const { routerDraft } = get()
+    if (!routerDraft.models.includes(path)) return
+    const embed = routerDraft.embed.includes(path) ? routerDraft.embed.filter((p) => p !== path) : [...routerDraft.embed, path]
+    set({ routerDraft: { ...routerDraft, embed } })
     void get().refreshRouterPlan()
   },
 
@@ -428,7 +450,12 @@ async function routerLaunch(s: ServerState): Promise<RouterLaunch> {
         // None yet: the defaults.
       }
       const projector = s.models.find((m) => m.path === modelPath)?.projectorPath ?? null
-      return profile ? { ...DEFAULT_LAUNCH_CONFIG, ...profile.config, modelPath } : { ...DEFAULT_LAUNCH_CONFIG, modelPath, mmprojPath: projector }
+      const base = profile
+        ? { ...DEFAULT_LAUNCH_CONFIG, ...profile.config, modelPath }
+        : { ...DEFAULT_LAUNCH_CONFIG, modelPath, mmprojPath: projector }
+      // Overlaid here, not saved onto the profile. A later one-model launch
+      // of this file has to chat, and an embedding launch cannot.
+      return embeddingLaunch(base, s.routerDraft.embed.includes(modelPath))
     })
   )
   return { models, modelsMax: s.routerDraft.modelsMax }
@@ -486,6 +513,10 @@ export function subscribeToMain(): () => void {
     store.setState({ status })
     // Main records a profile once a launch actually reaches ready, so the badge
     // only becomes accurate after that write has happened.
+    const active = store.getState().activeModel
+    if (active && status.router?.models.some((m) => m.embed && m.id === active)) {
+      store.setState({ activeModel: null })
+    }
     const nowReady = status.phase === 'ready'
     if (nowReady && !wasReady && status.config?.modelPath) {
       void window.llama.profiles

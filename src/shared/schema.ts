@@ -22,7 +22,12 @@ export const launchConfigSchema = z.object({
   extraArgs: z.string().max(4000),
   speculative: z.enum(['off', 'mtp', 'ngram', 'draft']).optional(),
   draftModelPath: z.string().min(1).nullable().optional(),
-  mmprojOffload: z.boolean().optional()
+  mmprojOffload: z.boolean().optional(),
+  /**
+   * CPU embeddings for the coding find tool. Off when a saved launch predates
+   * it, so an old profile still parses and still chats.
+   */
+  embed: z.boolean().default(false)
 })
 
 export type LaunchConfigInput = z.infer<typeof launchConfigSchema>

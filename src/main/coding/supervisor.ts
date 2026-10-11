@@ -13,7 +13,7 @@ import { Workspace } from './workspace.js'
 import { findNode, maskedFor, probeSandbox, runInSandbox } from './sandbox.js'
 import { LocalRecord, ModelIdentifier } from './capability.js'
 import { verdictFor, type CapabilityStatus, type MeasureProgress } from '@shared/capability.js'
-import { servedModel } from '@shared/served.js'
+import { embeddingModel, servedModel } from '@shared/served.js'
 import { MEASURE_TASKS, entryFrom, measureTask, noToolsEntry, type MeasureBox, type TaskOutcome } from './measure.js'
 import type { LaunchConfig } from '@shared/types.js'
 import { evidenceFrom, withRerun, type Evidence } from '@shared/evidence.js'
@@ -180,7 +180,23 @@ export class CodingSupervisor extends EventEmitter<{
     this.emit('runs', this.list())
 
     // Not awaited: the caller gets the summary at once and follows events.
-    void this.drive(id, summary, grant, journal, abort, `http://127.0.0.1:${status.port}`, req.task, served.contextPerSlot, req.mode, terms, served.id)
+    // The embedding model is not loaded here. The first find request loads
+    // it, and loading it now would unload the chatting model when only one
+    // may be resident.
+    void this.drive(
+      id,
+      summary,
+      grant,
+      journal,
+      abort,
+      `http://127.0.0.1:${status.port}`,
+      req.task,
+      served.contextPerSlot,
+      req.mode,
+      terms,
+      served.id,
+      embeddingModel(status)?.id ?? null
+    )
     return summary
   }
 
@@ -212,7 +228,8 @@ export class CodingSupervisor extends EventEmitter<{
     contextLimit: number | null,
     mode: CodingRunSummary['mode'],
     terms: GrantTerms,
-    requestModel: string
+    requestModel: string,
+    embedModel: string | null
   ): Promise<void> {
     // Each command's full output is kept beside the journal, numbered in the
     // order the journal has them, so the evidence can find the output of the
@@ -234,7 +251,8 @@ export class CodingSupervisor extends EventEmitter<{
           timeoutMs: RUN_TIMEOUT_MS,
           runId: id,
           contextLimit,
-          terms
+          terms,
+          embedModel
         },
         signal: abort.signal,
         onEvent: (event) => {

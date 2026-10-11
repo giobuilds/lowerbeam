@@ -138,6 +138,7 @@ export async function serveAgent(port: ChildPort, run: (req: RunRequest) => Prom
       contextLimit: got.contextLimit,
       mode: got.mode,
       terms: got.terms,
+      embedModel: got.embedModel ?? null,
       execute:
         got.mode === 'run'
           ? (command, signal) => {

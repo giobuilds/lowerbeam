@@ -19,7 +19,7 @@ Checked against `main` at `7aee4f5` (2 Oct 2026 19:01 BST; PR #92 added auto-upd
 
 Worth doing later:
 - A headless CLI (`lowerbeam run --project --task`) over `CodingSupervisor`. **Done**: `lowerbeam run --task TEXT` uses the last launched model, defaults to inspect, and does not apply an edit copy.
-- A project-only embedding index served by a small CPU model through router mode. This should not become document RAG.
+- A project-only embedding index served by a small CPU model through router mode. This should not become document RAG. **Done**: a coding run’s `find` tool, only when a router model is marked for CPU embeddings. It returns path and line excerpts from the project. That model stays on the CPU, is not offered for chat, and this is not a document library.
 
 ## Already there, and rare among competitors
 

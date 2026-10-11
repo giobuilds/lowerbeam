@@ -605,6 +605,7 @@ export function buildArgs(
   binary: BinaryInfo,
   api: { host?: string; slotDir?: string } = {}
 ): string[] {
+  if (config.embed) return embeddingArgs(config, port, binary, api.host)
   const canFit = binary.flags.includes('--fit')
   const autoFit = config.autoFit && canFit
 
@@ -655,6 +656,31 @@ export function buildArgs(
   // escape hatch when something in this GUI misbehaves.
   const extra = config.extraArgs.trim()
   if (extra) args.push(...extra.split(/\s+/))
+  return args
+}
+
+/**
+ * An embedding model, on the CPU, and nothing else.
+ *
+ * `--fit` and `--gpu-layers` would put it on the card. Saved chat flags,
+ * a projector, speculative decoding and a slot file are for a model that
+ * talks, and a stray `--gpu-layers` in extra args is how that launch would
+ * sneak back onto the GPU. The context is the one asked for, or 512 when
+ * the saved launch left it unset.
+ */
+function embeddingArgs(config: LaunchConfig, port: number, binary: BinaryInfo, host?: string): string[] {
+  const ctx = config.contextSize > 0 ? config.contextSize : 512
+  const args = [
+    ...binary.argvPrefix,
+    '--model', config.modelPath,
+    '--host', host ?? '127.0.0.1',
+    '--port', String(port),
+    '--embeddings',
+    '--parallel', '1',
+    '--ctx-size', String(ctx),
+    '--gpu-layers', '0'
+  ]
+  if (config.threads > 0) args.push('--threads', String(config.threads))
   return args
 }
 
@@ -715,7 +741,15 @@ function routerState(status: { value?: string; failed?: boolean } | undefined): 
 /** A router's models before anything is loaded: named, and nothing yet known about them. */
 export function initialRouterModels(launch: RouterLaunch): ServedModel[] {
   const ids = routerIds(launch.models.map((m) => m.modelPath))
-  return launch.models.map((m, i) => ({ id: ids[i]!, modelPath: m.modelPath, state: 'unloaded', contextPerSlot: null, supportsTools: false, modalities: null }))
+  return launch.models.map((m, i) => ({
+    id: ids[i]!,
+    modelPath: m.modelPath,
+    state: 'unloaded',
+    contextPerSlot: null,
+    supportsTools: false,
+    modalities: null,
+    embed: Boolean(m.embed)
+  }))
 }
 
 /**

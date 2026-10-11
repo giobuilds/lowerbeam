@@ -28,18 +28,39 @@ export function servedModels(status: ServerStatus | null | undefined): ServedMod
       state: status.phase === 'ready' || status.phase === 'degraded' ? 'loaded' : 'loading',
       contextPerSlot: status.contextPerSlot,
       supportsTools: status.supportsTools,
-      modalities: status.modalities
+      modalities: status.modalities,
+      embed: Boolean(status.config.embed)
     }
   ]
 }
 
+/** Models that chat or code. An embedding model is not one of them. */
+export function generationModels(status: ServerStatus | null | undefined): ServedModel[] {
+  return servedModels(status).filter((m) => !m.embed)
+}
+
+/**
+ * The first embedding model on a router, when one was marked. Two marked
+ * models use the earliest in the router's list. Null when there is none.
+ */
+export function embeddingModel(status: ServerStatus | null | undefined): ServedModel | null {
+  return servedModels(status).find((m) => m.embed) ?? null
+}
+
 /**
  * The model a request would use: the one asked for if the server has it,
- * otherwise one that is loaded, otherwise the first. Null when nothing runs.
+ * otherwise a generation model that is loaded, otherwise the first of those.
+ * An embedding model is used only when it was named. Asking for nothing must
+ * not land on it. Null when nothing runs.
  */
 export function servedModel(status: ServerStatus | null | undefined, wanted?: string | null): ServedModel | null {
   const models = servedModels(status)
-  return models.find((m) => m.id === wanted) ?? models.find((m) => m.state === 'loaded') ?? models[0] ?? null
+  if (wanted) {
+    const named = models.find((m) => m.id === wanted)
+    if (named) return named
+  }
+  const generation = models.filter((m) => !m.embed)
+  return generation.find((m) => m.state === 'loaded') ?? generation[0] ?? null
 }
 
 /** Unique request names for a router's models, from their file names. */

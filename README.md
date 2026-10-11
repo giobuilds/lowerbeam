@@ -76,14 +76,18 @@ the app: no IPC, no filesystem, no process spawning. Close it, or send it to
 your real browser, from its header.
 
 **Coding** — point the loaded model at a project folder and ask it questions
-about the code. It gets three tools — list, search and read — and nothing
-else: every path it asks for is resolved and checked against that folder, so
+about the code. It gets list, search and read: every path it asks for is
+resolved and checked against that folder, so
 a link out of it, a `..`, or an instruction planted in a file to read
 something elsewhere all fail the same way. Keys and `.env` files are left
 out at any depth, and the home folder or `/` cannot be the project. Notes a
 project keeps for coding agents — `AGENTS.md`, `CLAUDE.md`, `.cursorrules`
 and the like — are read the same way and given with the task as facts about
-the project, never as instructions that could widen what the run may do. Every request, every file read,
+the project, never as instructions that could widen what the run may do.
+With a CPU embedding model marked on the router, a run also gets `find`:
+the same path and line excerpts as search, ranked by that model, and only
+from the project. The embedding model stays on the CPU and is not offered
+for chat. Every request, every file read,
 every refusal and the answer are written to a journal before the tab shows
 them, so reloading mid-run rebuilds exactly what was there. Switch the run to
 *edit in a copy* and it gets two more tools — `edit_file`, which must match a
