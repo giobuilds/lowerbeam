@@ -20,6 +20,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- When no llama.cpp is found, the Server panel can download the official Vulkan or CPU build from GitHub into the app's data folder, check its digest, and use it. A build you already have is left alone, and that download is not requested until you click it. About → Data shows the download's size, and Delete all app data removes it. (#194)
+
 ## [0.14.0] - 2026-10-11
 
 ### Added

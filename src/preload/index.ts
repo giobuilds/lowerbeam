@@ -9,6 +9,9 @@ import type {
   PromptPreset,
   LocalApiSettings,
   BinaryInfo,
+  BinarySelection,
+  LlamaDownloadProgress,
+  ManagedBuild,
   ConversationSummaryView,
   ConversationView,
   FitSuggestion,
@@ -100,6 +103,19 @@ const api = {
     healthCheck: (modelPath: string, gpuLayers: number) =>
       invoke<HealthCheckResult>(IPC.binaryHealthCheck, { modelPath, gpuLayers }),
     devices: () => invoke<GpuDevice[]>(IPC.binaryDevices)
+  },
+  official: {
+    /** The downloaded build, or null when there is none. */
+    managed: () => invoke<ManagedBuild | null>(IPC.llamaManaged),
+    /** Backend and channel only. The main process chooses the URL. */
+    install: (choice: { backend: 'vulkan' | 'cpu'; channel: 'pinned' | 'newest' }) =>
+      invoke<BinarySelection>(IPC.llamaInstall, choice),
+    cancel: () => invoke<null>(IPC.llamaCancel),
+    open: () => invoke<null>(IPC.llamaOpen),
+    remove: () => invoke<BinarySelection>(IPC.llamaRemove),
+    /** A file dialog in the main process, then the same probe as selecting a binary. */
+    pick: () => invoke<BinarySelection | null>(IPC.binaryPick),
+    onProgress: (cb: (progress: LlamaDownloadProgress) => void) => subscribe(IPC.llamaProgress, cb)
   },
   models: {
     list: () => invoke<ModelEntryView[]>(IPC.modelsList),

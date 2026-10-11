@@ -5,6 +5,29 @@ import { KV_CACHE_TYPES } from './types.js'
  * Anything arriving from the renderer is untrusted input to a process that
  * spawns subprocesses, so it gets validated here before the supervisor sees it.
  */
+/**
+ * The official build this app downloaded. The renderer never sends this:
+ * the main process writes it after a probe succeeds.
+ */
+export const managedBuildSchema = z.object({
+  tag: z.string().regex(/^b\d+$/),
+  backend: z.enum(['vulkan', 'cpu']),
+  path: z.string().min(1).max(4096),
+  digest: z.string().regex(/^[a-f0-9]{64}$/),
+  installedAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/)
+})
+
+/**
+ * What the Server panel may ask the main process to download.
+ * A URL, a path or an asset name is rejected.
+ */
+export const llamaInstallSchema = z
+  .object({
+    backend: z.enum(['vulkan', 'cpu']),
+    channel: z.enum(['pinned', 'newest'])
+  })
+  .strict()
+
 export const launchConfigSchema = z.object({
   modelPath: z.string().min(1),
   autoFit: z.boolean(),

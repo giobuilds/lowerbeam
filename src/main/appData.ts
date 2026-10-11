@@ -56,6 +56,7 @@ export async function dataUsage(paths: DataPaths, retentionDays: number | null):
     conversations: { count: conversationFiles.length, bytes: await sizeOf(paths.conversations) },
     runs: { count: runFiles.filter((n) => n.endsWith('.jsonl') && !n.endsWith('.words.jsonl')).length, bytes: runBytes },
     workspaces: { count: workspaces.length, bytes: await sizeOf(join(paths.coding, 'workspaces')) },
+    llamaCpp: { bytes: await sizeOf(join(paths.userData, 'llama.cpp')) },
     total: await sizeOf(paths.userData),
     retentionDays
   }
@@ -79,4 +80,15 @@ export async function deleteOwnData(userData: string): Promise<void> {
   await writeFile(join(userData, MIGRATION_MARKER), `deleted ${new Date().toISOString()}\n`, { mode: PRIVATE_FILE })
 }
 
-const OWN_DATA = ['coding', 'conversations', 'slots', 'settings.json', 'profiles.json', 'server.json', 'router-presets.ini', 'router-cache']
+const OWN_DATA = [
+  'coding',
+  'conversations',
+  'slots',
+  'settings.json',
+  'profiles.json',
+  'server.json',
+  'router-presets.ini',
+  'router-cache',
+  // Official llama.cpp builds downloaded from the Server panel.
+  'llama.cpp'
+]

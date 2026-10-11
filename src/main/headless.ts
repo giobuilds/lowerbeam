@@ -12,6 +12,7 @@ import { app } from 'electron'
 import { ProfileStore } from './profiles.js'
 import { SettingsStore } from './settings.js'
 import { probeAll } from './probe.js'
+import { binaryToProbe } from './llamaManage.js'
 import { ServerSupervisor } from './supervisor.js'
 import { CodingSupervisor } from './coding/supervisor.js'
 import { recordSuccessfulLaunches } from './profileRecorder.js'
@@ -36,9 +37,11 @@ export async function runHeadless(command: RunCommand): Promise<number> {
 
   const profiles = new ProfileStore(join(userData, 'profiles.json'))
   await profiles.load()
-  const discovered = await probeAll(settings.current.binaryPath ?? process.env['LLAMA_SERVER_PATH'])
+  const discovered = await probeAll(binaryToProbe(settings.current, process.env['LLAMA_SERVER_PATH']))
   const binary = discovered.find((item) => item.path === settings.current.binaryPath) ?? discovered[0]
-  if (!binary?.path) throw new Error('No llama.cpp binary found. Set one in the app, or put llama on PATH.')
+  if (!binary?.path) {
+    throw new Error('No llama.cpp binary found. Download one in the app, set one there, or put llama on PATH.')
+  }
 
   const server = new ServerSupervisor(binary, join(userData, 'server.json'))
   recordSuccessfulLaunches(server, profiles)

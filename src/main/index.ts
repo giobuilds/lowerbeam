@@ -3,7 +3,8 @@ import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { ServerSupervisor } from './supervisor.js'
-import { probeAll } from './probe.js'
+import { missingBinary, probeAll } from './probe.js'
+import { binaryToProbe } from './llamaManage.js'
 import { SettingsStore } from './settings.js'
 import { ConversationStore } from './conversations.js'
 import { ProfileStore } from './profiles.js'
@@ -24,7 +25,6 @@ import { APP_INDEX_PATH, isAppUrl, trustWindow } from './sender.js'
 import { Updater } from './updater.js'
 import { tightenTree } from './private.js'
 import { SlotCache } from './slots.js'
-import type { BinaryInfo } from '@shared/types.js'
 
 const dirname = fileURLToPath(new URL('.', import.meta.url))
 
@@ -124,27 +124,12 @@ async function bootstrap(): Promise<void> {
   const settings = new SettingsStore(join(app.getPath('userData'), 'settings.json'))
   await settings.load()
 
-  const discovered = await probeAll(
-    settings.current.binaryPath ?? process.env['LLAMA_SERVER_PATH']
-  )
+  const discovered = await probeAll(binaryToProbe(settings.current, process.env['LLAMA_SERVER_PATH']))
   // A previously chosen binary wins; otherwise take the first discovered, which
   // prefers the unified `llama` CLI over a possibly stale distro llama-server.
+  // Nothing found still opens the window: the Server panel offers a download.
   const chosen =
-    discovered.find((b) => b.path === settings.current.binaryPath) ??
-    discovered[0] ??
-    // The UI still opens with nothing installed — it shows a "not found" state
-    // rather than the app failing to launch at all.
-    ({
-      path: '',
-      kind: 'unified',
-      argvPrefix: [],
-      version: 'not found',
-      flags: [],
-      flagDocs: [],
-      flashAttnStyle: 'bare',
-      devices: [],
-      label: 'no llama.cpp found'
-    } satisfies BinaryInfo)
+    discovered.find((b) => b.path === settings.current.binaryPath) ?? discovered[0] ?? missingBinary()
 
   const conversations = new ConversationStore(join(app.getPath('userData'), 'conversations'))
   await conversations.init()

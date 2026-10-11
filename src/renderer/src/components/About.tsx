@@ -242,6 +242,8 @@ function DataRow(): React.JSX.Element {
           {count(usage.slots.count, 'saved chat cache')}
         </span>
         <span className="text-right text-muted">{size(usage.slots.bytes)}</span>
+        <span>Official llama.cpp build</span>
+        <span className="text-right text-muted">{usage.llamaCpp.bytes === 0 ? 'none' : size(usage.llamaCpp.bytes)}</span>
         <span className="text-muted">All of it, Electron’s storage included</span>
         <span className="text-right text-muted">{size(usage.total)}</span>
       </div>
@@ -274,7 +276,7 @@ function DataRow(): React.JSX.Element {
       <div className="flex flex-col items-start gap-1">
         {ask('runs', 'Delete all coding runs…', `Delete ${count(usage.runs.count, 'run')} and ${count(usage.workspaces.count, 'workspace copy', 'workspace copies')} (${size(usage.runs.bytes + usage.workspaces.bytes)})? Applied changes stay in your projects; undo goes.`)}
         {ask('conversations', 'Delete all conversations…', `Delete ${count(usage.conversations.count, 'conversation')} (${size(usage.conversations.bytes)})?`)}
-        {ask('all', 'Delete all app data…', 'Stop the server, delete conversations, runs, settings and launch profiles, clear Electron’s storage, and restart?')}
+        {ask('all', 'Delete all app data…', 'Stop the server, delete conversations, runs, settings, launch profiles and the official llama.cpp build, clear Electron’s storage, and restart?')}
       </div>
       {error && <p className="text-rose-300">{error}</p>}
     </div>

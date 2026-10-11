@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, session, BrowserWindow, type WebContents } from 'electron'
+import { app, ipcMain, dialog, session, shell, BrowserWindow, type WebContents } from 'electron'
 import { createRequire } from 'node:module'
 import { stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -10,6 +10,9 @@ import type {
   BenchRunView,
   MachineProfileView,
   BinaryInfo,
+  BinarySelection,
+  LlamaDownloadProgress,
+  ManagedBuild,
   ConversationSummaryView,
   ConversationSearchHitView,
   LocalApiSettings,
@@ -42,12 +45,21 @@ import type {
   RouterPlanView
 } from '@shared/types.js'
 import { IPC } from '@shared/ipc.js'
-import { applyOptionsSchema, launchConfigSchema, routerLaunchSchema } from '@shared/schema.js'
+import { applyOptionsSchema, launchConfigSchema, llamaInstallSchema, routerLaunchSchema } from '@shared/schema.js'
 import { dataUsage, deleteOwnData } from './appData.js'
 import { measureSpeculation } from './specMeasure.js'
 import type { SlotCache } from './slots.js'
 import type { ServerSupervisor } from './supervisor.js'
-import { probeBinary, readDevices } from './probe.js'
+import { missingBinary, probeBinary, readDevices } from './probe.js'
+import { LlamaRelease } from './llamaRelease.js'
+import {
+  deleteManagedDir,
+  forgetManagedBuild,
+  llamaRoot,
+  managedDirectory,
+  rememberManagedBuild,
+  removalBlocked
+} from './llamaManage.js'
 import { scanModels, defaultModelDirs, type ModelEntry } from './registry.js'
 import { planVram, routerWorstCase, type Speculation } from './planner.js'
 import { routerIds } from '@shared/served.js'
@@ -200,10 +212,21 @@ export function registerIpc(
    */
   handle<BinaryInfo[]>(IPC.binaryList, () => discovered)
 
-  handle<BinaryInfo>(IPC.binarySelect, async (rawPath) => {
-    const path = String(rawPath ?? '')
-    // Re-probe rather than trusting the cached entry: the binary may have been
-    // replaced (an update) since startup.
+  const selection = (): BinarySelection => ({
+    binary: supervisor.binaryInfo,
+    binaries: discovered.filter((item) => item.path !== '')
+  })
+
+  const assertServerStopped = (): void => {
+    const phase = supervisor.status.phase
+    if (phase === 'starting' || phase === 'loading' || phase === 'ready' || phase === 'degraded' || phase === 'stopping') {
+      throw new Error('Stop the running server before changing the binary.')
+    }
+  }
+
+  /** Re-probe and select. The renderer supplies a path only for a build it was shown. */
+  const selectProbed = async (path: string): Promise<BinaryInfo> => {
+    assertServerStopped()
     const known = discovered.find((b) => b.path === path)
     const info = await probeBinary({ path, kind: known?.kind ?? 'unified' })
     supervisor.setBinary(info)
@@ -212,6 +235,87 @@ export function registerIpc(
     if (idx >= 0) discovered[idx] = info
     else discovered.push(info)
     return info
+  }
+
+  handle<BinaryInfo>(IPC.binarySelect, async (rawPath) => selectProbed(String(rawPath ?? '')))
+
+  // The file dialog stays in the main process. The renderer sends no path.
+  handle<BinarySelection | null>(IPC.binaryPick, async () => {
+    assertServerStopped()
+    const chosen = await dialog.showOpenDialog({
+      title: 'Choose a llama.cpp binary',
+      properties: ['openFile'],
+      buttonLabel: 'Use this build'
+    })
+    const path = chosen.filePaths[0]
+    if (chosen.canceled || !path) return null
+    await selectProbed(path)
+    return selection()
+  })
+
+  handle<ManagedBuild | null>(IPC.llamaManaged, () => settings.current.managedBuild)
+
+  let llamaAbort: AbortController | null = null
+  handle<BinarySelection>(IPC.llamaInstall, async (raw) => {
+    const choice = llamaInstallSchema.parse(raw)
+    assertServerStopped()
+    if (llamaAbort) throw new Error('A download is already running.')
+    const abort = new AbortController()
+    llamaAbort = abort
+    let lastProgress = 0
+    try {
+      const installed = await new LlamaRelease().install({
+        root: llamaRoot(app.getPath('userData')),
+        backend: choice.backend,
+        channel: choice.channel,
+        signal: abort.signal,
+        onProgress: (received, total) => {
+          const now = Date.now()
+          if (received !== total && now - lastProgress < 100) return
+          lastProgress = now
+          broadcastLlama({ received, total })
+        }
+      })
+      await rememberManagedBuild(settings, installed)
+      supervisor.setBinary(installed.binary)
+      const idx = discovered.findIndex((item) => item.path === installed.llamaPath)
+      if (idx >= 0) discovered[idx] = installed.binary
+      else discovered.unshift(installed.binary)
+      return selection()
+    } finally {
+      if (llamaAbort === abort) llamaAbort = null
+    }
+  })
+
+  handle<null>(IPC.llamaCancel, () => {
+    llamaAbort?.abort()
+    return null
+  })
+
+  handle<null>(IPC.llamaOpen, async () => {
+    const managed = settings.current.managedBuild
+    if (!managed) throw new Error('No official build is installed.')
+    const dir = await managedDirectory(llamaRoot(app.getPath('userData')), managed.path)
+    const error = await shell.openPath(dir)
+    if (error) throw new Error(error)
+    return null
+  })
+
+  handle<BinarySelection>(IPC.llamaRemove, async () => {
+    const managed = settings.current.managedBuild
+    if (!managed) throw new Error('No official build is installed.')
+    assertServerStopped()
+    const blocked = removalBlocked(supervisor.status.pid !== null ? supervisor.binaryInfo.path : null, managed.path)
+    if (blocked) throw new Error(blocked)
+    await deleteManagedDir(llamaRoot(app.getPath('userData')), managed.path)
+    const cleared = await forgetManagedBuild(settings)
+    const idx = discovered.findIndex((item) => item.path === managed.path)
+    if (idx >= 0) discovered.splice(idx, 1)
+    if (cleared || supervisor.binaryInfo.path === managed.path) {
+      const next = discovered.find((item) => item.path)
+      supervisor.setBinary(next ?? missingBinary())
+    }
+    return selection()
   })
 
   handle<GpuDevice[]>(IPC.binaryDevices, () => readDevices(supervisor.binaryInfo))
@@ -826,6 +930,7 @@ export function registerIpc(
 /** Set by wireEvents so handlers registered earlier can broadcast. */
 let broadcastBench: (run: BenchRunView) => void = () => {}
 let broadcastMcp: (snap: McpSnapshot) => void = () => {}
+let broadcastLlama: (progress: LlamaDownloadProgress) => void = () => {}
 
 /** Push status and log-availability events to every open window. */
 export function wireEvents(
@@ -844,6 +949,7 @@ export function wireEvents(
 
   supervisor.on('status', (status) => broadcast(IPC.serverStatusChanged, status))
   downloads.on('update', (job) => broadcast(IPC.downloadChanged, job))
+  broadcastLlama = (progress) => broadcast(IPC.llamaProgress, progress)
   broadcastMcp = (snap) => broadcast(IPC.mcpChanged, snap)
   // A server that starts, fails or is stopped changes which tools exist.
   mcp.on('state', () => broadcastMcp({ configs: mcp.configs(), states: mcp.states() }))

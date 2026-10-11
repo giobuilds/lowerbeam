@@ -9,13 +9,16 @@ import { ModelPicker } from '../components/ModelPicker.js'
 import { VramBar } from '../components/VramBar.js'
 import { HealthCheck } from '../components/HealthCheck.js'
 import { ProfileBadge } from '../components/ProfileBadge.js'
+import { ManagedBuildRow, OfficialBuild } from '../components/OfficialBuild.js'
+import { managedLabel, showFirstRunOffer } from '@shared/llamaOffer.js'
 
 /** Phases in which a new launch must not be attempted. */
 const LIVE_PHASES = new Set(['starting', 'loading', 'ready', 'degraded', 'stopping'])
 
 export function LaunchPanel(): React.JSX.Element {
-  const { status, binary, binaries, devices, draft, busy, error, plan, fit, fitLoading } =
+  const { status, binary, binaries, managed, devices, draft, busy, error, plan, fit, fitLoading } =
     useServerStore()
+  const adoptBinaries = useServerStore((s) => s.adoptBinaries)
   const setDraft = useServerStore((s) => s.setDraft)
   const start = useServerStore((s) => s.start)
   const stop = useServerStore((s) => s.stop)
@@ -35,12 +38,7 @@ export function LaunchPanel(): React.JSX.Element {
         <StatusBadge phase={phase} />
       </header>
 
-      {binary && binary.path === '' && (
-        <p className="rounded-md border border-rose-800 bg-rose-950/50 p-2.5 text-xs text-rose-200">
-          Could not find <code>llama-server</code> on this system. Set{' '}
-          <code>LLAMA_SERVER_PATH</code> and restart.
-        </p>
-      )}
+      {binary && showFirstRunOffer(binary.path) && <OfficialBuild prominent disabled={live} />}
 
       {status?.adopted && phase === 'ready' && (
         <p className="rounded-md border border-sky-800 bg-sky-950/40 p-2.5 text-xs text-sky-200">
@@ -321,6 +319,8 @@ export function LaunchPanel(): React.JSX.Element {
         )}
       </section>
 
+      {binary && !showFirstRunOffer(binary.path) && <OfficialBuild disabled={live} />}
+
       {binary && binary.path !== '' && (
         <footer className="mt-auto pt-3 text-[11px] leading-relaxed text-muted/70">
           {binaries.length > 1 ? (
@@ -336,19 +336,30 @@ export function LaunchPanel(): React.JSX.Element {
               >
                 {binaries.map((b) => (
                   <option key={b.path} value={b.path}>
-                    {b.label} — {b.path}
+                    {managed && b.path === managed.path
+                      ? managedLabel(b.version, b.kind, managed.backend)
+                      : `${b.label} — ${b.path}`}
                   </option>
                 ))}
               </select>
             </Field>
-          ) : (
+          ) : managed?.path === binary.path ? null : (
             <div className="truncate" title={binary.path}>
               {binary.path}
             </div>
           )}
           <div className="mt-1">
-            {binary.kind === 'unified' ? 'llama serve' : 'llama-server'} · build {binary.version}
+            {managed && managed.path === binary.path
+              ? managedLabel(binary.version, binary.kind, managed.backend)
+              : `${binary.kind === 'unified' ? 'llama serve' : 'llama-server'} · build ${binary.version}`}
           </div>
+          {managed && (
+            <ManagedBuildRow
+              path={managed.path}
+              disabled={live}
+              onRemoved={(selection) => adoptBinaries(selection)}
+            />
+          )}
           {status?.port && (
             <a
               href={`http://127.0.0.1:${status.port}`}

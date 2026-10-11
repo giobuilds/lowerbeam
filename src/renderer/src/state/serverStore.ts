@@ -1,7 +1,9 @@
 import { create } from 'zustand'
 import type {
   BinaryInfo,
+  BinarySelection,
   FitSuggestion,
+  ManagedBuild,
   GpuDevice,
   HealthCheckResult,
   LaunchProfileView,
@@ -25,6 +27,8 @@ interface ServerState {
   status: ServerStatus | null
   binary: BinaryInfo | null
   binaries: BinaryInfo[]
+  /** The official build, when one has been downloaded and probed. */
+  managed: ManagedBuild | null
   devices: GpuDevice[]
   models: ModelEntryView[]
   modelsLoading: boolean
@@ -60,6 +64,7 @@ interface ServerState {
 
   init: () => Promise<void>
   selectBinary: (path: string) => Promise<void>
+  adoptBinaries: (selection: BinarySelection) => void
   loadModels: (force?: boolean) => Promise<void>
   addModelDir: () => Promise<void>
   refreshPlan: () => Promise<void>
@@ -86,6 +91,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
   status: null,
   binary: null,
   binaries: [],
+  managed: null,
   devices: [],
   models: [],
   modelsLoading: false,
@@ -109,12 +115,13 @@ export const useServerStore = create<ServerState>((set, get) => ({
   error: null,
 
   async init() {
-    const [status, binary, binaries] = await Promise.all([
+    const [status, binary, binaries, managed] = await Promise.all([
       window.llama.server.status(),
       window.llama.binary.info(),
-      window.llama.binary.list()
+      window.llama.binary.list(),
+      window.llama.official.managed()
     ])
-    set({ status, binary, binaries, devices: binary.devices })
+    set({ status, binary, binaries, managed, devices: binary.devices })
     // An adopted router is shown as the router it is.
     if (status.router) {
       set({
@@ -254,6 +261,20 @@ export const useServerStore = create<ServerState>((set, get) => ({
     } finally {
       set({ busy: false })
     }
+  },
+
+  adoptBinaries(selection) {
+    set({
+      binary: selection.binary,
+      binaries: selection.binaries,
+      devices: selection.binary.devices,
+      health: null,
+      fit: null,
+      error: null
+    })
+    void window.llama.official.managed().then((managed) => set({ managed }))
+    void get().refreshPlan()
+    void get().refreshFit()
   },
 
   /**

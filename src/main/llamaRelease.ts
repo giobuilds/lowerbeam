@@ -365,7 +365,27 @@ export class LlamaRelease {
     const asset = await this.resolve(options.backend, options.channel, options.signal)
     const dest = join(options.root, `${asset.tag}-${asset.backend}`)
     if (await exists(dest)) {
-      throw new LlamaReleaseError('exists', `${asset.tag}-${options.backend} already exists, so it was left in place.`)
+      // Already unpacked. Probe it and use it; do not download again and do
+      // not delete it when the probe fails. A symlink is not a build.
+      await assertInside(options.root, dest)
+      const info = await lstat(dest)
+      if (info.isSymbolicLink() || !info.isDirectory()) {
+        throw new LlamaReleaseError('exists', `${asset.tag}-${options.backend} already exists, so it was left in place.`)
+      }
+      const llamaPath = join(dest, 'llama')
+      const binary = await confirmBinary(llamaPath)
+      if (options.backend === 'vulkan' && vulkanDevices(binary.devices).length === 0) {
+        throw new LlamaReleaseError('no-vulkan', noVulkanMessage())
+      }
+      return {
+        tag: asset.tag,
+        backend: asset.backend,
+        dir: dest,
+        llamaPath,
+        digest: asset.digest,
+        size: asset.size,
+        binary
+      }
     }
     const archive = await this.download(asset, join(options.root, '.downloads'), options)
     let dir: string | null = null
