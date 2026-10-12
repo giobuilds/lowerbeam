@@ -50,7 +50,15 @@ export const MAX_ARCHIVE_BYTES = 500 * 1024 * 1024
 const POINTER_MAX_BYTES = 1024
 const API_MAX_BYTES = 2 * 1024 * 1024
 const MAX_REDIRECTS = 5
-const REQUEST_TIMEOUT_MS = 60_000
+/**
+ * Connect and response headers. This is not a cap on the body: a 30 MB
+ * archive on a slow link takes longer than a minute, and cutting it off
+ * there reported "Couldn't reach GitHub". The official-build update uses
+ * this same request.
+ */
+export const REQUEST_TIMEOUT_MS = 60_000
+/** No body bytes for this long means the transfer has stalled. Each arrival starts it again. */
+export const STALL_TIMEOUT_MS = 30_000
 const TAR_BLOCK = 512
 const MIN_GLIBC = '2.34'
 /** Owner execute when the archive entry was executable. Group and other stay off, as with every other data file. */
@@ -631,38 +639,47 @@ export class LlamaRelease {
 
   private async get(url: string, extra: Record<string, string>, signal?: AbortSignal): Promise<Fetched> {
     if (signal?.aborted) throw new LlamaReleaseError('cancelled', 'Download cancelled.')
-    const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-    const combined = signal ? AbortSignal.any([signal, timeout]) : timeout
     let current: URL
     try {
       current = new URL(url)
     } catch {
       throw new LlamaReleaseError('redirect', 'Refused a download URL that is not a URL.')
     }
-    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-      this.assertUrl(current)
-      let res: IncomingMessage
-      try {
-        res = await this.once(current, this.headersFor(current, extra), combined)
-      } catch (err) {
-        throw wrapNet(err, signal)
-      }
-      const status = res.statusCode ?? 0
-      if (status >= 300 && status < 400 && status !== 304) {
-        const location = headerOne(res.headers.location)
-        res.resume()
-        if (hop === MAX_REDIRECTS) throw new LlamaReleaseError('redirect', 'Stopped after 5 redirects.')
-        if (!location) throw new LlamaReleaseError('redirect', `Refused a redirect from ${current.hostname}: it had no location.`)
+    // One deadline for the whole redirect chain, cleared when the final
+    // headers are in. Leaving it armed would abort a body that is still moving.
+    const headersAbort = new AbortController()
+    const headerTimer = setTimeout(() => headersAbort.abort(), REQUEST_TIMEOUT_MS)
+    const combined = signal ? AbortSignal.any([signal, headersAbort.signal]) : headersAbort.signal
+    try {
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+        this.assertUrl(current)
+        let res: IncomingMessage
         try {
-          current = new URL(location, current)
-        } catch {
-          throw new LlamaReleaseError('redirect', `Refused a redirect from ${current.hostname}.`)
+          res = await this.once(current, this.headersFor(current, extra), combined)
+        } catch (err) {
+          throw wrapNet(err, signal)
         }
-        continue
+        const status = res.statusCode ?? 0
+        if (status >= 300 && status < 400 && status !== 304) {
+          const location = headerOne(res.headers.location)
+          res.resume()
+          if (hop === MAX_REDIRECTS) throw new LlamaReleaseError('redirect', 'Stopped after 5 redirects.')
+          if (!location) throw new LlamaReleaseError('redirect', `Refused a redirect from ${current.hostname}: it had no location.`)
+          try {
+            current = new URL(location, current)
+          } catch {
+            throw new LlamaReleaseError('redirect', `Refused a redirect from ${current.hostname}.`)
+          }
+          continue
+        }
+        clearTimeout(headerTimer)
+        armBodyStall(res)
+        return { status, headers: res.headers, body: res }
       }
-      return { status, headers: res.headers, body: res }
+      throw new LlamaReleaseError('redirect', 'Stopped after 5 redirects.')
+    } finally {
+      clearTimeout(headerTimer)
     }
-    throw new LlamaReleaseError('redirect', 'Stopped after 5 redirects.')
   }
 
   private headersFor(url: URL, extra: Record<string, string>): Record<string, string> {
@@ -734,6 +751,26 @@ function guardedLookup(): LookupFunction {
       else callback(null, first.address, first.family)
     })
   }
+}
+
+/**
+ * Give up when the body goes quiet. The socket idle timer resets whenever
+ * bytes arrive, so a slow steady transfer continues. It is cleared when the
+ * response closes, including a keep-alive socket returning to the pool.
+ */
+function armBodyStall(res: IncomingMessage): void {
+  const socket = res.socket
+  if (!socket) return
+  const fail = (): void => {
+    res.destroy(Object.assign(new Error('The download stalled.'), { name: 'AbortError', code: 'ABORT_ERR' }))
+  }
+  socket.setTimeout(STALL_TIMEOUT_MS, fail)
+  // A non-200 body is resumed and dropped, so nothing else is listening.
+  // Without this, the stall error would be uncaught. A reader still hears it.
+  res.on('error', () => {})
+  res.on('close', () => {
+    socket.setTimeout(0, fail)
+  })
 }
 
 function rateLimitError(status: number, headers: IncomingHttpHeaders): LlamaReleaseError {
