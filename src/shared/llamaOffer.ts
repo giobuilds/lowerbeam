@@ -27,7 +27,10 @@ export function downloadRecovery(message: string, choice: DownloadChoice): {
   newest: boolean
   cpu: boolean
 } {
-  const offline = message.startsWith("Couldn't reach GitHub") || message.includes('Download cancelled')
+  const offline =
+    message.startsWith("Couldn't reach GitHub") ||
+    message.startsWith('The download stalled.') ||
+    message.includes('Download cancelled')
   const pointer = /nightly-tag\.txt|build tag like|None of the five/.test(message)
   return {
     retry: offline,

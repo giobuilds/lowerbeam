@@ -51,6 +51,10 @@ console.log('when a binary is already there')
   assert.equal(downloadRecovery('No Vulkan GPU was found.', { backend: 'vulkan', channel: 'pinned' }).cpu, true)
   assert.equal(downloadRecovery('No Vulkan GPU was found.', { backend: 'cpu', channel: 'pinned' }).cpu, false)
   assert.equal(downloadRecovery('Download cancelled.', { backend: 'cpu', channel: 'pinned' }).retry, true)
+  assert.equal(
+    downloadRecovery('The download stalled. Try again and it will resume.', { backend: 'vulkan', channel: 'pinned' }).retry,
+    true
+  )
   ok('a failure offers retry, the newest build, or the CPU build')
 }
 
