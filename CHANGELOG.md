@@ -29,6 +29,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - Downloading an official llama.cpp build no longer stops after one minute, so a slow link can finish the archive. Updating that build uses the same download. The connection and the response headers still time out, and a transfer that sends nothing for 30 seconds still stops. (#194)
+- When that download goes quiet, it says the download stalled and that trying again will resume, and it keeps what already arrived. (#194)
 
 ## [0.14.0] - 2026-10-11
 

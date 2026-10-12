@@ -16,8 +16,6 @@ import {
   LlamaReleaseError,
   MAX_ARCHIVE_BYTES,
   RELEASE_HOSTS,
-  REQUEST_TIMEOUT_MS,
-  STALL_TIMEOUT_MS,
   chooseAsset,
   extractReleaseArchive,
   glibcOlderThan,
@@ -36,6 +34,9 @@ const ok = (message: string): void => {
 }
 
 const VERSION = (createRequire(import.meta.url)('../../package.json') as { version: string }).version
+/** Stand-ins for the minute and the 30 second stall, so those cases finish in about a second. */
+const TEST_REQUEST_MS = 600
+const TEST_STALL_MS = 300
 const VULKAN_NAME = 'llama-b1-bin-ubuntu-vulkan-x64.tar.gz'
 const CPU_NAME = 'llama-b1-bin-ubuntu-x64.tar.gz'
 
@@ -420,14 +421,14 @@ function githubAsset(asset: ReleaseAsset): { name: string; size: number; browser
   return { name: asset.name, size: asset.size, browser_download_url: asset.url, digest: asset.digest }
 }
 
-/** Gaps stay under the stall limit, and enough of them pass the old one-minute cap. */
+/** Gaps stay under the stall limit, and enough of them pass the header cap. */
 function trickleGap(): number {
-  return Math.floor(STALL_TIMEOUT_MS * 0.7)
+  return Math.floor(TEST_STALL_MS / 2)
 }
 
 function trickleWaits(): number {
   const gap = trickleGap()
-  return Math.floor(REQUEST_TIMEOUT_MS / gap) + 1
+  return Math.floor(TEST_REQUEST_MS / gap) + 1
 }
 
 function sendBytes(
@@ -455,13 +456,17 @@ function sendBytes(
     return
   }
   if (transfer === 'truncate') {
+    // Drop the socket after the first half is out. Ending the response here
+    // would leave the client waiting on the declared length, which is a stall.
     const half = body.subarray(0, Math.max(1, Math.floor(body.length / 2)))
     res.writeHead(200, {
       'content-type': 'application/octet-stream',
       'content-length': String(body.length),
       'accept-ranges': 'bytes'
     })
-    res.end(half)
+    res.write(half)
+    const drop = setTimeout(() => req.socket?.destroy(), 30)
+    res.on('close', () => clearTimeout(drop))
     return
   }
   if (transfer === 'stall') {
@@ -549,7 +554,9 @@ function clientFor(apiBase: string, glibc: string | null = '2.39', hosts = ['127
     apiBase,
     allowedHosts: hosts,
     allowPrivate: true,
-    glibc: () => glibc
+    glibc: () => glibc,
+    requestTimeoutMs: TEST_REQUEST_MS,
+    stallTimeoutMs: TEST_STALL_MS
   })
 }
 
@@ -753,9 +760,9 @@ console.log('\ndownload')
       const started = Date.now()
       const file = await client.download(asset, dir)
       const elapsed = Date.now() - started
-      assert.ok(elapsed > REQUEST_TIMEOUT_MS, `finished in ${elapsed} ms, inside the old cap`)
+      assert.ok(elapsed > TEST_REQUEST_MS, `finished in ${elapsed} ms, inside the header cap`)
       assert.equal(sha256(await readFile(file)), asset.digest)
-      ok('a download slower than one minute still verifies when bytes keep arriving')
+      ok('a download slower than the header cap still verifies when bytes keep arriving')
     })
   })
 
@@ -765,19 +772,23 @@ console.log('\ndownload')
       const asset = await client.resolve('vulkan', 'pinned')
       const controller = new AbortController()
       // If the stall limit is missing, cancel rather than sit here until the suite is killed.
-      const killer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS + 5_000)
+      const killer = setTimeout(() => controller.abort(), TEST_REQUEST_MS + 2_000)
       const started = Date.now()
       try {
-        await rejects(client.download(asset, dir, { signal: controller.signal }), 'offline', /^Couldn't reach GitHub\.$/)
+        await rejects(
+          client.download(asset, dir, { signal: controller.signal }),
+          'offline',
+          /^The download stalled\. Try again and it will resume\.$/
+        )
       } finally {
         clearTimeout(killer)
       }
       const elapsed = Date.now() - started
-      assert.ok(elapsed >= STALL_TIMEOUT_MS, `stopped after ${elapsed} ms, before the stall limit`)
-      assert.ok(elapsed < REQUEST_TIMEOUT_MS, `stopped after ${elapsed} ms, at the old cap`)
+      assert.ok(elapsed >= TEST_STALL_MS, `stopped after ${elapsed} ms, before the stall limit`)
+      assert.ok(elapsed < TEST_REQUEST_MS, `stopped after ${elapsed} ms, at the header cap`)
       const part = await lstat(join(dir, `${asset.name}.part`))
       assert.ok(part.size > 0 && part.size < asset.size)
-      ok('a body that goes quiet for 30 seconds stops, and the partial file stays')
+      ok('a body that goes quiet says the download stalled, and the partial file stays')
     })
   })
 

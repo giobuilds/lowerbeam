@@ -51,14 +51,16 @@ const POINTER_MAX_BYTES = 1024
 const API_MAX_BYTES = 2 * 1024 * 1024
 const MAX_REDIRECTS = 5
 /**
- * Connect and response headers. This is not a cap on the body: a 30 MB
- * archive on a slow link takes longer than a minute, and cutting it off
- * there reported "Couldn't reach GitHub". The official-build update uses
- * this same request.
+ * Connect, response headers, and the whole API or pointer request.
+ * An archive body is not under this cap: a 30 MB file on a slow link
+ * takes longer, and cutting it off there used to report that GitHub
+ * could not be reached.
  */
 export const REQUEST_TIMEOUT_MS = 60_000
-/** No body bytes for this long means the transfer has stalled. Each arrival starts it again. */
+/** Quiet time on an archive body. Each byte starts it again. */
 export const STALL_TIMEOUT_MS = 30_000
+const STALL_CODE = 'STALL'
+const STALL_MESSAGE = 'The download stalled. Try again and it will resume.'
 const TAR_BLOCK = 512
 const MIN_GLIBC = '2.34'
 /** Owner execute when the archive entry was executable. Group and other stay off, as with every other data file. */
@@ -165,6 +167,16 @@ export interface ReleaseClientOptions {
   allowPrivate?: boolean
   userAgent?: string
   glibc?: () => string | null
+  /**
+   * Connect, response headers, and the whole API or pointer request.
+   * Defaults to {@link REQUEST_TIMEOUT_MS}.
+   */
+  requestTimeoutMs?: number
+  /**
+   * Quiet time on an archive body before it counts as stalled.
+   * Defaults to {@link STALL_TIMEOUT_MS}. The API and the pointer file do not use this.
+   */
+  stallTimeoutMs?: number
 }
 
 export const VULKAN_INSTALL_HINT =
@@ -294,6 +306,8 @@ export class LlamaRelease {
   private readonly allowPrivate: boolean
   private readonly userAgent: string
   private readonly readGlibc: () => string | null
+  private readonly requestTimeoutMs: number
+  private readonly stallTimeoutMs: number
 
   constructor(options: ReleaseClientOptions = {}) {
     this.allowPrivate = options.allowPrivate ?? false
@@ -316,6 +330,8 @@ export class LlamaRelease {
     this.apiOrigin = url.origin
     this.userAgent = options.userAgent ?? `Lowerbeam/${VERSION}`
     this.readGlibc = options.glibc ?? glibcRuntime
+    this.requestTimeoutMs = positiveMs(options.requestTimeoutMs, REQUEST_TIMEOUT_MS)
+    this.stallTimeoutMs = positiveMs(options.stallTimeoutMs, STALL_TIMEOUT_MS)
   }
 
   /** Pinned follows nightly-tag.txt. Newest takes the first `bNNNN` tag in the five latest releases. */
@@ -517,6 +533,8 @@ export class LlamaRelease {
     const extra: Record<string, string> = {}
     if (start > 0) extra['range'] = `bytes=${start}-`
     const res = await this.get(asset.url, extra, options.signal)
+    // The archive has no overall cap. It stops only when the body goes quiet.
+    armBodyStall(res.body, this.stallTimeoutMs)
     if (res.status === 416 && !retried) {
       res.body.resume()
       await rm(partPath, { force: true })
@@ -601,7 +619,7 @@ export class LlamaRelease {
     if (!Number.isSafeInteger(asset.size) || asset.size < 1 || asset.size > cap) {
       throw new LlamaReleaseError('unverified', 'The download could not be verified.')
     }
-    const res = await this.get(asset.url, {}, signal)
+    const res = await this.get(asset.url, {}, signal, true)
     if (res.status === 403 || res.status === 429) {
       const error = rateLimitError(res.status, res.headers)
       res.body.resume()
@@ -619,7 +637,7 @@ export class LlamaRelease {
   }
 
   private async getJson(pathname: string, signal?: AbortSignal): Promise<unknown> {
-    const res = await this.get(new URL(pathname, this.apiOrigin).href, {}, signal)
+    const res = await this.get(new URL(pathname, this.apiOrigin).href, {}, signal, true)
     if (res.status === 403 || res.status === 429) {
       const error = rateLimitError(res.status, res.headers)
       res.body.resume()
@@ -637,7 +655,12 @@ export class LlamaRelease {
     }
   }
 
-  private async get(url: string, extra: Record<string, string>, signal?: AbortSignal): Promise<Fetched> {
+  /**
+   * `overall` caps the whole response, body included. The release API and the
+   * pointer file pass it. An archive does not: its body stops on a stall.
+   * The cap is not the caller's signal, so a timeout is not reported as a cancel.
+   */
+  private async get(url: string, extra: Record<string, string>, signal?: AbortSignal, overall = false): Promise<Fetched> {
     if (signal?.aborted) throw new LlamaReleaseError('cancelled', 'Download cancelled.')
     let current: URL
     try {
@@ -648,8 +671,12 @@ export class LlamaRelease {
     // One deadline for the whole redirect chain, cleared when the final
     // headers are in. Leaving it armed would abort a body that is still moving.
     const headersAbort = new AbortController()
-    const headerTimer = setTimeout(() => headersAbort.abort(), REQUEST_TIMEOUT_MS)
-    const combined = signal ? AbortSignal.any([signal, headersAbort.signal]) : headersAbort.signal
+    const headerTimer = setTimeout(() => headersAbort.abort(), this.requestTimeoutMs)
+    const cap = overall ? AbortSignal.timeout(this.requestTimeoutMs) : null
+    const limits = [headersAbort.signal]
+    if (signal) limits.push(signal)
+    if (cap) limits.push(cap)
+    const combined = limits.length === 1 ? limits[0]! : AbortSignal.any(limits)
     try {
       for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
         this.assertUrl(current)
@@ -673,7 +700,6 @@ export class LlamaRelease {
           continue
         }
         clearTimeout(headerTimer)
-        armBodyStall(res)
         return { status, headers: res.headers, body: res }
       }
       throw new LlamaReleaseError('redirect', 'Stopped after 5 redirects.')
@@ -758,13 +784,13 @@ function guardedLookup(): LookupFunction {
  * bytes arrive, so a slow steady transfer continues. It is cleared when the
  * response closes, including a keep-alive socket returning to the pool.
  */
-function armBodyStall(res: IncomingMessage): void {
+function armBodyStall(res: IncomingMessage, stallMs: number): void {
   const socket = res.socket
   if (!socket) return
   const fail = (): void => {
-    res.destroy(Object.assign(new Error('The download stalled.'), { name: 'AbortError', code: 'ABORT_ERR' }))
+    res.destroy(Object.assign(new Error(STALL_MESSAGE), { code: STALL_CODE }))
   }
-  socket.setTimeout(STALL_TIMEOUT_MS, fail)
+  socket.setTimeout(stallMs, fail)
   // A non-200 body is resumed and dropped, so nothing else is listening.
   // Without this, the stall error would be uncaught. A reader still hears it.
   res.on('error', () => {})
@@ -792,6 +818,7 @@ function wrapNet(err: unknown, caller?: AbortSignal): Error {
   if (caller?.aborted) return new LlamaReleaseError('cancelled', 'Download cancelled.')
   const code = errnoCode(err)
   if (code === 'BLOCKED') return new LlamaReleaseError('blocked', err instanceof Error ? err.message : `Refused an address.`)
+  if (code === STALL_CODE) return new LlamaReleaseError('offline', STALL_MESSAGE)
   if (code === 'ABORT_ERR' || (err instanceof Error && err.name === 'AbortError')) {
     return new LlamaReleaseError('offline', "Couldn't reach GitHub.")
   }
@@ -809,6 +836,11 @@ function wrapDisk(err: unknown, folder: string): Error {
     return new LlamaReleaseError('disk', `Could not write ${folder}: ${detail}`)
   }
   return err instanceof Error ? err : new Error(String(err))
+}
+
+function positiveMs(value: number | undefined, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) return fallback
+  return Math.floor(value)
 }
 
 function errnoCode(err: unknown): string {
