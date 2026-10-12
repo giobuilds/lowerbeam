@@ -16,6 +16,8 @@ import {
   LlamaReleaseError,
   MAX_ARCHIVE_BYTES,
   RELEASE_HOSTS,
+  REQUEST_TIMEOUT_MS,
+  STALL_TIMEOUT_MS,
   chooseAsset,
   extractReleaseArchive,
   glibcOlderThan,
@@ -342,7 +344,7 @@ interface Fixture {
   latestStatus?: number
   latestHeaders?: Record<string, string>
   latestRedirect?: string
-  transfer?: 'normal' | 'truncate' | 'stall'
+  transfer?: 'normal' | 'truncate' | 'stall' | 'trickle' | 'hang'
   extraAssets?: ReleaseAsset[]
 }
 
@@ -418,7 +420,22 @@ function githubAsset(asset: ReleaseAsset): { name: string; size: number; browser
   return { name: asset.name, size: asset.size, browser_download_url: asset.url, digest: asset.digest }
 }
 
-function sendBytes(req: IncomingMessage, res: ServerResponse, body: Buffer, transfer: 'normal' | 'truncate' | 'stall'): void {
+/** Gaps stay under the stall limit, and enough of them pass the old one-minute cap. */
+function trickleGap(): number {
+  return Math.floor(STALL_TIMEOUT_MS * 0.7)
+}
+
+function trickleWaits(): number {
+  const gap = trickleGap()
+  return Math.floor(REQUEST_TIMEOUT_MS / gap) + 1
+}
+
+function sendBytes(
+  req: IncomingMessage,
+  res: ServerResponse,
+  body: Buffer,
+  transfer: 'normal' | 'truncate' | 'stall' | 'trickle' | 'hang'
+): void {
   const range = req.headers.range
   if (range && transfer === 'normal') {
     const match = /^bytes=(\d+)-$/.exec(String(range))
@@ -459,6 +476,48 @@ function sendBytes(req: IncomingMessage, res: ServerResponse, body: Buffer, tran
       if (!res.writableEnded) res.end(body.subarray(first.length))
     }, 4000)
     res.on('close', () => clearTimeout(timer))
+    return
+  }
+  if (transfer === 'trickle') {
+    req.socket?.setNoDelay(true)
+    const gap = trickleGap()
+    const waits = trickleWaits()
+    const pieces = waits + 1
+    const size = Math.max(1, Math.ceil(body.length / pieces))
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'content-length': String(body.length),
+      'accept-ranges': 'bytes'
+    })
+    let offset = 0
+    const timers: ReturnType<typeof setTimeout>[] = []
+    const writeNext = (): void => {
+      if (res.writableEnded || offset >= body.length) {
+        if (!res.writableEnded) res.end()
+        return
+      }
+      const next = body.subarray(offset, Math.min(body.length, offset + size))
+      offset += next.length
+      if (offset >= body.length) {
+        res.end(next)
+        return
+      }
+      res.write(next)
+      timers.push(setTimeout(writeNext, gap))
+    }
+    res.on('close', () => {
+      for (const timer of timers) clearTimeout(timer)
+    })
+    writeNext()
+    return
+  }
+  if (transfer === 'hang') {
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'content-length': String(body.length),
+      'accept-ranges': 'bytes'
+    })
+    if (body.length > 0) res.write(body.subarray(0, 1))
     return
   }
   res.writeHead(200, {
@@ -684,6 +743,41 @@ console.log('\ndownload')
       const part = await lstat(join(dir, `${asset.name}.part`))
       assert.ok(part.size > 0 && part.size < asset.size)
       ok('cancel keeps the partial file')
+    })
+  })
+
+  await withGithub({ transfer: 'trickle' }, async ({ apiBase }) => {
+    await withDir(async (dir) => {
+      const client = clientFor(apiBase)
+      const asset = await client.resolve('vulkan', 'pinned')
+      const started = Date.now()
+      const file = await client.download(asset, dir)
+      const elapsed = Date.now() - started
+      assert.ok(elapsed > REQUEST_TIMEOUT_MS, `finished in ${elapsed} ms, inside the old cap`)
+      assert.equal(sha256(await readFile(file)), asset.digest)
+      ok('a download slower than one minute still verifies when bytes keep arriving')
+    })
+  })
+
+  await withGithub({ transfer: 'hang' }, async ({ apiBase }) => {
+    await withDir(async (dir) => {
+      const client = clientFor(apiBase)
+      const asset = await client.resolve('vulkan', 'pinned')
+      const controller = new AbortController()
+      // If the stall limit is missing, cancel rather than sit here until the suite is killed.
+      const killer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS + 5_000)
+      const started = Date.now()
+      try {
+        await rejects(client.download(asset, dir, { signal: controller.signal }), 'offline', /^Couldn't reach GitHub\.$/)
+      } finally {
+        clearTimeout(killer)
+      }
+      const elapsed = Date.now() - started
+      assert.ok(elapsed >= STALL_TIMEOUT_MS, `stopped after ${elapsed} ms, before the stall limit`)
+      assert.ok(elapsed < REQUEST_TIMEOUT_MS, `stopped after ${elapsed} ms, at the old cap`)
+      const part = await lstat(join(dir, `${asset.name}.part`))
+      assert.ok(part.size > 0 && part.size < asset.size)
+      ok('a body that goes quiet for 30 seconds stops, and the partial file stays')
     })
   })
 

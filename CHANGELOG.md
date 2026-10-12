@@ -26,6 +26,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - The Server panel can check once a day for a newer official llama.cpp build. The check is off until you turn it on, it only looks at the build Lowerbeam installed, and nothing is installed until you click Install. The previous build stays so you can go back. (#194)
 - A coding run can be deleted from its row in the Coding list, the way a chat can. That removes the run's journal, the model's words, its command output and its workspace copy. Changes already written into the project are left there. A run that is still going has to be stopped first.
 
+### Fixed
+
+- Downloading an official llama.cpp build no longer stops after one minute, so a slow link can finish the archive. Updating that build uses the same download. The connection and the response headers still time out, and a transfer that sends nothing for 30 seconds still stops. (#194)
+
 ## [0.14.0] - 2026-10-11
 
 ### Added
