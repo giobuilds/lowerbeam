@@ -1,10 +1,10 @@
 {
   "name": "lowerbeam",
   "version": "0.14.0",
-  "description": "Desktop control panel for llama.cpp: launch, tune, download and chat with local models",
+  "description": "Lowerbeam is the local AI workbench for small GPUs",
   "main": "./out/main/index.js",
   "author": {
-    "name": "Giovanni Dick",
+    "name": "giobuilds",
     "email": "giova19@proton.me"
   },
   "license": "MIT",
