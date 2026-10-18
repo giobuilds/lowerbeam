@@ -4,15 +4,20 @@
 
 ![Lowerbeam Banner](brand/banner.png)
 
-Lowerbeam is the local AI workbench for small GPUs.
+**The local AI workbench for small GPUs.**
 
-It works with the official [llama.cpp](https://github.com/ggml-org/llama.cpp) builds.
+Lowerbeam helps you get the most out of local models on an 8 GB card. It sets up the official [llama.cpp](https://github.com/ggml-org/llama.cpp) for you, or uses the one you already have, and gives you one desktop app to pick a model that fits, launch it well, and actually use it.
 
-Lowerbeam owns the server process instead: pick a model, see what will fit,
-launch it, and chat — without touching a terminal.
+- **Fits your card.** VRAM and speed estimates before you download, tuned launch settings, and clear reasons when something won't fit.
+- **Ready in five minutes.** It finds llama.cpp, or downloads and verifies the official build. No terminal needed.
+- **Chat, tools and coding.** Chat with compaction for long conversations, web tools, MCP servers, and a sandboxed coding mode that only ever edits a copy of your project.
+- **Yours.** Everything runs locally, with no telemetry.
 
-*Low beam is the dipped headlight: the one you use close to home, lighting the
-road ahead without dazzling anyone.*
+Lowerbeam uses the official llama.cpp builds and never forks or bundles them. It runs on Linux (x86_64) today.
+
+[Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Discussions](https://github.com/giobuilds/lowerbeam/discussions)
+
+---
 
 ## Install
 
