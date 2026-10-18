@@ -20,16 +20,17 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-18
+
 ### Added
 
 - When no llama.cpp is found, the Server panel can download the official Vulkan or CPU build from GitHub into the app's data folder, check its digest, and use it. A build you already have is left alone, and that download is not requested until you click it. About → Data shows the download's size, and Delete all app data removes it. (#194)
 - The Server panel can check once a day for a newer official llama.cpp build. The check is off until you turn it on, it only looks at the build Lowerbeam installed, and nothing is installed until you click Install. The previous build stays so you can go back. (#194)
 - A coding run can be deleted from its row in the Coding list, the way a chat can. That removes the run's journal, the model's words, its command output and its workspace copy. Changes already written into the project are left there. A run that is still going has to be stopped first.
-
-### Fixed
-
 - Downloading an official llama.cpp build no longer stops after one minute, so a slow link can finish the archive. Updating that build uses the same download. The connection and the response headers still time out, and a transfer that sends nothing for 30 seconds still stops. (#194)
 - When that download goes quiet, it says the download stalled and that trying again will resume, and it keeps what already arrived. (#194)
+- Lowerbeam has a new icon with a transparent background, so it sits cleanly on any dock or panel.
+- The project now has a roadmap, a contributing guide, issue forms for bugs, ideas and GPU measurements, and GitHub Discussions for questions.
 
 ## [0.14.0] - 2026-10-11
 
