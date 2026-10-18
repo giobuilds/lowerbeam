@@ -14,8 +14,6 @@ extraResources:
 linux:
   maintainer: giobuilds <57153417+giobuilds@users.noreply.github.com>
   icon: resources/icon.png
-  # Without this, desktop environments do not associate running windows with the
-  # .desktop entry, so the app shows a generic icon in the dock and switcher.
   synopsis: Lowerbeam is the local AI workbench for small GPUs
   desktop:
     entry:
