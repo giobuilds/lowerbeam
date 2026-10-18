@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/giobuilds/lowerbeam/discussions
+    about: Questions about setup, models or settings go to Discussions.
+  - name: Report a security issue
+    url: https://github.com/giobuilds/lowerbeam/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue.
+  - name: llama.cpp bugs
+    url: https://github.com/ggml-org/llama.cpp/issues
+    about: Problems in llama.cpp itself belong in its own tracker.

@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest an idea or improvement for Lowerbeam.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Rough ideas are welcome in [Discussions](https://github.com/giobuilds/lowerbeam/discussions) first. Check [ROADMAP.md](https://github.com/giobuilds/lowerbeam/blob/main/ROADMAP.md) to see if it's already planned.
+        Lowerbeam won't bundle, fork or patch llama.cpp, and fine-tuning is out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe what you're trying to do and what gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds you've tried
+  - type: input
+    id: gpu
+    attributes:
+      label: Your GPU and VRAM (if relevant)
+      placeholder: "RX 6600, 8 GB"

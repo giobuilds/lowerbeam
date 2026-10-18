@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in Lowerbeam isn't working as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. For questions, please use [Discussions](https://github.com/giobuilds/lowerbeam/discussions) instead.
+        Problems in llama.cpp itself belong in [its own tracker](https://github.com/ggml-org/llama.cpp/issues).
+  - type: input
+    id: version
+    attributes:
+      label: Lowerbeam version
+      description: Shown in About.
+      placeholder: "0.15.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - AppImage
+        - RPM
+        - From source
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution
+      placeholder: "Fedora 43, Ubuntu 24.04"
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and VRAM
+      placeholder: "RX 6600, 8 GB"
+    validations:
+      required: true
+  - type: input
+    id: llamacpp
+    attributes:
+      label: llama.cpp build
+      description: The official download from Lowerbeam, or your own build with its backend (Vulkan, ROCm, CUDA or CPU).
+      placeholder: "Official download, b6500 Vulkan"
+  - type: input
+    id: model
+    attributes:
+      label: Model and quantisation
+      placeholder: "Qwen3-8B Q4_K_M"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server log or error output
+      description: If the problem involves the server, paste the relevant part of the log. Please remove anything private.
+      render: text
