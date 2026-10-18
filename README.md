@@ -4,12 +4,9 @@
 
 ![Lowerbeam Banner](brand/banner.png)
 
-A desktop control panel for [llama.cpp](https://github.com/ggml-org/llama.cpp).
+Lowerbeam is the local AI workbench for small GPUs.
 
-llama.cpp ships a web UI, but it only appears *after* you have started a server
-with the right flags — and the flags are the hard part. On an 8 GB card, `-ngl`,
-`-c` and the KV cache type decide whether a model runs fast, runs slowly, or
-fails to load. The built-in UI cannot change any of them.
+It works with the official [llama.cpp](https://github.com/ggml-org/llama.cpp) builds.
 
 Lowerbeam owns the server process instead: pick a model, see what will fit,
 launch it, and chat — without touching a terminal.
