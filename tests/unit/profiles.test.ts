@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, mkdir, rename, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, mkdir, rename, rm, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ProfileStore, modelKey } from '../../src/main/profiles.js'
@@ -67,6 +67,24 @@ assert.equal(await reopened.get(pathB), null); ok('forget removes it')
 const again = new ProfileStore(join(dir,'profiles.json'))
 await again.load()
 assert.equal(await again.get(pathB), null); ok('forget is persisted, not just in memory')
+
+console.log('forget after the file is gone')
+{
+  await writeFile(pathB, Buffer.alloc(4096))
+  const key = await modelKey(pathB)
+  await again.put({ key, modelPath: pathB, modelName: 'my-model.gguf', config: configOnly,
+    lastUsedAt: Date.now(), loadMs: null, actualContext: null })
+  await unlink(pathB)
+  await again.forget(pathB)
+  await writeFile(pathB, Buffer.alloc(4096))
+  assert.equal((await again.get(pathB))!.key, key)
+  ok('forgetting by path after the file is gone does not drop the saved settings')
+  await unlink(pathB)
+  await again.forgetKey(key)
+  await writeFile(pathB, Buffer.alloc(4096))
+  assert.equal(await again.get(pathB), null)
+  ok('forgetting the key taken beforehand drops the settings once the file is gone')
+}
 
 console.log('corrupt file does not take the app down')
 await writeFile(join(dir,'profiles.json'), '{ this is not json')

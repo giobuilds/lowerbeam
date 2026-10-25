@@ -84,7 +84,16 @@ export class ProfileStore {
   }
 
   async forget(modelPath: string): Promise<void> {
-    delete this.cache.profiles[await modelKey(modelPath)]
+    await this.forgetKey(await modelKey(modelPath))
+  }
+
+  /**
+   * Drop the profile stored under a key `modelKey` already returned.
+   * Used once a model file is gone: asking for the key again would miss it
+   * and fall back to the path.
+   */
+  async forgetKey(key: string): Promise<void> {
+    delete this.cache.profiles[key]
     await this.flush()
   }
 

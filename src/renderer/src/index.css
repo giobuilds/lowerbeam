@@ -86,7 +86,8 @@ body {
 .hljs-strong { font-weight: 600; }
 
 /*
- * Light follows the system. Dark is the values above, unchanged.
+ * Light when the desktop, or Settings → Appearance, says so.
+ * Dark is the values above, unchanged.
  * Components mostly use the theme colours. The slate, rose, amber and
  * emerald utilities are fixed Tailwind colours, so they are remapped here
  * rather than rewritten in every view.
@@ -108,28 +109,63 @@ body {
   .text-slate-100,
   .text-slate-200 { color: #1c2430; }
   .text-slate-300,
-  .text-slate-400 { color: #3c4a5c; }
+  .text-slate-400 { color: #243044; }
   .hover\:text-slate-200:hover { color: #1c2430; }
 
+  /* Pale text that was tuned for a dark page. The /80 forms are separate
+     classes, so they have to be named or the yellow and lavender stay. */
   .text-rose-100,
   .text-rose-200,
+  .text-rose-300,
+  .hover\:text-rose-100:hover,
   .hover\:text-rose-200:hover,
-  .hover\:text-rose-100:hover { color: #9f1239; }
-  .bg-rose-950\/40 { background-color: #fff1f2; }
-  .border-rose-900 { border-color: #fecdd3; }
+  .hover\:text-rose-300:hover { color: #9f1239; }
+  .bg-rose-900,
+  .bg-rose-950\/40,
+  .bg-rose-950\/50 { background-color: #fff1f2; }
+  .border-rose-800,
+  .border-rose-900,
+  .border-rose-900\/60,
+  .hover\:border-rose-500:hover { border-color: #fecdd3; }
 
+  .text-amber-100,
   .text-amber-200,
+  .text-amber-200\/80,
   .text-amber-300 { color: #92400e; }
-  .bg-amber-900\/50 { background-color: #fef3c7; }
+  .bg-amber-900\/50,
+  .bg-amber-950\/20,
+  .bg-amber-950\/30,
+  .bg-amber-950\/40 { background-color: #fffbeb; }
+  .border-amber-800,
+  .border-amber-900\/60 { border-color: #fcd34d; }
 
   .text-emerald-200,
-  .text-emerald-300 { color: #047857; }
+  .text-emerald-300,
+  .text-emerald-300\/80 { color: #047857; }
   .bg-emerald-900\/40,
+  .bg-emerald-900\/50,
+  .bg-emerald-950\/25,
   .bg-emerald-950\/40 { background-color: #ecfdf5; }
+  .border-emerald-900\/70 { border-color: #a7f3d0; }
 
-  .text-violet-200 { color: #5b21b6; }
-  .bg-violet-900\/50 { background-color: #ede9fe; }
+  .text-violet-200,
+  .text-violet-200\/80,
+  .text-violet-300 { color: #5b21b6; }
+  .bg-violet-900\/50,
+  .bg-violet-950\/20 { background-color: #f5f3ff; }
+  .border-violet-900\/70 { border-color: #ddd6fe; }
 
+  .text-sky-200,
+  .text-sky-300 { color: #075985; }
+  .bg-sky-950\/40 { background-color: #f0f9ff; }
+  .border-sky-800 { border-color: #bae6fd; }
+
+  .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-type { color: #6d28d9; }
+  .hljs-string, .hljs-attr, .hljs-addition { color: #047857; }
+  .hljs-number, .hljs-symbol, .hljs-bullet { color: #b45309; }
+  .hljs-title, .hljs-section, .hljs-name { color: #1d4f91; }
+  .hljs-built_in, .hljs-class .hljs-title { color: #b45309; }
   .hljs-variable, .hljs-template-variable, .hljs-params { color: #1c2430; }
+  .hljs-meta, .hljs-deletion { color: #be123c; }
   .hljs-comment, .hljs-quote { color: #5c6b7a; }
 }

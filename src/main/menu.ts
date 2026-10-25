@@ -48,6 +48,11 @@ export function buildAppMenu(supervisor: () => ServerSupervisor | null): void {
           click: () => send(IPC.menuAction, 'tools:configure')
         },
         { type: 'separator' },
+        {
+          label: 'Settings…',
+          click: () => send(IPC.menuAction, 'settings:open')
+        },
+        { type: 'separator' },
         { role: 'quit' }
       ]
     },

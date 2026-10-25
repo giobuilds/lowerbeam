@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { llamaOfferSchema, managedBuildSchema } from '@shared/schema.js'
+import { THEME_CHOICES } from '@shared/theme.js'
 import { writeFileAtomic, WriteQueue } from './atomicWrite.js'
 import { addSample, calibrationSchema, EMPTY_CALIBRATION, type Calibration, type Sample } from './calibration.js'
 
@@ -61,6 +62,8 @@ const settingsSchema = z.object({
     .default({ port: null, apiKey: '', lan: false }),
   /** Whether to look for a new release on GitHub. On unless turned off. */
   updateChecks: z.boolean().default(true),
+  /** Light, dark, or whatever the desktop is using. */
+  theme: z.enum(THEME_CHOICES).default('system'),
   /** Workspace copies and command outputs of coding runs finished longer ago than this are removed on start. Null keeps them. */
   retentionDays: z.number().int().min(1).max(3650).nullable().default(null),
   /** Extra directories to scan for GGUF files, beyond the defaults. */
@@ -102,6 +105,7 @@ const DEFAULTS: Settings = {
   promptPresets: [],
   localApi: { port: null, apiKey: '', lan: false },
   updateChecks: true,
+  theme: 'system',
   retentionDays: null,
   managedBuild: null,
   llamaUpdateCheck: false,

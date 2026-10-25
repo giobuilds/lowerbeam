@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc.js'
+import type { ThemeChoice } from '@shared/theme.js'
 import type { ApplyOptions, ApplyResult, ChangeSet, CodingRunList, CodingRunSummary, CodingRunTicket, CodingStartRequest, GitState, JournalEvent } from '@shared/coding.js'
 import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
@@ -303,6 +304,10 @@ const api = {
   presets: {
     list: () => invoke<PromptPreset[]>(IPC.presetsList),
     save: (presets: PromptPreset[]) => invoke<PromptPreset[]>(IPC.presetsSave, presets)
+  },
+  settings: {
+    theme: () => invoke<ThemeChoice>(IPC.themeGet),
+    setTheme: (theme: ThemeChoice) => invoke<ThemeChoice>(IPC.themeSet, theme)
   },
   dialog: {
     pickModelFile: () => invoke<string | null>(IPC.pickModelFile),

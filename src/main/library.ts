@@ -7,6 +7,8 @@
  * and the vision projector paired with it. A symlink's target is removed
  * only when nothing else in the library still points at it, and only when
  * that target sits inside a folder the app was already willing to scan.
+ * Those folders are resolved first, so a folder that is itself a link still
+ * counts.
  */
 import { lstat, realpath, stat, unlink } from 'node:fs/promises'
 import { sep } from 'node:path'
@@ -31,11 +33,19 @@ export function copyCount(file: LibraryFile, counts: Map<string, number>): numbe
   return counts.get(`${file.fileName}:${file.fileSize}`) ?? 1
 }
 
-function insideRoot(resolved: string, roots: string[]): boolean {
-  return roots.some((root) => {
-    const prefix = root.endsWith(sep) ? root : root + sep
-    return resolved === root || resolved.startsWith(prefix)
-  })
+/** Whether `resolved` sits inside a scanned folder, after that folder's own links are followed. */
+async function insideRoot(resolved: string, roots: string[]): Promise<boolean> {
+  for (const root of roots) {
+    let real: string
+    try {
+      real = await realpath(root)
+    } catch {
+      continue
+    }
+    const prefix = real.endsWith(sep) ? real : real + sep
+    if (resolved === real || resolved.startsWith(prefix)) return true
+  }
+  return false
 }
 
 /**
@@ -108,7 +118,7 @@ async function unlinkKnown(target: string, holders: string[], roots: string[]): 
       // A path that vanished between the scan and the delete is not a copy.
     }
   }
-  if (!insideRoot(resolved, roots)) return 0
+  if (!(await insideRoot(resolved, roots))) return 0
   await unlink(resolved)
   return followed.size
 }

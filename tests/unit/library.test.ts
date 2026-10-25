@@ -68,6 +68,33 @@ console.log('\ndeleting a library file')
   ok('a path the scan did not return is refused')
 }
 
+console.log('\na scanned folder that is itself a link')
+{
+  const storage = join(root, 'storage')
+  const via = join(root, 'via-link')
+  await mkdir(storage, { recursive: true })
+  await symlink(storage, via)
+  const blob = join(storage, 'weights')
+  const link = join(via, 'model.gguf')
+  await writeFile(blob, '0123456789')
+  await symlink(blob, link)
+  const freed = await removeModelFile(link, [link], [via])
+  assert.equal(freed, 10)
+  await assert.rejects(() => stat(blob))
+  ok('a link inside a linked folder frees the blob the scan was willing to see')
+
+  const hidden = join(root, 'not-scanned')
+  await mkdir(hidden, { recursive: true })
+  const secret = join(hidden, 'secret')
+  const alias = join(via, 'alias.gguf')
+  await writeFile(secret, 'secret-bytes')
+  await symlink(secret, alias)
+  const skipped = await removeModelFile(alias, [alias], [via])
+  assert.equal(skipped, 0)
+  assert.equal(await readFile(secret, 'utf8'), 'secret-bytes')
+  ok('resolving the folder does not free a target that sits outside it')
+}
+
 console.log('\na vision projector goes with its model')
 {
   const dir = join(root, 'vision')

@@ -24,6 +24,7 @@ export function InstalledModels(): React.JSX.Element {
   const removeModel = useServerStore((s) => s.removeModel)
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [freedNote, setFreedNote] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
   const sorted = [...models].sort((a, b) => b.fileSize - a.fileSize)
@@ -32,9 +33,11 @@ export function InstalledModels(): React.JSX.Element {
   const remove = async (path: string): Promise<void> => {
     setBusy(path)
     setError(null)
+    setFreedNote(null)
     try {
-      await removeModel(path)
+      const freed = await removeModel(path)
       setPending(null)
+      setFreedNote(`Freed ${sizeOf(freed)}`)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -62,6 +65,9 @@ export function InstalledModels(): React.JSX.Element {
 
       {error && (
         <p className="border-b border-rose-900 bg-rose-950/40 px-3 py-2 text-[11px] text-rose-200">{error}</p>
+      )}
+      {!error && freedNote && (
+        <p className="border-b border-edge px-3 py-2 text-[11px] text-emerald-200">{freedNote}</p>
       )}
 
       <ul className="min-h-0 flex-1 overflow-y-auto">
