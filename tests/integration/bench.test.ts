@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict'
+import { readdir, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { probeAll } from '../../src/main/probe.js'
 import { BenchRunner, buildBenchArgs, parseBenchJson, planBatches } from '../../src/main/bench.js'
 import type { BenchProgress, BenchRequest, BenchResult } from '@shared/types.js'
-import { execFileSync } from 'node:child_process'
 
 let n=0; const ok=(m:string)=>{n++;console.log('  ok',m)}
 const bin=(await probeAll())[0]!
-const MODEL = execFileSync('bash',['-c','ls ~/.cache/huggingface/hub/models--unsloth--SmolLM2-135M-Instruct-GGUF/snapshots/*/SmolLM2-135M-Instruct-Q2_K.gguf'],{encoding:'utf8'}).trim()
 
 console.log('argv construction')
-const req: BenchRequest = { modelPath: MODEL, nPrompt: 32, nGen: 16, repetitions: 1,
+const req: BenchRequest = { modelPath: '/models/fixture.gguf', nPrompt: 32, nGen: 16, repetitions: 1,
   gpuLayers: [], threads: [], cacheTypes: ['f16','q8_0'], flashAttn: ['on','off'], ubatch: [] }
 const args = buildBenchArgs(bin, req)
 assert.equal(args[0], 'bench'); ok('unified CLI gets the bench subcommand')
@@ -45,6 +46,32 @@ ok('quantised KV is forced to flash attention on, which llama.cpp requires')
 assert.equal(planBatches({ ...req, cacheTypes: ['f16'], flashAttn: ['on','off'] }).length, 1)
 ok('a single-type sweep stays a single run')
 assert.equal(planBatches({ ...req, cacheTypes: [] }).length, 1); ok('no KV sweep means no split')
+
+/** A tiny model makes the live sweep fast. Missing it skips that sweep; the checks above do not need a file. */
+async function localSmol(): Promise<string | null> {
+  const root = join(homedir(), '.cache/huggingface/hub/models--unsloth--SmolLM2-135M-Instruct-GGUF/snapshots')
+  try {
+    for (const rev of await readdir(root)) {
+      const path = join(root, rev, 'SmolLM2-135M-Instruct-Q2_K.gguf')
+      try {
+        await stat(path)
+        return path
+      } catch {
+        // This snapshot does not have the file.
+      }
+    }
+  } catch {
+    // The repo is not in the cache.
+  }
+  return null
+}
+
+const MODEL = await localSmol()
+if (!MODEL) {
+  console.log('\nSmolLM2-135M is not in the cache, so the live llama-bench run was skipped.')
+  console.log(`\n${n} assertions passed`)
+  process.exit(0)
+}
 
 console.log('a real sweep: flash attention on vs off')
 const runner = new BenchRunner()
