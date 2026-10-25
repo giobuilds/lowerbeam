@@ -1,0 +1,43 @@
+{
+  "id": "trail-map",
+  "corpus": "trail-map.json",
+  "contextPerSlot": 7424,
+  "questions": [
+    {
+      "id": "route",
+      "ask": "Which path should the group take?",
+      "facts": [{ "id": "path", "anyOf": ["Bramble Ridge"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "height",
+      "ask": "How high is the top of that path?",
+      "facts": [{ "id": "metres", "anyOf": ["640 m"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "closed",
+      "ask": "Which crossing is shut, and what replaces it?",
+      "facts": [
+        { "id": "bridge", "anyOf": ["east bridge is closed"], "in": "assistant", "layer": "speech" },
+        { "id": "ford", "anyOf": ["use the ford"], "in": "assistant", "layer": "speech" }
+      ]
+    },
+    {
+      "id": "start",
+      "ask": "Where did the walker say to begin?",
+      "facts": [{ "id": "cairn", "anyOf": ["Wether Stone"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "wrong-start",
+      "ask": "Which landmark was rejected as the beginning?",
+      "facts": [{ "id": "sign", "anyOf": ["car park sign"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "why-not",
+      "ask": "What was said about that landmark?",
+      "facts": [{ "id": "wrong", "anyOf": ["wrong start"], "in": "assistant", "layer": "speech" }]
+    }
+  ],
+  "heldBack": [
+    { "id": "safety", "why": "The safety item is named only in the kept tail.", "anyOf": ["whistle on a cord"] }
+  ]
+}

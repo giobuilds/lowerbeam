@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session } from 'electron'
+import { app, BrowserWindow, nativeTheme, session } from 'electron'
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -33,6 +33,11 @@ let downloads: DownloadManager | null = null
 let mcp: McpRegistry | null = null
 let coding: CodingSupervisor | null = null
 
+/** Matches the page background, so a resize does not flash the other theme. */
+function windowColor(): string {
+  return nativeTheme.shouldUseDarkColors ? '#0b0d12' : '#f4f6f8'
+}
+
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
@@ -40,7 +45,7 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: '#0b0d12',
+    backgroundColor: windowColor(),
     title: 'Lowerbeam',
     // Packaged, the desktop entry carries the icon; in development the window has it from here.
     ...(app.isPackaged ? {} : { icon: join(dirname, '../../resources/icon.png') }),
@@ -184,6 +189,10 @@ async function bootstrap(): Promise<void> {
   registerContextMenuCommands()
   buildAppMenu(() => supervisor)
   createWindow()
+  nativeTheme.on('updated', () => {
+    const color = windowColor()
+    for (const win of BrowserWindow.getAllWindows()) win.setBackgroundColor(color)
+  })
   updater.start()
 }
 

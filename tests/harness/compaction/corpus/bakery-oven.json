@@ -1,0 +1,47 @@
+{
+  "id": "bakery-oven",
+  "title": "Saturday bake",
+  "note": "A short invented chat. The scored spellings sit in the turns a summary replaces. The held-back spelling sits only in the kept tail.",
+  "messages": [
+    {
+      "id": "bakery-1",
+      "role": "user",
+      "content": "The Saturday bake has to finish before the stall opens at the market."
+    },
+    {
+      "id": "bakery-2",
+      "role": "assistant",
+      "content": "The levain goes in at 21:00 the night before, and the loaf bakes at 230 C."
+    },
+    {
+      "id": "bakery-3",
+      "role": "user",
+      "content": "Keep the shop name as Hearth & Rye. Flour Child was a bad joke."
+    },
+    {
+      "id": "bakery-4",
+      "role": "assistant",
+      "content": "Hearth & Rye it is. I am setting the stand mixer aside, and the dough is mixed by hand."
+    },
+    {
+      "id": "bakery-5",
+      "role": "user",
+      "content": "Did the new peel arrive?"
+    },
+    {
+      "id": "bakery-6",
+      "role": "assistant",
+      "content": "The beech peel is in bay 3."
+    },
+    {
+      "id": "bakery-7",
+      "role": "user",
+      "content": "Good."
+    },
+    {
+      "id": "bakery-8",
+      "role": "assistant",
+      "content": "See you Saturday."
+    }
+  ]
+}

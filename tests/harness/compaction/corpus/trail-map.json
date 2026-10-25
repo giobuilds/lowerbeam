@@ -1,0 +1,47 @@
+{
+  "id": "trail-map",
+  "title": "Down before dusk",
+  "note": "A short invented chat. Scored spellings are in the replaced turns. One spelling is only in the kept tail.",
+  "messages": [
+    {
+      "id": "trail-1",
+      "role": "user",
+      "content": "The group has to be down before dusk."
+    },
+    {
+      "id": "trail-2",
+      "role": "assistant",
+      "content": "Take the Bramble Ridge path. The high point is 640 m. The east bridge is closed, so use the ford."
+    },
+    {
+      "id": "trail-3",
+      "role": "user",
+      "content": "Start from the cairn called Wether Stone, not from the car park sign."
+    },
+    {
+      "id": "trail-4",
+      "role": "assistant",
+      "content": "Wether Stone it is. The car park sign is the wrong start."
+    },
+    {
+      "id": "trail-5",
+      "role": "user",
+      "content": "What if someone gets separated?"
+    },
+    {
+      "id": "trail-6",
+      "role": "assistant",
+      "content": "Each walker carries a whistle on a cord."
+    },
+    {
+      "id": "trail-7",
+      "role": "user",
+      "content": "Understood."
+    },
+    {
+      "id": "trail-8",
+      "role": "assistant",
+      "content": "I will mark the map tonight."
+    }
+  ]
+}

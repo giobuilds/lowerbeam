@@ -1,0 +1,47 @@
+{
+  "id": "plot-allotment",
+  "title": "Beds before frost",
+  "note": "A short invented chat. Scored spellings are in the replaced turns. One spelling is only in the kept tail.",
+  "messages": [
+    {
+      "id": "plot-1",
+      "role": "user",
+      "content": "The beds have to be ready before the frost."
+    },
+    {
+      "id": "plot-2",
+      "role": "assistant",
+      "content": "The soil test came back at pH 6.4. Sow the broad beans in bed 2."
+    },
+    {
+      "id": "plot-3",
+      "role": "user",
+      "content": "Order the seed from Marsh Seed, not from the supermarket tray."
+    },
+    {
+      "id": "plot-4",
+      "role": "assistant",
+      "content": "Marsh Seed it is. I am skipping the supermarket tray. The row is labelled E4."
+    },
+    {
+      "id": "plot-5",
+      "role": "user",
+      "content": "Anything for the slugs?"
+    },
+    {
+      "id": "plot-6",
+      "role": "assistant",
+      "content": "A strip of copper tape goes around bed 2."
+    },
+    {
+      "id": "plot-7",
+      "role": "user",
+      "content": "Fine."
+    },
+    {
+      "id": "plot-8",
+      "role": "assistant",
+      "content": "I will check the row next week."
+    }
+  ]
+}

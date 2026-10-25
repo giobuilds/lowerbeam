@@ -12,6 +12,8 @@ import {
   verbatimUserMessages,
   PREEMPT_AT
 } from '@context/compact.js'
+import { recordFromSpeech } from '@context/engine.js'
+import type { SpeechRecord } from '@context/speech.js'
 import { projectConversation as buildTurns } from '@context/project.js'
 import { streamChat } from '@shared/chatClient.js'
 import type { ChatMessageView, ConversationView } from '@shared/types.js'
@@ -293,6 +295,48 @@ console.log('\na thinking server still yields a summary')
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
+}
+
+console.log('\nthe shared compaction record')
+{
+  const older = [
+    msg('user', 'Keep the name Hearth.'),
+    msg('assistant', 'The loaf bakes at 230 C.')
+  ]
+  const conversation = chat(older)
+  const speech: SpeechRecord = {
+    constraints: ['Keep the name Hearth.'],
+    decisions: [{ chose: '230 C', because: 'The loaf bakes at 230 C.' }],
+    rejected: [],
+    artifacts: [],
+    openQuestions: []
+  }
+  const record = recordFromSpeech(conversation, older, speech, 7424)
+  assert.equal(record.throughMessageId, older[1]!.id)
+  assert.equal(record.messageCount, 2)
+  assert.ok(record.summary.includes('Keep the name Hearth.'))
+  assert.ok(record.summary.includes('230 C'))
+  assert.ok(record.userMessages.includes('Keep the name Hearth.'))
+  ok('a speech record becomes the compaction chat stores, with the user line kept')
+
+  const again = recordFromSpeech(
+    chat(older, { compaction: { ...record, messageCount: 2, userMessages: ['Keep the name Hearth.'] } }),
+    [msg('user', 'Use the rye starter.')],
+    { constraints: ['Use the rye starter.'], decisions: [], rejected: [], artifacts: [], openQuestions: [] },
+    7424
+  )
+  assert.equal(again.messageCount, 3)
+  assert.ok(again.userMessages.includes('Keep the name Hearth.'))
+  assert.ok(again.userMessages.includes('Use the rye starter.'))
+  ok('a later compaction carries the earlier user lines forward')
+
+  assert.throws(
+    () => recordFromSpeech(conversation, older, {
+      constraints: [], decisions: [], rejected: [], artifacts: [], openQuestions: []
+    }, 7424),
+    /The record was empty\./
+  )
+  ok('an empty record is refused, so no turns are marked covered')
 }
 
 console.log(`\n${n} assertions passed`)

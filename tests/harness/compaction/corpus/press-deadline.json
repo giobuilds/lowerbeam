@@ -1,0 +1,47 @@
+{
+  "id": "press-deadline",
+  "title": "Before the council",
+  "note": "A short invented chat. Scored spellings are in the replaced turns. One spelling is only in the kept tail.",
+  "messages": [
+    {
+      "id": "press-1",
+      "role": "user",
+      "content": "The issue has to ship before the council meeting."
+    },
+    {
+      "id": "press-2",
+      "role": "assistant",
+      "content": "The cover date is 3 March 2026. The headline is Bridge vote slips. The piece runs on page 4."
+    },
+    {
+      "id": "press-3",
+      "role": "user",
+      "content": "Credit the photo to Nia Holt, not to the wire."
+    },
+    {
+      "id": "press-4",
+      "role": "assistant",
+      "content": "Nia Holt gets the credit. The wire credit is withdrawn."
+    },
+    {
+      "id": "press-5",
+      "role": "user",
+      "content": "How do we mark a legal problem?"
+    },
+    {
+      "id": "press-6",
+      "role": "assistant",
+      "content": "A blue pencil in the margin means hold the line."
+    },
+    {
+      "id": "press-7",
+      "role": "user",
+      "content": "Noted."
+    },
+    {
+      "id": "press-8",
+      "role": "assistant",
+      "content": "I will send the flat tonight."
+    }
+  ]
+}

@@ -405,6 +405,13 @@ export interface ModelEntryView {
   mtimeMs: number
   error?: string
   isProjector: boolean
+  /** When a launch of this file last became ready. Null until then. */
+  lastUsedAt?: number | null
+  /**
+   * How many library entries share this file name and size, including this one.
+   * More than one means the same model is on disk in more than one folder.
+   */
+  copies?: number
   /** Projector sitting beside this model, if any — needed for vision. */
   projectorPath?: string
 }

@@ -84,3 +84,52 @@ body {
 .hljs-meta, .hljs-deletion { color: #ff9cac; }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 600; }
+
+/*
+ * Light follows the system. Dark is the values above, unchanged.
+ * Components mostly use the theme colours. The slate, rose, amber and
+ * emerald utilities are fixed Tailwind colours, so they are remapped here
+ * rather than rewritten in every view.
+ */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --color-ink: #f4f6f8;
+    --color-panel: #ffffff;
+    --color-edge: #d5dbe3;
+    --color-muted: #526070;
+    --color-accent: #1d4f91;
+  }
+
+  body {
+    color: #1c2430;
+  }
+
+  .text-slate-100,
+  .text-slate-200 { color: #1c2430; }
+  .text-slate-300,
+  .text-slate-400 { color: #3c4a5c; }
+  .hover\:text-slate-200:hover { color: #1c2430; }
+
+  .text-rose-100,
+  .text-rose-200,
+  .hover\:text-rose-200:hover,
+  .hover\:text-rose-100:hover { color: #9f1239; }
+  .bg-rose-950\/40 { background-color: #fff1f2; }
+  .border-rose-900 { border-color: #fecdd3; }
+
+  .text-amber-200,
+  .text-amber-300 { color: #92400e; }
+  .bg-amber-900\/50 { background-color: #fef3c7; }
+
+  .text-emerald-200,
+  .text-emerald-300 { color: #047857; }
+  .bg-emerald-900\/40,
+  .bg-emerald-950\/40 { background-color: #ecfdf5; }
+
+  .text-violet-200 { color: #5b21b6; }
+  .bg-violet-900\/50 { background-color: #ede9fe; }
+
+  .hljs-variable, .hljs-template-variable, .hljs-params { color: #1c2430; }
+  .hljs-comment, .hljs-quote { color: #5c6b7a; }
+}

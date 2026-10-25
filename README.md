@@ -13,7 +13,7 @@ Lowerbeam helps you get the most out of local models on an 8 GB card. It sets up
 - **Chat, tools and coding.** Chat with compaction for long conversations, web tools, MCP servers, and a sandboxed coding mode that only ever edits a copy of your project.
 - **Yours.** Everything runs locally, with no telemetry.
 
-Lowerbeam uses the official llama.cpp builds and never forks or bundles them. It runs on Linux (x86_64) today.
+Lowerbeam uses the official llama.cpp builds and never forks or bundles them. It runs on Linux (x86_64) today. The window follows the system's light or dark setting.
 
 [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Discussions](https://github.com/giobuilds/lowerbeam/discussions)
 
@@ -45,7 +45,9 @@ working across launches, and an API key; the app's own chat and coding send
 it too. The local network is off unless you turn it on, and it needs a key.
 
 **Models** — scans your disk and reads each GGUF header for architecture,
-quantisation, layers, trained context and chat template. Before launching it
+quantisation, layers, trained context and chat template. The Models tab lists
+what is already on disk, with its size, when it was last launched and any
+duplicate copies, and can delete a model you no longer need, including its vision projector. Before launching it
 estimates VRAM, broken into weights, KV cache, compute and backend reserve. You
 can drive that yourself or hand sizing to llama.cpp's own `--fit`. Settings that
 worked for a model are remembered and reapplied next time.
