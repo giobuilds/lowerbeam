@@ -28,7 +28,10 @@ linux:
 appImage:
   artifactName: ${productName}.${ext}
   description: >-
-    Lowerbeam is the local AI workbench for small GPUs.
+    Lowerbeam helps you get the most out of local models on an 8 GB card.
+    It sets up the official llama.cpp for you, or uses the one you already have,
+    and gives you one desktop app to pick a model that fits, 
+    launch it well, and actually use it.
 # Releases, and where a running copy looks for the next one: electron-builder
 # writes latest-linux.yml beside the AppImage and RPM, and app-update.yml into
 # the package, which electron-updater reads (src/main/updater.ts).
