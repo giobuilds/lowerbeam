@@ -20,6 +20,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-25
+
 ### Added
 
 - The Models tab lists every GGUF already on disk, with its size, when it was last launched and any duplicate copies, and can delete a model that is not in use. A vision projector paired with that model is deleted with it.
