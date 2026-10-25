@@ -37,7 +37,7 @@ export function InstalledModels(): React.JSX.Element {
     try {
       const freed = await removeModel(path)
       setPending(null)
-      setFreedNote(`Freed ${sizeOf(freed)}`)
+      setFreedNote(freed > 0 ? `Freed ${sizeOf(freed)}` : 'Removed the link, the file is kept')
     } catch (err) {
       setError((err as Error).message)
     } finally {

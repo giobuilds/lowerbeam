@@ -19,14 +19,12 @@ import { DEFAULT_OUTPUT, outputConstraint, type OutputSetting } from '@shared/st
 import { projectConversation } from '@context/project.js'
 import { declinedMcpCall, isMcpTool, mcpDecisions } from '@shared/mcpConfirm.js'
 import {
-  FETCH_PAGE,
   HELD_THIS_STEP,
   SEARCH_CLOSED,
   SEARCH_RATE_LIMITED,
   WEB_SEARCH,
   partitionSearches,
   searchOpen,
-  zoneSkipUrl,
   type SearchBudget
 } from '@shared/searchBudget.js'
 
@@ -433,15 +431,6 @@ function contextTooSmall(limit: number | null): string {
   )
 }
 
-function readSearchQuery(call: StreamedToolCall): string {
-  try {
-    const args = call.argumentsJson ? (JSON.parse(call.argumentsJson) as Record<string, unknown>) : {}
-    return String(args['query'] ?? '')
-  } catch {
-    return ''
-  }
-}
-
 /** Arguments come from model output, so a malformed object is handled, not thrown. */
 async function runToolCall(
   call: StreamedToolCall,
@@ -581,7 +570,6 @@ async function runCompletion(
     type: 'function',
     function: { name: t.name, description: t.description, parameters: t.parameters }
   }))
-  const userText = [...conversation.messages].reverse().find((m) => m.role === 'user')?.content ?? ''
   const budget: SearchBudget = { used: 0, limited: false }
 
   try {
@@ -693,20 +681,12 @@ async function runCompletion(
             continue
           }
         }
-        const query = readSearchQuery(call)
-        const skip = call === send ? zoneSkipUrl(userText, query) : null
-        const result = skip
-          ? await runToolCall({ ...call, name: FETCH_PAGE, argumentsJson: JSON.stringify({ url: skip }) }, confirmed)
-          : await runToolCall(call, confirmed)
-        if (call === send && !skip) {
+        const result = await runToolCall(call, confirmed)
+        if (call === send) {
           budget.used += 1
           if (result.summary === SEARCH_RATE_LIMITED) budget.limited = true
         }
         if (entry) {
-          if (skip) {
-            entry.name = FETCH_PAGE
-            entry.argumentsJson = JSON.stringify({ url: skip })
-          }
           entry.summary = result.summary
           entry.ok = result.ok
           entry.sources = result.sources
