@@ -8,6 +8,8 @@ export const IPC = {
   serverStatusChanged: 'server:status-changed',
   /** Menu items act by asking the renderer to do what the UI already does. */
   menuAction: 'menu:action',
+  themeGet: 'settings:theme-get',
+  themeSet: 'settings:theme-set',
   /** Main forwards a right-click's spelling data; the renderer draws the menu. */
   contextMenuShow: 'context-menu:show',
   contextMenuCommand: 'context-menu:command',

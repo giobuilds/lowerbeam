@@ -23,7 +23,17 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Added
 
 - The Models tab lists every GGUF already on disk, with its size, when it was last launched and any duplicate copies, and can delete a model that is not in use. A vision projector paired with that model is deleted with it.
-- The window follows the system's light or dark setting. Dark is unchanged.
+- The window follows the system's light or dark setting. File → Settings opens the settings page, where Appearance can set it to light or dark instead. Dark is unchanged.
+
+### Changed
+
+- After a model is deleted, the Models tab says how much space that freed.
+
+### Fixed
+
+- Deleting a model from a folder that is a link now removes the file and counts its size, when the file really sits inside a folder the app scans. Before, only the link went away and the app said nothing was freed.
+- Saved launch settings stay when a delete fails. They are dropped only once the file is gone.
+- In the light theme, a warning, an error and a tool line stay readable. They were still the pale colours chosen for the dark page, and an error was dark text on a dark bar.
 
 ### Security
 

@@ -12,6 +12,7 @@ import { subscribeToBench } from './state/benchStore.js'
 import { FlagReference } from './components/FlagReference.js'
 import { ContextMenu } from './components/ContextMenu.js'
 import { ToolSettings } from './components/ToolSettings.js'
+import { AppSettings } from './components/AppSettings.js'
 import { About } from './components/About.js'
 import { UpdateBanner } from './components/UpdateBanner.js'
 import { ReaderPanel } from './components/ReaderPanel.js'
@@ -31,6 +32,7 @@ export default function App(): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('chat')
   const [showFlags, setShowFlags] = useState(false)
   const [showTools, setShowTools] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
 
   const activeDownloads = useDownloadStore(
@@ -56,6 +58,7 @@ export default function App(): React.JSX.Element {
         case 'tab:coding': setTab('coding'); break
         case 'help:flags': setShowFlags(true); break
         case 'tools:configure': setShowTools(true); break
+        case 'settings:open': setShowSettings(true); break
         case 'help:about': setShowAbout(true); break
         case 'chat:new':
           setTab('chat')
@@ -122,8 +125,8 @@ export default function App(): React.JSX.Element {
 
   // The pane draws over the window, so it has to stand down for a modal.
   useEffect(() => {
-    useReaderStore.getState().setHidden(showFlags || showTools || showAbout)
-  }, [showFlags, showTools, showAbout])
+    useReaderStore.getState().setHidden(showFlags || showTools || showSettings || showAbout)
+  }, [showFlags, showTools, showSettings, showAbout])
 
   // A reply is persisted when it finishes, so closing mid-generation would drop
   // whatever had streamed. Flush what is in flight before the window goes.
@@ -220,6 +223,7 @@ export default function App(): React.JSX.Element {
 
       {showFlags && <FlagReference onClose={() => setShowFlags(false)} />}
       {showTools && <ToolSettings onClose={() => setShowTools(false)} />}
+      {showSettings && <AppSettings onClose={() => setShowSettings(false)} />}
       {showAbout && <About onClose={() => setShowAbout(false)} />}
       <ContextMenu />
     </div>

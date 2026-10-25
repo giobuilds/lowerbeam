@@ -187,6 +187,7 @@ async function bootstrap(): Promise<void> {
   await supervisor.adoptOrReap()
 
   registerContextMenuCommands()
+  nativeTheme.themeSource = settings.current.theme
   buildAppMenu(() => supervisor)
   createWindow()
   nativeTheme.on('updated', () => {

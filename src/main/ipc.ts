@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, session, shell, BrowserWindow, type WebContents } from 'electron'
+import { app, ipcMain, dialog, session, shell, BrowserWindow, nativeTheme, type WebContents } from 'electron'
 import { createRequire } from 'node:module'
 import { stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -46,6 +46,7 @@ import type {
   RouterPlanView
 } from '@shared/types.js'
 import { IPC } from '@shared/ipc.js'
+import { THEME_CHOICES, type ThemeChoice } from '@shared/theme.js'
 import { applyOptionsSchema, launchConfigSchema, llamaInstallSchema, llamaUpdateSetSchema, routerLaunchSchema } from '@shared/schema.js'
 import { dataUsage, deleteOwnData } from './appData.js'
 import { measureSpeculation } from './specMeasure.js'
@@ -75,7 +76,7 @@ import type { SandboxProbe } from './coding/sandbox.js'
 import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
 import type { ApplyResult, ChangeSet, CodingRunList, CodingRunTicket, GitState, JournalEvent } from '@shared/coding.js'
-import type { ProfileStore } from './profiles.js'
+import { modelKey, type ProfileStore } from './profiles.js'
 import {
   searchModels,
   listRepoFiles,
@@ -188,6 +189,13 @@ export function registerIpc(
 
   handle<LocalApiSettings>(IPC.localApiGet, () => settings.current.localApi)
   handle<LocalApiSettings>(IPC.localApiSet, async (raw) => (await settings.patch({ localApi: raw as LocalApiSettings })).localApi)
+  handle<ThemeChoice>(IPC.themeGet, () => settings.current.theme)
+  handle<ThemeChoice>(IPC.themeSet, async (raw) => {
+    const theme = z.enum(THEME_CHOICES).parse(raw)
+    await settings.patch({ theme })
+    nativeTheme.themeSource = theme
+    return theme
+  })
   // Where another machine would reach this one: each non-internal IPv4 address.
   handle<string[]>(IPC.lanAddresses, () =>
     Object.values(networkInterfaces())
@@ -455,9 +463,11 @@ export function registerIpc(
           supervisor.status.router?.models.some((served) => supervisor.launchFor(served.modelPath)?.mmprojPath === model.projectorPath))
     )
     // The profile key is the file's name and size, so it has to be read
-    // before the file is gone. A projector another running model still has
-    // loaded is left on disk with that model.
-    await profiles.forget(path)
+    // before the file is gone. Forget only after the delete succeeds: a
+    // failed unlink must leave the saved launch settings where they were.
+    // A projector another running model still has loaded is left on disk
+    // with that model.
+    const key = await modelKey(path)
     const freedBytes = await removeModelAndProjector(
       path,
       models.map((entry) => ({
@@ -466,6 +476,7 @@ export function registerIpc(
       })),
       libraryRoots()
     )
+    await profiles.forgetKey(key)
     modelCache = null
     return { freedBytes }
   })

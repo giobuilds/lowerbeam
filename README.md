@@ -13,7 +13,7 @@ Lowerbeam helps you get the most out of local models on an 8 GB card. It sets up
 - **Chat, tools and coding.** Chat with compaction for long conversations, web tools, MCP servers, and a sandboxed coding mode that only ever edits a copy of your project.
 - **Yours.** Everything runs locally, with no telemetry.
 
-Lowerbeam uses the official llama.cpp builds and never forks or bundles them. It runs on Linux (x86_64) today. The window follows the system's light or dark setting.
+Lowerbeam uses the official llama.cpp builds and never forks or bundles them. It runs on Linux (x86_64) today. The window follows the system's light or dark setting, or the one chosen under Appearance on the settings page (File → Settings).
 
 [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Discussions](https://github.com/giobuilds/lowerbeam/discussions)
 
