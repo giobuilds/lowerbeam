@@ -1,6 +1,6 @@
 {
   "name": "lowerbeam",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Lowerbeam is the local AI workbench for small GPUs",
   "main": "./out/main/index.js",
   "author": {
