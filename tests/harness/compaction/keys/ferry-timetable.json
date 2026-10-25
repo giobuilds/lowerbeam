@@ -1,0 +1,40 @@
+{
+  "id": "ferry-timetable",
+  "corpus": "ferry-timetable.json",
+  "contextPerSlot": 7424,
+  "questions": [
+    {
+      "id": "sailing",
+      "ask": "Which departure still connects with the school run?",
+      "facts": [{ "id": "sails", "anyOf": ["07:15"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "pier",
+      "ask": "Where does that departure leave from?",
+      "facts": [{ "id": "quay", "anyOf": ["North Quay"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "cancelled",
+      "ask": "Which earlier sailing was dropped for the season?",
+      "facts": [{ "id": "early", "anyOf": ["06:40"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "price",
+      "ask": "What does one direction of the crossing cost?",
+      "facts": [{ "id": "fare", "anyOf": ["£4.60"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "account",
+      "ask": "Whose name should the booking use?",
+      "facts": [{ "id": "who", "anyOf": ["Pellam"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "dropped-account",
+      "ask": "Which tour operator was taken off the booking?",
+      "facts": [{ "id": "tours", "anyOf": ["Grey Harbor Tours"], "in": "user", "layer": "speech" }]
+    }
+  ],
+  "heldBack": [
+    { "id": "window", "why": "The ticket window is mentioned only after the booking is settled.", "anyOf": ["red kiosk"] }
+  ]
+}

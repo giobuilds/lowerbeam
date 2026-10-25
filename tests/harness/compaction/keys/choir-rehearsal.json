@@ -1,0 +1,40 @@
+{
+  "id": "choir-rehearsal",
+  "corpus": "choir-rehearsal.json",
+  "contextPerSlot": 7424,
+  "questions": [
+    {
+      "id": "piece",
+      "ask": "Which work is the choir preparing?",
+      "facts": [{ "id": "work", "anyOf": ["Byrd Ave verum"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "key",
+      "ask": "In which key is it being sung?",
+      "facts": [{ "id": "tonality", "anyOf": ["G minor"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "room",
+      "ask": "Which room should be booked?",
+      "facts": [{ "id": "linden", "anyOf": ["Linden"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "rejected-room",
+      "ask": "Which space was ruled out?",
+      "facts": [{ "id": "gym", "anyOf": ["not the gym"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "solo",
+      "ask": "Who will not sing the solo?",
+      "facts": [{ "id": "mira", "anyOf": ["Mira will not take the solo"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "who-sings",
+      "ask": "Who sings that line instead?",
+      "facts": [{ "id": "section", "anyOf": ["the section sings it"], "in": "assistant", "layer": "speech" }]
+    }
+  ],
+  "heldBack": [
+    { "id": "scores", "why": "The scores are located only in the kept tail.", "anyOf": ["yellow folders"] }
+  ]
+}

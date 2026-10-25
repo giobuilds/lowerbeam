@@ -1,0 +1,40 @@
+{
+  "id": "press-deadline",
+  "corpus": "press-deadline.json",
+  "contextPerSlot": 7424,
+  "questions": [
+    {
+      "id": "date",
+      "ask": "What date is printed on the cover?",
+      "facts": [{ "id": "cover", "anyOf": ["3 March 2026"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "headline",
+      "ask": "What is the headline?",
+      "facts": [{ "id": "hed", "anyOf": ["Bridge vote slips"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "page",
+      "ask": "On which page does the piece run?",
+      "facts": [{ "id": "folio", "anyOf": ["page 4"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "credit",
+      "ask": "Who should be credited for the photo?",
+      "facts": [{ "id": "photographer", "anyOf": ["Nia Holt"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "not-credit",
+      "ask": "Who should not be credited for the photo?",
+      "facts": [{ "id": "wire", "anyOf": ["not to the wire"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "withdrawn",
+      "ask": "What happened to the other photo credit?",
+      "facts": [{ "id": "pulled", "anyOf": ["wire credit is withdrawn"], "in": "assistant", "layer": "speech" }]
+    }
+  ],
+  "heldBack": [
+    { "id": "legal", "why": "The legal mark is named only in the kept tail.", "anyOf": ["blue pencil"] }
+  ]
+}

@@ -66,6 +66,8 @@ interface ServerState {
   selectBinary: (path: string) => Promise<void>
   adoptBinaries: (selection: BinarySelection) => void
   loadModels: (force?: boolean) => Promise<void>
+  /** Delete one library file and refresh the list. Returns the bytes freed. */
+  removeModel: (path: string) => Promise<number>
   addModelDir: () => Promise<void>
   refreshPlan: () => Promise<void>
   refreshFit: () => Promise<void>
@@ -160,6 +162,22 @@ export const useServerStore = create<ServerState>((set, get) => ({
     } finally {
       set({ modelsLoading: false })
     }
+  },
+
+  async removeModel(path) {
+    const { freedBytes } = await window.llama.models.remove(path)
+    const wasSelected = get().draft.modelPath === path
+    await get().loadModels(true)
+    if (wasSelected) {
+      set((s) => ({
+        draft: { ...s.draft, modelPath: '' },
+        plan: null,
+        fit: null,
+        profile: null,
+        profileApplied: false
+      }))
+    }
+    return freedBytes
   },
 
   async addModelDir() {

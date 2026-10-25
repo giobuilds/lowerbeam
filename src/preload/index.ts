@@ -130,6 +130,8 @@ const api = {
   models: {
     list: () => invoke<ModelEntryView[]>(IPC.modelsList),
     rescan: () => invoke<ModelEntryView[]>(IPC.modelsRescan),
+    /** Unlink one file from the library. The path has to be one the last scan returned. */
+    remove: (path: string) => invoke<{ freedBytes: number }>(IPC.modelsDelete, path),
     fit: (modelPath: string) => invoke<FitSuggestion | null>(IPC.modelFit, modelPath),
     plan: (req: {
       modelPath: string

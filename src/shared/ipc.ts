@@ -31,6 +31,7 @@ export const IPC = {
   llamaUpdateChanged: 'llama:update-changed',
   modelsList: 'models:list',
   modelsRescan: 'models:rescan',
+  modelsDelete: 'models:delete',
   modelPlan: 'models:plan',
   modelPlanRouter: 'models:plan-router',
   modelMeasureSpeculation: 'models:measure-speculation',

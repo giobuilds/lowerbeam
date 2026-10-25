@@ -1,0 +1,47 @@
+{
+  "id": "choir-rehearsal",
+  "title": "Solstice concert",
+  "note": "A short invented chat. Scored spellings are in the replaced turns. One spelling is only in the kept tail.",
+  "messages": [
+    {
+      "id": "choir-1",
+      "role": "user",
+      "content": "We have to be performance-ready by the solstice concert."
+    },
+    {
+      "id": "choir-2",
+      "role": "assistant",
+      "content": "The piece is Byrd Ave verum. We sing it in G minor."
+    },
+    {
+      "id": "choir-3",
+      "role": "user",
+      "content": "Book room Linden, not the gym."
+    },
+    {
+      "id": "choir-4",
+      "role": "assistant",
+      "content": "Linden it is. The gym is out. Mira will not take the solo; the section sings it."
+    },
+    {
+      "id": "choir-5",
+      "role": "user",
+      "content": "Where are the scores?"
+    },
+    {
+      "id": "choir-6",
+      "role": "assistant",
+      "content": "The yellow folders are on the piano."
+    },
+    {
+      "id": "choir-7",
+      "role": "user",
+      "content": "Thanks."
+    },
+    {
+      "id": "choir-8",
+      "role": "assistant",
+      "content": "See you Thursday."
+    }
+  ]
+}

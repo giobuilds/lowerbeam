@@ -1,0 +1,47 @@
+{
+  "id": "kiln-glaze",
+  "title": "Food-safe mugs",
+  "note": "A short invented chat. Scored spellings are in the replaced turns. One spelling is only in the kept tail.",
+  "messages": [
+    {
+      "id": "kiln-1",
+      "role": "user",
+      "content": "The mugs have to be food-safe."
+    },
+    {
+      "id": "kiln-2",
+      "role": "assistant",
+      "content": "Fire to cone 6. The glaze is 40 feldspar, 30 silica, 20 whiting, 10 clay."
+    },
+    {
+      "id": "kiln-3",
+      "role": "user",
+      "content": "Call the glaze Ash Meadow. Do not call it Lead White."
+    },
+    {
+      "id": "kiln-4",
+      "role": "assistant",
+      "content": "Ash Meadow it is. Lead White is rejected. The test tile is number T-12."
+    },
+    {
+      "id": "kiln-5",
+      "role": "user",
+      "content": "How do we know a firing failed?"
+    },
+    {
+      "id": "kiln-6",
+      "role": "assistant",
+      "content": "A shelf waster means that firing is scrap."
+    },
+    {
+      "id": "kiln-7",
+      "role": "user",
+      "content": "Clear."
+    },
+    {
+      "id": "kiln-8",
+      "role": "assistant",
+      "content": "I will load the kiln Friday."
+    }
+  ]
+}

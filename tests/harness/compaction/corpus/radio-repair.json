@@ -1,0 +1,47 @@
+{
+  "id": "radio-repair",
+  "title": "Night desk set",
+  "note": "A short invented chat. Scored spellings are in the replaced turns. One spelling is only in the kept tail.",
+  "messages": [
+    {
+      "id": "radio-1",
+      "role": "user",
+      "content": "The set has to be quiet enough for the night desk."
+    },
+    {
+      "id": "radio-2",
+      "role": "assistant",
+      "content": "The valve is an ECC83. Bias was set to -1.4 V."
+    },
+    {
+      "id": "radio-3",
+      "role": "user",
+      "content": "Leave the chassis number as RK-17. Do not stamp it RK-17B."
+    },
+    {
+      "id": "radio-4",
+      "role": "assistant",
+      "content": "RK-17 stays. RK-17B is set aside. The hum was not a ground loop; that diagnosis was wrong."
+    },
+    {
+      "id": "radio-5",
+      "role": "user",
+      "content": "Did the spare parts arrive?"
+    },
+    {
+      "id": "radio-6",
+      "role": "assistant",
+      "content": "A mica washer is in the tray."
+    },
+    {
+      "id": "radio-7",
+      "role": "user",
+      "content": "Good."
+    },
+    {
+      "id": "radio-8",
+      "role": "assistant",
+      "content": "I will button the chassis tomorrow."
+    }
+  ]
+}

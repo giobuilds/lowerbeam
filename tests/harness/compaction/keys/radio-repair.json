@@ -1,0 +1,40 @@
+{
+  "id": "radio-repair",
+  "corpus": "radio-repair.json",
+  "contextPerSlot": 7424,
+  "questions": [
+    {
+      "id": "valve",
+      "ask": "Which valve is in the set?",
+      "facts": [{ "id": "tube", "anyOf": ["ECC83"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "bias",
+      "ask": "What bias voltage was chosen?",
+      "facts": [{ "id": "volts", "anyOf": ["-1.4 V"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "kept-id",
+      "ask": "Which chassis number must stay?",
+      "facts": [{ "id": "kept", "anyOf": ["RK-17"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "rejected-id",
+      "ask": "Which chassis number must not be stamped?",
+      "facts": [{ "id": "variant", "anyOf": ["RK-17B"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "wrong",
+      "ask": "Which explanation of the hum was withdrawn?",
+      "facts": [{ "id": "loop", "anyOf": ["not a ground loop"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "withdrawn",
+      "ask": "What was said about that explanation?",
+      "facts": [{ "id": "wrong-call", "anyOf": ["diagnosis was wrong"], "in": "assistant", "layer": "speech" }]
+    }
+  ],
+  "heldBack": [
+    { "id": "washer", "why": "The spare part is named only in the kept tail.", "anyOf": ["mica washer"] }
+  ]
+}

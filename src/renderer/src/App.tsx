@@ -20,6 +20,7 @@ import { subscribeToCoding } from './state/codingStore.js'
 import { isWebUrl } from '@shared/url.js'
 import { servedModel } from '@shared/served.js'
 import { StatusBadge } from './components/StatusBadge.js'
+import { InstalledModels } from './components/InstalledModels.js'
 
 type Tab = 'chat' | 'server' | 'models' | 'tuning' | 'coding'
 
@@ -186,7 +187,12 @@ export default function App(): React.JSX.Element {
         {tab === 'chat' ? (
           <Chat onConfigureTools={() => setShowTools(true)} />
         ) : tab === 'models' ? (
-          <Downloads />
+          <div className="flex h-full min-h-0">
+            <InstalledModels />
+            <div className="min-w-0 flex-1">
+              <Downloads />
+            </div>
+          </div>
         ) : tab === 'tuning' ? (
           <Tuning />
         ) : tab === 'coding' ? (

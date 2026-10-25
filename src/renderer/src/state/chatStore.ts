@@ -12,12 +12,9 @@ import {
   compactableMessages,
   PREEMPT_AT,
   projectedPromptTokens,
-  shouldCompact,
-  verbatimUserMessages
+  shouldCompact
 } from '@context/compact.js'
-import { evictRecord, evictionBudgetChars } from '@context/evict.js'
-import { extractMechanics, mechanicalText } from '@context/extract.js'
-import { compactionRecord, extractSpeech, speechText } from '@context/speech.js'
+import { compactConversation } from '@context/engine.js'
 import { DEFAULT_OUTPUT, outputConstraint, type OutputSetting } from '@shared/structuredOutput.js'
 import { projectConversation } from '@context/project.js'
 import { declinedMcpCall, isMcpTool, mcpDecisions } from '@shared/mcpConfirm.js'
@@ -375,57 +372,19 @@ async function compactNow(id: string, set: Setter, get: Getter): Promise<void> {
 
     set({ compacting: { ...get().compacting, [id]: true } })
     try {
-      // The same two texts the M2 harness scores. Notes from an earlier
-      // compaction go back into the transcript and the scan, and the new
-      // record replaces them, so a long chat does not append forever.
-      const previous = conversation.compaction?.summary ?? null
-      const speech = await extractSpeech(
-        { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey, model: served?.id },
+      // The same record the harness scores. Notes from an earlier compaction
+      // go back into the transcript and the scan, and the new record replaces
+      // them, so a long chat does not append forever.
+      const compaction = await compactConversation(
         conversation,
-        older,
+        { url: `http://127.0.0.1:${status.port}`, apiKey: status.apiKey, model: served?.id },
         limit,
-        AbortSignal.timeout(180_000),
-        previous
+        AbortSignal.timeout(180_000)
       )
-      const turns = older.map((m) => m.content).join('\n')
-      const kept = previous?.trim() ?? ''
-      // Notes count as a source for extraction, so an old command can be seen
-      // again, and not as a reference. A spelling the turns never repeat is
-      // dropped, which is what keeps the record from growing without limit.
-      const evicted = evictRecord({
-        speech,
-        mechanical: extractMechanics(kept ? `${kept}\n${turns}` : turns),
-        source: turns,
-        budgetChars: evictionBudgetChars(limit)
-      })
-      const mechanical = mechanicalText(evicted.mechanical)
-      const summary = compactionRecord(speechText(evicted.speech), mechanical)
-      if (!summary) throw new Error('The record was empty.')
+      if (!compaction) return
       const current = get().byId[id]
       if (!current) return
-      const next: ConversationView = {
-        ...current,
-        compaction: {
-          summary,
-          throughMessageId: older[older.length - 1]!.id,
-          // Carried forward with the new ones, so a request from ten turns ago
-          // survives as long as it fits.
-          userMessages: verbatimUserMessages(
-            [
-              ...(current.compaction?.userMessages ?? []).map((content) => ({
-                id: '',
-                role: 'user' as const,
-                content,
-                createdAt: 0
-              })),
-              ...older
-            ],
-            limit
-          ),
-          messageCount: (current.compaction?.messageCount ?? 0) + older.length,
-          at: Date.now()
-        }
-      }
+      const next: ConversationView = { ...current, compaction }
       put(set, get, next)
       await persist(next, set, get)
     } catch (err) {

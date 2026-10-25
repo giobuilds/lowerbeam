@@ -4,7 +4,7 @@ import { stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { networkInterfaces } from 'node:os'
 import { conversationMarkdown, exportFileName } from '@shared/chatExport.js'
-import { ZodError } from 'zod'
+import { z, ZodError } from 'zod'
 import type {
   BenchResult,
   BenchRunView,
@@ -63,6 +63,7 @@ import {
   removalBlocked
 } from './llamaManage.js'
 import { scanModels, defaultModelDirs, type ModelEntry } from './registry.js'
+import { copyCount, duplicateCounts, removeModelAndProjector } from './library.js'
 import { planVram, routerWorstCase, type Speculation } from './planner.js'
 import { routerIds } from '@shared/served.js'
 import { fitParams } from './fit.js'
@@ -418,8 +419,56 @@ export function registerIpc(
     return modelCache
   }
 
-  handle<ModelEntryView[]>(IPC.modelsList, () => listModels(false))
-  handle<ModelEntryView[]>(IPC.modelsRescan, () => listModels(true))
+  const libraryRoots = (): string[] => [...defaultModelDirs(), ...settings.current.modelDirs]
+
+  /** Size and header from the scan, plus when it was launched and whether it is a copy. */
+  const presentModels = async (force: boolean): Promise<ModelEntryView[]> => {
+    const models = await listModels(force)
+    const counts = duplicateCounts(models)
+    return Promise.all(
+      models.map(async (model) => {
+        const profile = await profiles.get(model.path)
+        return { ...model, lastUsedAt: profile?.lastUsedAt ?? null, copies: copyCount(model, counts) }
+      })
+    )
+  }
+
+  handle<ModelEntryView[]>(IPC.modelsList, () => presentModels(false))
+  handle<ModelEntryView[]>(IPC.modelsRescan, () => presentModels(true))
+
+  handle<{ freedBytes: number }>(IPC.modelsDelete, async (raw) => {
+    const path = z.string().min(1).max(4096).parse(raw)
+    const models = await listModels(false)
+    if (!models.some((model) => model.path === path)) {
+      throw new Error('That file is not in the model library. Rescan and try again.')
+    }
+    const phase = supervisor.status.phase
+    const busy = phase === 'starting' || phase === 'loading' || phase === 'ready' || phase === 'degraded' || phase === 'stopping'
+    if (busy && (supervisor.launchFor(path) || supervisor.status.config?.draftModelPath === path)) {
+      throw new Error('Stop the server before deleting a model it is using.')
+    }
+    const model = models.find((entry) => entry.path === path)!
+    const projectorInUse = Boolean(
+      busy &&
+        model.projectorPath &&
+        (supervisor.status.config?.mmprojPath === model.projectorPath ||
+          supervisor.status.router?.models.some((served) => supervisor.launchFor(served.modelPath)?.mmprojPath === model.projectorPath))
+    )
+    // The profile key is the file's name and size, so it has to be read
+    // before the file is gone. A projector another running model still has
+    // loaded is left on disk with that model.
+    await profiles.forget(path)
+    const freedBytes = await removeModelAndProjector(
+      path,
+      models.map((entry) => ({
+        path: entry.path,
+        projectorPath: entry.path === path && projectorInUse ? undefined : entry.projectorPath
+      })),
+      libraryRoots()
+    )
+    modelCache = null
+    return { freedBytes }
+  })
 
   handle<VramPlanView>(IPC.modelPlan, async (raw) => {
     const req = planRequestSchema.parse(raw)

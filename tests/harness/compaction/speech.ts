@@ -6,6 +6,12 @@
  * spellings. Mechanical is the M1 scan of the same turns. A chat stores both.
  *
  *   node tests/harness/compaction/speech.mjs
+ *   node tests/harness/compaction/speech.mjs --draws=1
+ *
+ * The default is three draws. The table is the median hit count, and the
+ * range when the draws disagree. Thinking stays off, because that is how
+ * the app asks for the record: a thinking trace would spend the cap before
+ * the form is written.
  */
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -16,6 +22,18 @@ import { compactableMessages } from '@context/compact.js'
 import { extractMechanics, mechanicalText } from '@context/extract.js'
 import { extractSpeech, speechText, type SpeechRecord } from '@context/speech.js'
 import { loadPairs, toConversation, type AnswerKey, type Corpus } from './load.js'
+import { formatSpread } from './stats.js'
+
+/** How many times each chat is recorded. One draw is a single roll of the model. */
+function drawCount(): number {
+  const flag = process.argv.find((arg) => arg.startsWith('--draws='))
+  if (!flag) return 3
+  const count = Number(flag.slice('--draws='.length))
+  if (!Number.isInteger(count) || count < 1 || count > 10) {
+    throw new Error('--draws needs a whole number from 1 to 10')
+  }
+  return count
+}
 
 const PORT = 8990
 const LLAMA = join(homedir(), '.local/bin/llama')
@@ -65,25 +83,41 @@ async function scoreChat(baseUrl: string, corpus: Corpus, key: AnswerKey): Promi
   }
 }
 
-function report(chats: ChatScore[]): string {
+interface ChatDraws {
+  id: string
+  questions: number
+  /** Questions whose facts were all present, one number per draw. */
+  speechHits: number[]
+  combinedHits: number[]
+  /** The last draw, kept so a reader can see one record in full. */
+  last: ChatScore
+}
+
+function hitCount(chat: ChatScore, which: 'speech' | 'combined'): number {
+  return chat.questions.filter((question) => question[which]).length
+}
+
+function report(chats: ChatDraws[], draws: number): string {
   const lines = [
-    '# Compaction M2 record',
+    '# Compaction record',
     '',
-    'Spellings present in the form. Combined adds the M1 mechanical scan of the same turns.',
-    'A chat stores the combined record in place of a prose summary.',
+    `Spellings present in the form, across ${draws} ${draws === 1 ? 'draw' : 'draws'}.`,
+    'Combined adds the mechanical scan of the same turns. A chat stores that combined record.',
+    'Each cell is the median number of questions held. A range is the lowest and highest draw.',
+    'Thinking is off, which is how the app asks for the record.',
     '',
-    '| chat | speech | speech + mechanical |',
-    '|---|---|---|',
-    ...chats.map((chat) => `| ${chat.id} | ${chat.speechRetained} | ${chat.combinedRetained} |`)
-  ]
-  const all = chats.flatMap((chat) => chat.questions)
-  lines.push(
-    `| total | ${all.filter((q) => q.speech).length}/${all.length} | ${all.filter((q) => q.combined).length}/${all.length} |`,
+    '| chat | questions | speech | speech + mechanical |',
+    '|---|---|---|---|',
+    ...chats.map(
+      (chat) =>
+        `| ${chat.id} | ${chat.questions} | ${formatSpread(chat.speechHits)} | ${formatSpread(chat.combinedHits)} |`
+    ),
     ''
-  )
+  ]
   for (const chat of chats) {
-    lines.push(`## ${chat.id}`, '', '```json', JSON.stringify(chat.speech, null, 2), '```', '')
-    for (const question of chat.questions) {
+    lines.push(`## ${chat.id}`, '', '```json', JSON.stringify(chat.last.speech, null, 2), '```', '')
+    lines.push(`Speech draws: ${chat.speechHits.join(', ')}. Combined draws: ${chat.combinedHits.join(', ')}.`, '')
+    for (const question of chat.last.questions) {
       lines.push(
         `- ${question.id}: speech ${question.speech ? 'yes' : `no (${question.missingSpeech.join(', ')})`}; combined ${question.combined ? 'yes' : 'no'}`
       )
@@ -144,15 +178,28 @@ async function main(): Promise<void> {
   try {
     const build = execFileSync(LLAMA, ['--version']).toString().split('\n')[0]?.trim() ?? ''
     const pairs = await loadPairs()
+    const draws = drawCount()
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
     const dir = join(process.cwd(), 'tests/harness/results', stamp)
     await mkdir(dir, { recursive: true })
-    const chats: ChatScore[] = []
+    const chats: ChatDraws[] = []
     for (const { corpus, key } of pairs) {
-      chats.push(await scoreChat(`http://127.0.0.1:${PORT}`, corpus, key))
-      const text = report(chats)
+      const speechHits: number[] = []
+      const combinedHits: number[] = []
+      let last: ChatScore | null = null
+      for (let draw = 1; draw <= draws; draw++) {
+        console.log(`${corpus.id} draw ${draw}/${draws}`)
+        last = await scoreChat(`http://127.0.0.1:${PORT}`, corpus, key)
+        speechHits.push(hitCount(last, 'speech'))
+        combinedHits.push(hitCount(last, 'combined'))
+      }
+      chats.push({ id: corpus.id, questions: last!.questions.length, speechHits, combinedHits, last: last! })
+      const text = report(chats, draws)
       await writeFile(join(dir, 'speech.md'), text)
-      await writeFile(join(dir, 'speech.json'), JSON.stringify({ build, model: MODEL, launch: LAUNCH, chats }, null, 2) + '\n')
+      await writeFile(
+        join(dir, 'speech.json'),
+        JSON.stringify({ build, model: MODEL, launch: LAUNCH, draws, chats }, null, 2) + '\n'
+      )
       console.log(text)
     }
     console.log(`wrote ${dir}`)

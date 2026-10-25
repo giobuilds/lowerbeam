@@ -27,8 +27,10 @@ console.log('scoring spellings')
 
 console.log('\ngrounding the corpus')
 const pairs = await loadPairs()
-assert.ok(pairs.length >= 2)
-ok('loads a key beside each conversation')
+assert.ok(pairs.length >= 10, `expected at least 10 chats, got ${pairs.length}`)
+const questions = pairs.reduce((count, pair) => count + pair.key.questions.length, 0)
+assert.ok(questions >= 60, `expected at least 60 questions, got ${questions}`)
+ok(`loads ${pairs.length} chats and ${questions} questions`)
 
 for (const { corpus, key } of pairs) {
   assert.equal(corpus.id, key.id)

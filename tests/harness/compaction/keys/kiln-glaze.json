@@ -1,0 +1,40 @@
+{
+  "id": "kiln-glaze",
+  "corpus": "kiln-glaze.json",
+  "contextPerSlot": 7424,
+  "questions": [
+    {
+      "id": "cone",
+      "ask": "To which cone is the ware fired?",
+      "facts": [{ "id": "cone", "anyOf": ["cone 6"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "recipe",
+      "ask": "What are the four parts of the glaze, in order?",
+      "facts": [{ "id": "parts", "anyOf": ["40 feldspar, 30 silica, 20 whiting, 10 clay"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "name",
+      "ask": "What should the glaze be called?",
+      "facts": [{ "id": "ash", "anyOf": ["Ash Meadow"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "rejected-name",
+      "ask": "Which glaze name was forbidden?",
+      "facts": [{ "id": "lead", "anyOf": ["Lead White"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "tile",
+      "ask": "What number is on the test tile?",
+      "facts": [{ "id": "tile-no", "anyOf": ["T-12"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "banned",
+      "ask": "What happened to the forbidden glaze name?",
+      "facts": [{ "id": "rejected", "anyOf": ["Lead White is rejected"], "in": "assistant", "layer": "speech" }]
+    }
+  ],
+  "heldBack": [
+    { "id": "scrap", "why": "The failure mark is named only in the kept tail.", "anyOf": ["shelf waster"] }
+  ]
+}

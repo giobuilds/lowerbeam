@@ -1,0 +1,40 @@
+{
+  "id": "bakery-oven",
+  "corpus": "bakery-oven.json",
+  "contextPerSlot": 7424,
+  "questions": [
+    {
+      "id": "preferment",
+      "ask": "When is the preferment mixed on the evening before market day?",
+      "facts": [{ "id": "levain-time", "anyOf": ["21:00"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "oven",
+      "ask": "What temperature was chosen for baking the loaf?",
+      "facts": [{ "id": "bake-temp", "anyOf": ["230 C"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "kept-name",
+      "ask": "Which shop name did the baker want kept?",
+      "facts": [{ "id": "shop", "anyOf": ["Hearth & Rye"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "joke-name",
+      "ask": "Which shop name was rejected as a joke?",
+      "facts": [{ "id": "joke", "anyOf": ["Flour Child"], "in": "user", "layer": "speech" }]
+    },
+    {
+      "id": "machine",
+      "ask": "What machine was put away so the dough would be worked manually?",
+      "facts": [{ "id": "mixer", "anyOf": ["stand mixer"], "in": "assistant", "layer": "speech" }]
+    },
+    {
+      "id": "method",
+      "ask": "How is the dough actually mixed?",
+      "facts": [{ "id": "hands", "anyOf": ["mixed by hand"], "in": "assistant", "layer": "speech" }]
+    }
+  ],
+  "heldBack": [
+    { "id": "peel", "why": "It arrives after the decision, in the turns that stay verbatim.", "anyOf": ["beech peel"] }
+  ]
+}

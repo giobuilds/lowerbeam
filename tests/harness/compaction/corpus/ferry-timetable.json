@@ -1,0 +1,47 @@
+{
+  "id": "ferry-timetable",
+  "title": "Morning crossing",
+  "note": "A short invented chat. Scored spellings are in the replaced turns. One spelling is only in the kept tail.",
+  "messages": [
+    {
+      "id": "ferry-1",
+      "role": "user",
+      "content": "The morning crossing has to leave on time for the school run."
+    },
+    {
+      "id": "ferry-2",
+      "role": "assistant",
+      "content": "The 07:15 from North Quay is the one that connects. The 06:40 was cancelled for the season. The fare is £4.60 each way."
+    },
+    {
+      "id": "ferry-3",
+      "role": "user",
+      "content": "Book it under the name Pellam, not under Grey Harbor Tours."
+    },
+    {
+      "id": "ferry-4",
+      "role": "assistant",
+      "content": "Pellam it is. I am dropping Grey Harbor Tours from the note."
+    },
+    {
+      "id": "ferry-5",
+      "role": "user",
+      "content": "Is the ticket window open?"
+    },
+    {
+      "id": "ferry-6",
+      "role": "assistant",
+      "content": "The red kiosk sells tickets after nine."
+    },
+    {
+      "id": "ferry-7",
+      "role": "user",
+      "content": "Thanks."
+    },
+    {
+      "id": "ferry-8",
+      "role": "assistant",
+      "content": "Have a good crossing."
+    }
+  ]
+}
