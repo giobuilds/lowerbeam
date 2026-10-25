@@ -18,6 +18,17 @@ import { compactConversation } from '@context/engine.js'
 import { DEFAULT_OUTPUT, outputConstraint, type OutputSetting } from '@shared/structuredOutput.js'
 import { projectConversation } from '@context/project.js'
 import { declinedMcpCall, isMcpTool, mcpDecisions } from '@shared/mcpConfirm.js'
+import {
+  FETCH_PAGE,
+  HELD_THIS_STEP,
+  SEARCH_CLOSED,
+  SEARCH_RATE_LIMITED,
+  WEB_SEARCH,
+  partitionSearches,
+  searchOpen,
+  zoneSkipUrl,
+  type SearchBudget
+} from '@shared/searchBudget.js'
 
 const DEFAULT_SETTINGS: ChatSettingsView = {
   temperature: 0.8,
@@ -39,7 +50,8 @@ interface ActiveStream {
  *
  * A model that searches, reads a page, then searches again is behaving
  * reasonably. One that does it twenty times is stuck, and every round costs both
- * context and time, so the loop stops and lets it answer with what it has.
+ * context and time. The last round is sent with no tools, so the reply ends
+ * as an answer instead of another search.
  */
 const MAX_TOOL_ROUNDS = 4
 
@@ -421,6 +433,15 @@ function contextTooSmall(limit: number | null): string {
   )
 }
 
+function readSearchQuery(call: StreamedToolCall): string {
+  try {
+    const args = call.argumentsJson ? (JSON.parse(call.argumentsJson) as Record<string, unknown>) : {}
+    return String(args['query'] ?? '')
+  } catch {
+    return ''
+  }
+}
+
 /** Arguments come from model output, so a malformed object is handled, not thrown. */
 async function runToolCall(
   call: StreamedToolCall,
@@ -560,11 +581,21 @@ async function runCompletion(
     type: 'function',
     function: { name: t.name, description: t.description, parameters: t.parameters }
   }))
+  const userText = [...conversation.messages].reverse().find((m) => m.role === 'user')?.content ?? ''
+  const budget: SearchBudget = { used: 0, limited: false }
 
   try {
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
       let requested: StreamedToolCall[] = []
       let failed = false
+      // The round that used to stop with an error is one more generation,
+      // with nothing to call, so the person gets an answer from what came back.
+      const forceAnswer = round === MAX_TOOL_ROUNDS
+      const roundSpec = forceAnswer
+        ? []
+        : searchOpen(budget)
+          ? toolSpec
+          : toolSpec.filter((tool) => tool.function.name !== WEB_SEARCH)
 
       await streamChat(
         baseUrl,
@@ -606,17 +637,11 @@ async function runCompletion(
             set({ error: message })
           }
         },
-        toolSpec.length > 0 ? toolSpec : undefined,
+        roundSpec.length > 0 ? roundSpec : undefined,
         constraint
       )
 
-      if (failed || abort.signal.aborted || requested.length === 0) break
-
-      if (round === MAX_TOOL_ROUNDS) {
-        // Out of rounds: say so in the conversation rather than looping on.
-        apply({ content: content || '', error: 'Stopped after too many tool calls.' })
-        break
-      }
+      if (failed || abort.signal.aborted || requested.length === 0 || forceAnswer) break
 
       // Show the calls before running them, so a slow search is visible.
       for (const call of requested) {
@@ -626,9 +651,24 @@ async function runCompletion(
 
       turns.push({ role: 'assistant', content, toolCalls: requested })
 
+      const open = searchOpen(budget)
+      const { send, held } = partitionSearches(requested, open)
+      const heldNote = open ? HELD_THIS_STEP : SEARCH_CLOSED
+
       let stoppedDuringConfirm = false
       for (const call of requested) {
         const entry = toolCalls.find((t) => t.id === call.id)
+        if (held.includes(call)) {
+          if (entry) {
+            entry.summary = heldNote.summary
+            entry.ok = false
+            entry.content = heldNote.content
+            entry.approxTokens = Math.ceil(heldNote.content.length / 4)
+          }
+          apply({ toolCalls: [...toolCalls] })
+          turns.push({ role: 'tool', toolCallId: call.id, content: heldNote.content })
+          continue
+        }
         let confirmed = false
         if (isMcpTool(call.name, get().availableTools)) {
           if (entry) entry.awaiting = true
@@ -653,8 +693,20 @@ async function runCompletion(
             continue
           }
         }
-        const result = await runToolCall(call, confirmed)
+        const query = readSearchQuery(call)
+        const skip = call === send ? zoneSkipUrl(userText, query) : null
+        const result = skip
+          ? await runToolCall({ ...call, name: FETCH_PAGE, argumentsJson: JSON.stringify({ url: skip }) }, confirmed)
+          : await runToolCall(call, confirmed)
+        if (call === send && !skip) {
+          budget.used += 1
+          if (result.summary === SEARCH_RATE_LIMITED) budget.limited = true
+        }
         if (entry) {
+          if (skip) {
+            entry.name = FETCH_PAGE
+            entry.argumentsJson = JSON.stringify({ url: skip })
+          }
           entry.summary = result.summary
           entry.ok = result.ok
           entry.sources = result.sources
@@ -696,7 +748,11 @@ async function runCompletion(
   // reads as the model having answered with nothing. Drop it instead.
   const produced = finished.messages.find((m) => m.id === reply.id)
   const isEmpty =
-    produced && !produced.content.trim() && !produced.reasoning?.trim() && !produced.error
+    produced &&
+    !produced.content.trim() &&
+    !produced.reasoning?.trim() &&
+    !produced.error &&
+    !(produced.toolCalls && produced.toolCalls.length > 0)
   const cleaned = isEmpty
     ? { ...finished, messages: finished.messages.filter((m) => m.id !== reply.id) }
     : finished

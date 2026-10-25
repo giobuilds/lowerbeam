@@ -1,3 +1,4 @@
+import { SEARCH_RATE_LIMITED } from '@shared/searchBudget.js'
 import { searchWeb, searchSearxng, fetchPage, SearchRateLimited, DEFAULT_LIMITS } from './web.js'
 import type { ToolDefinition, ToolResult } from '@shared/types.js'
 
@@ -91,7 +92,7 @@ async function runSearch(query: string): Promise<ToolResult> {
       // rephrasing a query that was never the problem.
       return {
         ok: false,
-        summary: 'Search is rate limited',
+        summary: SEARCH_RATE_LIMITED,
         content:
           'The search engine is temporarily refusing requests. Do not rephrase and retry — ' +
           'either answer from what you already have, or say that the search was unavailable.'

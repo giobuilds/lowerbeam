@@ -20,6 +20,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A chat searches the web at most twice, then answers from what came back. Further searches in the same step are not sent. A question that names GitHub is read from GitHub instead of searched until the turn stops.
+
 ### Added
 
 - The Models tab lists every GGUF already on disk, with its size, when it was last launched and any duplicate copies, and can delete a model that is not in use. A vision projector paired with that model is deleted with it.
