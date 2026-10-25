@@ -40,8 +40,8 @@ export const BUILT_IN_TOOLS: ToolDefinition[] = [
     label: 'Read a page',
     source: 'builtin',
     description:
-      'Read one web page as text. Only use it when a search extract was not enough, ' +
-      'and only for an address a search returned. Addresses on this computer or the local network are refused.',
+      'Read one web page as text, for a page a search already found, when the extract was not enough. ' +
+      'Addresses on this computer or the local network are refused.',
     parameters: {
       type: 'object',
       properties: {

@@ -4,8 +4,7 @@ import {
   SEARCH_CLOSED,
   SEARCHES_PER_REPLY,
   partitionSearches,
-  searchOpen,
-  zoneSkipUrl
+  searchOpen
 } from '../../src/shared/searchBudget.js'
 
 let n = 0
@@ -39,33 +38,6 @@ console.log('one search per step, two per reply')
   assert.match(HELD_THIS_STEP.content, /One search already ran/)
   assert.match(SEARCH_CLOSED.content, /no longer available/)
   ok('a held search tells the model not to rephrase')
-}
-
-console.log('a named site is read instead of searched')
-{
-  assert.equal(zoneSkipUrl('What is Lowerbeam?', 'Lowerbeam music'), null)
-  ok('a question that names no site is still a search')
-
-  assert.equal(
-    zoneSkipUrl('What is Lowerbeam on Github?', 'lowerbeam podcast'),
-    'https://github.com/search?q=Lowerbeam&type=repositories'
-  )
-  ok('GitHub in the question becomes a repository search, using the question not the rephrase')
-
-  assert.equal(
-    zoneSkipUrl('What is Lowerbeam?', 'lowerbeam github repository'),
-    'https://github.com/search?q=lowerbeam%20repository&type=repositories'
-  )
-  ok('GitHub in the one allowed query is the same kind of read')
-
-  assert.equal(
-    zoneSkipUrl('See https://github.com/giobuilds/lowerbeam please.', 'something else'),
-    'https://github.com/giobuilds/lowerbeam'
-  )
-  ok('a pasted address is fetched as given')
-
-  assert.equal(zoneSkipUrl('What is Lowerbeam?', 'https://example.com/headlights'), null)
-  ok('a URL only the model added is not fetched')
 }
 
 console.log(`\n${n} assertions passed`)

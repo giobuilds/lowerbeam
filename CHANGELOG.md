@@ -27,14 +27,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- After a model is deleted, the Models tab says how much space that freed.
+- After a model is deleted, the Models tab says how much space that freed. When only a link was removed, it says the file is kept.
 
 ### Fixed
 
 - Deleting a model from a folder that is a link now removes the file and counts its size, when the file really sits inside a folder the app scans. Before, only the link went away and the app said nothing was freed.
 - Saved launch settings stay when a delete fails. They are dropped only once the file is gone.
 - In the light theme, a warning, an error and a tool line stay readable. They were still the pale colours chosen for the dark page, and an error was dark text on a dark bar.
-- A chat searches the web at most twice, then answers from what came back. Further searches in the same step are not sent. A question that names GitHub is read from GitHub instead of searched until the turn stops.
+- A chat searches the web at most twice, then answers from what came back. Further searches in the same step are not sent.
 
 ### Security
 
