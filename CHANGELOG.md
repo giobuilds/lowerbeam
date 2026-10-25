@@ -24,8 +24,6 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 - The Models tab lists every GGUF already on disk, with its size, when it was last launched and any duplicate copies, and can delete a model that is not in use. A vision projector paired with that model is deleted with it.
 - The window follows the system's light or dark setting. Dark is unchanged.
-- Compaction of a chat goes through one shared function, the same record the harness scores.
-- The compaction harness has ten chats and at least sixty questions, and reports a median and a range across draws.
 
 ### Security
 
