@@ -27,6 +27,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Compaction of a chat goes through one shared function, the same record the harness scores.
 - The compaction harness has ten chats and at least sixty questions, and reports a median and a range across draws.
 
+### Security
+
+- DOMPurify 3.4.17, Zod 4.6.7 and Electron 44.9.3, for published advisories in the versions this build was using.
+
 ## [0.15.0] - 2026-10-18
 
 ### Added
