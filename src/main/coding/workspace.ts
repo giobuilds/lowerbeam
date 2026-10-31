@@ -108,6 +108,30 @@ export class Workspace {
   }
 
   /**
+   * Current sha256 of each file the run changed, keyed by its path in the
+   * copy. The baseline is what was copied; this is what the copy holds now.
+   * A snapshot taken before apply uses it, because the journal has no hash
+   * until the change goes back to the project.
+   */
+  async changedHashes(): Promise<Record<string, string>> {
+    const out: Record<string, string> = {}
+    for (const rel of Object.keys(this.manifest.files).sort()) {
+      const before = this.manifest.files[rel]!
+      const path = join(this.root, rel)
+      const st = await lstatOrNull(path)
+      if (!st?.isFile() || st.isSymbolicLink()) continue
+      const hash = await hashFile(path)
+      if (hash !== before) out[rel] = hash
+    }
+    const { files: made } = await walkCopy(this.root, this.root)
+    for (const rel of made.sort()) {
+      if (rel in this.manifest.files || rel.startsWith('.lowerbeam-')) continue
+      out[rel] = await hashFile(join(this.root, rel))
+    }
+    return out
+  }
+
+  /**
    * Put the run's changes into the project — each file only if the project
    * still holds what the baseline held. A file the user edited since is a
    * conflict, reported and left alone; nothing is merged and nothing is

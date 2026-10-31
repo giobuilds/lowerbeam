@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Grant } from '../../src/agent/grant.js'
 import { runTask } from '../../src/agent/loop.js'
+import { Workspace } from '../../src/main/coding/workspace.js'
 import {
   acceptSnapshot,
   factsFromJournal,
@@ -224,6 +226,111 @@ console.log('\na tool that throws does not end the run')
   assert.equal(tool && tool.type === 'tool.result' && tool.ok, false)
   assert.equal(result.outcome, 'answered')
   ok('a thrown tool comes back as a failed result and the run goes on')
+  server.close()
+  await rm(root, { recursive: true, force: true })
+}
+
+console.log('\na snapshot mid-run carries the edited file’s hash')
+{
+  const base = await mkdtemp(join(tmpdir(), 'snap-hash-'))
+  const project = join(base, 'project')
+  const copy = join(base, 'copy')
+  await mkdir(project)
+  const before = 'export const name = "Hearth"\n'
+  const after = 'export const name = "Kept"\n'
+  await writeFile(join(project, 'a.ts'), before)
+  const ws = await Workspace.create(project, copy)
+  let step = 0
+  const bodies: Array<{ messages: Array<{ content: string }> }> = []
+  const server = createServer((req, res) => {
+    let raw = ''
+    req.on('data', (chunk) => (raw += chunk))
+    req.on('end', () => {
+      bodies.push(JSON.parse(raw))
+      step += 1
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      const bulky = Array.from({ length: 80 }, (_, i) => `line ${i} talks about a different fact ${i * 17}.`).join(' ')
+      const content = step === 1 ? bulky : step === 2 ? 'Looking once more.' : 'The name is Kept.'
+      const call = step === 1
+        ? { index: 0, id: 'c1', function: { name: 'edit_file', arguments: JSON.stringify({ path: 'a.ts', find: before, replace: after }) } }
+        : step === 2
+          ? { index: 0, id: 'c2', function: { name: 'read', arguments: '{"path":"a.ts"}' } }
+          : null
+      const prompt = step === 2 ? 4000 : 10
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content, ...(call ? { tool_calls: [call] } : {}) }, finish_reason: null }] })}\n\n`)
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: call ? 'tool_calls' : 'stop' }], timings: { prompt_n: prompt, predicted_n: 20, cache_n: 0 } })}\n\n`)
+      res.end('data: [DONE]\n\n')
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  const events: JournalEvent[] = []
+  const result = await runTask({
+    baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    model: 'm',
+    task: 'Rename Hearth to Kept.',
+    grant: await Grant.open(ws.root, 'edit'),
+    settings,
+    contextLimit: 4096,
+    mode: 'edit',
+    snapshot: true,
+    proposeSnapshot: () => snapshot(),
+    onEvent: (item) => events.push(item)
+  })
+  const hash = createHash('sha256').update(after).digest('hex')
+  assert.equal(createHash('sha256').update(await readFile(join(ws.root, 'a.ts'))).digest('hex'), hash)
+  assert.equal(events.some((item) => item.type === 'applied'), false)
+  assert.ok(events.some((item) => item.type === 'snapshot' && item.accepted))
+  assert.match(bodies[2]?.messages.map((message) => message.content).join('\n') ?? '', new RegExp(`a\\.ts \\(${hash.slice(0, 12)}\\)`))
+  assert.equal(result.outcome, 'answered')
+  ok('an edited file’s hash is in the snapshot before anything is applied')
+  server.close()
+  await rm(base, { recursive: true, force: true })
+}
+
+console.log('\na deadline during a command ends the run')
+{
+  const root = await mkdtemp(join(tmpdir(), 'snap-stop-'))
+  await writeFile(join(root, 'a.ts'), 'export const name = "Hearth"\n')
+  let requests = 0
+  const server = createServer((req, res) => {
+    req.resume()
+    req.on('end', () => {
+      requests += 1
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      const call = { index: 0, id: 'c', function: { name: 'run_command', arguments: '{"command":"sleep 30"}' } }
+      const content = requests === 1 ? '' : 'The command failed, so here is another turn.'
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content, tool_calls: requests === 1 ? [call] : [] }, finish_reason: null }] })}\n\n`)
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: requests === 1 ? 'tool_calls' : 'stop' }], timings: { prompt_n: 10, predicted_n: 2, cache_n: 0 } })}\n\n`)
+      res.end('data: [DONE]\n\n')
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  const events: JournalEvent[] = []
+  const result = await runTask({
+    baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    model: 'm',
+    task: 'Run the tests.',
+    grant: await Grant.open(root, 'run'),
+    settings,
+    mode: 'run',
+    timeoutMs: 250,
+    execute: (_command, signal) =>
+      new Promise((_resolve, reject) => {
+        const fail = (): void => {
+          const err = new Error('The operation was aborted due to timeout')
+          err.name = 'TimeoutError'
+          reject(err)
+        }
+        if (signal.aborted) fail()
+        else signal.addEventListener('abort', fail, { once: true })
+      }),
+    onEvent: (item) => events.push(item)
+  })
+  assert.equal(requests, 1)
+  assert.ok(events.some((item) => item.type === 'tool.call' && item.name === 'run_command'))
+  assert.equal(events.some((item) => item.type === 'tool.result'), false)
+  assert.equal(result.outcome, 'timeout')
+  ok('a deadline inside run_command ends the run, and the model does not get another turn')
   server.close()
   await rm(root, { recursive: true, force: true })
 }

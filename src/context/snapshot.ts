@@ -204,19 +204,21 @@ export type SnapshotVerdict = { ok: true; snapshot: RunSnapshot } | { ok: false;
 /**
  * Accept a snapshot only when it can stand in for the turns.
  *
- * Files and commands are corrected from the journal first. The goal has to
- * be there, and the rendered snapshot has to be smaller than the text it
- * replaces.
+ * Files and commands are corrected from the journal first. A hash comes
+ * from an apply, or from the workspace manifest of files the run has
+ * already changed. The goal has to be there, and the rendered snapshot
+ * has to be smaller than the text it replaces.
  */
 export function acceptSnapshot(
   proposed: RunSnapshot | null,
   previous: RunSnapshot | null,
   events: readonly JournalEvent[],
-  replacedText: string
+  replacedText: string,
+  manifest: Readonly<Record<string, string>> = {}
 ): SnapshotVerdict {
   if (!proposed) return { ok: false, reason: 'The snapshot was not the shape asked for.' }
   const merged = mergeConstraints(previous, proposed)
-  const facts = factsFromJournal(events)
+  const facts = factsFromJournal(events, manifest)
   const snapshot: RunSnapshot = {
     ...merged,
     goal: merged.goal.trim(),

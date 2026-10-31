@@ -72,7 +72,11 @@ console.log('\na scan stays within its caps, and a failed load can be tried agai
   const notices = await readFile('resources/NOTICES', 'utf8')
   const builder = await readFile('electron-builder.yml', 'utf8')
   assert.match(notices, /MIT License/)
-  assert.match(notices, /tree-sitter/)
+  assert.match(notices, /Copyright \(c\) 2017 GitHub/)
+  assert.match(notices, /Copyright \(c\) 2014 Max Brunsfeld/)
+  assert.match(notices, /Copyright \(c\) 2016 Max Brunsfeld/)
+  assert.match(notices, /Copyright \(c\) 2017 Maxim Sokolov/)
+  assert.equal(notices.includes('\u2014'), false)
   assert.match(builder, /resources\/NOTICES/)
   ok('the packaged notices name the tree-sitter grammars and their MIT upstream')
 }
