@@ -139,6 +139,7 @@ export async function serveAgent(port: ChildPort, run: (req: RunRequest) => Prom
       mode: got.mode,
       terms: got.terms,
       embedModel: got.embedModel ?? null,
+      toolFormat: got.toolFormat,
       execute:
         got.mode === 'run'
           ? (command, signal) => {

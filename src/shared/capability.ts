@@ -18,6 +18,17 @@ import type { CodingMode } from './coding.js'
 
 export type Verdict = 'cleared' | 'refused' | 'unmeasured'
 
+/**
+ * How a coding run asks this model to call tools.
+ *
+ * `native` is the chat template's own tool calling. `text` describes the
+ * tools in the prompt and constrains the reply to one fenced call or a
+ * final answer, for a model whose template has no tool calling. Absent
+ * means native. Nothing here detects which a model needs; a measurement
+ * or a person sets it.
+ */
+export type ToolFormat = 'native' | 'text'
+
 export interface ModeVerdict {
   verdict: Verdict
   /** The measurement this rests on, in one sentence a person can check against the results. */
@@ -71,6 +82,11 @@ export interface ModelCapability {
   /** The context that covered every measured coding run, and that the verdicts were measured at. */
   codingContext: number
   modes: Record<CodingMode, ModeVerdict>
+  /**
+   * How coding runs call tools with this model. Absent means native, which
+   * is what every measured model here was measured with.
+   */
+  toolFormat?: ToolFormat
   /** Limits the measurements found that no mode verdict captures. */
   limits: string[]
   /**
@@ -269,6 +285,11 @@ export const CAPABILITY_RECORD: ModelCapability[] = [
     limits: []
   }
 ]
+
+/** Native unless the record says this model needs the text format. */
+export function toolFormatOf(record: ModelCapability | null | undefined): ToolFormat {
+  return record?.toolFormat === 'text' ? 'text' : 'native'
+}
 
 export function capabilityFor(sha256: string): ModelCapability | null {
   return CAPABILITY_RECORD.find((m) => m.sha256 === sha256) ?? null

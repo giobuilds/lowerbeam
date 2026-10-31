@@ -4,6 +4,8 @@ import { dirname, join, relative, sep } from 'node:path'
 import type { ToolDefinition } from '@shared/types.js'
 import type { AgentToolResult } from '@shared/coding.js'
 import { Grant } from './grant.js'
+import { levelNote, locate, uniformLeadingDelta } from './match.js'
+import { repoMapTool } from './repoMap.js'
 
 /**
  * The three tools a read-only run gets: list, search, read.
@@ -51,6 +53,8 @@ export function readBudgetBytes(contextLimit: number | null | undefined): number
 export interface ToolContext {
   /** The window the run has, when it knows it; the read budget follows it. */
   contextLimit?: number | null
+  /** Paths this run has already read or edited, so a repo map can prefer them. */
+  touched?: string[]
 }
 
 export const AGENT_TOOLS: ToolDefinition[] = [
@@ -116,7 +120,7 @@ export const WRITE_TOOLS: ToolDefinition[] = [
       'Replace one exact passage in a file. `find` must appear exactly once — ' +
       'include enough surrounding lines to make it unique. Read the file first; ' +
       'if the edit is refused as not found or ambiguous, read it again and retry ' +
-      'with the text as it actually is.',
+      'with the text as it actually is. A trailing space or a curly quote can still match; a change in relative indentation cannot.',
     parameters: {
       type: 'object',
       properties: {
@@ -164,6 +168,8 @@ export async function runAgentTool(
       return editFile(grant, str(args.path), str(args.find), str(args.replace))
     case 'write_file':
       return writeWholeFile(grant, str(args.path), str(args.content), str(args.expected_sha256))
+    case 'repo_map':
+      return repoMapTool(grant, args, context.touched)
     default:
       // Unknown tools fail closed: nothing is guessed at.
       return { ok: false, content: `There is no tool called ${name}.` }
@@ -299,60 +305,32 @@ async function editFile(grant: Grant, path: string, find: string, replace: strin
   const text = await readText(resolved.path)
   if (text === null) return { ok: false, content: `${resolved.relative} does not exist or is not a text file. Use write_file to create a file.` }
 
-  // Exact first. Then tolerant of the one thing a model cannot see: a uniform
-  // indentation difference — it copies passages out of numbered read output
-  // and keeps a space where the line number was. The file's indentation is
-  // what is kept; the block's relative indentation is what the model chose.
-  const exact = locate(text, find)
-  const match = exact.count > 0 ? exact : locateIndented(text, find)
-  if (match.count === 0) {
-    return { ok: false, content: `Not found in ${resolved.relative}: the text to find does not appear. Read the file again and copy the passage exactly.` }
+  // Exact first, then looser matches. A uniform indentation offset is the
+  // one a model cannot see in numbered read output, so that case still
+  // keeps the file's indentation. Any other looser match writes `replace`
+  // as given. A change in relative indentation is not a match.
+  const located = locate(text, find)
+  const hit = located.matches.length === 1 ? located.matches[0]! : null
+  const refused =
+    hit !== null && hit.level >= 3 && !uniformLeadingDelta(text, find, hit)
+  if (located.matches.length > 1) {
+    const lines = located.matches.map((match) => match.line).join(', ')
+    return {
+      ok: false,
+      content: `Ambiguous in ${resolved.relative}: the text to find appears more than once, at lines ${lines}. Include more surrounding lines so it is unique.`
+    }
   }
-  if (match.count > 1) {
-    return { ok: false, content: `Ambiguous in ${resolved.relative}: the text to find appears more than once. Include more surrounding lines so it is unique.` }
+  if (hit && !refused) {
+    const indent = hit.level === 3 ? commonIndent(text.slice(hit.start, hit.end).split('\n')) : null
+    const replacement = indent === null ? replace : reindent(replace, find, indent)
+    const next = text.slice(0, hit.start) + replacement + text.slice(hit.end)
+    await writeFile(resolved.path, next)
+    const where = hit.line
+    const note = indent !== null ? ' (indentation taken from the file)' : levelNote(hit.level) ? ` ${levelNote(hit.level)}` : ''
+    return { ok: true, content: `Edited ${resolved.relative} at line ${where}: ${find.split('\n').length} line(s) replaced by ${replace.split('\n').length}${note}.` }
   }
-  const replacement = match.indent === null ? replace : reindent(replace, find, match.indent)
-  const next = text.slice(0, match.start) + replacement + text.slice(match.end)
-  await writeFile(resolved.path, next)
-  const line = text.slice(0, match.start).split('\n').length
-  const note = match.indent === null ? '' : ' (indentation taken from the file)'
-  return { ok: true, content: `Edited ${resolved.relative} at line ${line}: ${find.split('\n').length} line(s) replaced by ${replace.split('\n').length}${note}.` }
-}
-
-interface Located {
-  count: number
-  start: number
-  end: number
-  /** The file's indentation of the matched block, when the match was tolerant; null when exact. */
-  indent: string | null
-}
-
-function locate(text: string, find: string): Located {
-  const first = text.indexOf(find)
-  if (first < 0) return { count: 0, start: 0, end: 0, indent: null }
-  const count = text.indexOf(find, first + 1) >= 0 ? 2 : 1
-  return { count, start: first, end: first + find.length, indent: null }
-}
-
-/** Match line by line with each side's common leading whitespace removed. */
-function locateIndented(text: string, find: string): Located {
-  const want = stripCommonIndent(find.replace(/\n$/, '').split('\n')).map((l) => l.trimEnd())
-  if (want.length === 0 || want.every((l) => !l.trim())) return { count: 0, start: 0, end: 0, indent: null }
-  const lines = text.split('\n')
-  let count = 0
-  let hit: { at: number; indent: string } | null = null
-  for (let i = 0; i + want.length <= lines.length; i++) {
-    const window = lines.slice(i, i + want.length)
-    const indent = commonIndent(window)
-    const same = window.every((l, k) => l.slice(indent.length).trimEnd() === want[k])
-    if (!same) continue
-    count += 1
-    hit ??= { at: i, indent }
-  }
-  if (!hit) return { count: 0, start: 0, end: 0, indent: null }
-  const start = lines.slice(0, hit.at).reduce((n, l) => n + l.length + 1, 0)
-  const end = start + lines.slice(hit.at, hit.at + want.length).join('\n').length
-  return { count, start, end, indent: hit.indent }
+  const near = located.closestLine ? ` The closest line is ${located.closestLine}.` : ''
+  return { ok: false, content: `Not found in ${resolved.relative}: the text to find does not appear. Read the file again and copy the passage exactly.${near}` }
 }
 
 /** The replacement, with the model's common indent swapped for the file's. */
@@ -376,11 +354,6 @@ function commonIndent(lines: string[]): string {
     if (indent === null || lead.length < indent.length) indent = lead
   }
   return indent ?? ''
-}
-
-function stripCommonIndent(lines: string[]): string[] {
-  const indent = commonIndent(lines)
-  return lines.map((l) => (l.startsWith(indent) ? l.slice(indent.length) : l.trimStart()))
 }
 
 async function writeWholeFile(grant: Grant, path: string, content: string, expected: string): Promise<AgentToolResult> {

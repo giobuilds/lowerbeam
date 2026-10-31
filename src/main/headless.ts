@@ -1,4 +1,68 @@
 /**
+ * Keep a saved launch running as the local API until the process is signalled.
+ *
+ * The settings are the ones the app saved for that model. A launch that the
+ * estimate says will not fit is refused before llama.cpp is started.
+ */
+export async function serveHeadless(command: ServeCommand): Promise<void> {
+  const userData = app.getPath('userData')
+  await migrateLegacyUserData(userData)
+  const settings = new SettingsStore(join(userData, 'settings.json'))
+  await settings.load()
+  const profiles = new ProfileStore(join(userData, 'profiles.json'))
+  await profiles.load()
+  const discovered = await probeAll(binaryToProbe(settings.current, process.env['LLAMA_SERVER_PATH']))
+  const binary = discovered.find((item) => item.path === settings.current.binaryPath) ?? discovered[0]
+  if (!binary?.path) {
+    throw new Error('No llama.cpp binary found. Download one in the app, set one there, or put llama on PATH.')
+  }
+
+  const server = new ServerSupervisor(binary, join(userData, 'server.json'))
+  recordSuccessfulLaunches(server, profiles)
+  const stop = new AbortController()
+  const onStop = (): void => {
+    console.error('stopping')
+    stop.abort()
+  }
+  process.once('SIGINT', onStop)
+  process.once('SIGTERM', onStop)
+
+  try {
+    await server.adoptOrReap()
+    if (server.status.phase !== 'ready') {
+      const profile = pickProfile(profiles.list(), command.model)
+      if (!profile) {
+        throw new Error(
+          command.model
+            ? `No saved launch matches ${command.model}. Launch that model in the app once.`
+            : 'No model has been launched from the app yet. Launch one there once, then run this again.'
+        )
+      }
+      const config = launchConfigSchema.parse({ ...profile.config, modelPath: profile.modelPath })
+      await refuseIfUnfit(config, binary)
+      console.error(`loading ${profile.modelName}`)
+      await server.start(config, settings.current.localApi)
+      await waitUntilReady(server, stop.signal)
+    } else if (command.model && !modelMatches(server.status, command.model)) {
+      const loaded = server.status.config?.modelPath ?? 'the running server'
+      throw new Error(`${basename(loaded)} is already loaded. Stop it before serving ${command.model}.`)
+    }
+    if (stop.signal.aborted) return
+    const port = server.status.port
+    const api = settings.current.localApi
+    console.error(`serving at http://127.0.0.1:${port}/v1`)
+    if (api.lan) console.error('It is also open to other machines on this network.')
+    console.error(api.apiKey ? 'Requests need the API key set in the app under Local API.' : 'No API key is set. Only this machine can reach it.')
+    await new Promise<void>((resolve) => {
+      if (stop.signal.aborted) return resolve()
+      stop.signal.addEventListener('abort', () => resolve(), { once: true })
+    })
+  } finally {
+    await server.shutdown()
+  }
+}
+
+/**
  * One coding run from the command line, then exit.
  *
  * The window is not opened. The model is the one the app last launched, or a
@@ -18,9 +82,12 @@ import { CodingSupervisor } from './coding/supervisor.js'
 import { recordSuccessfulLaunches } from './profileRecorder.js'
 import { migrateLegacyUserData } from './migrate.js'
 import { launchConfigSchema } from '@shared/schema.js'
-import { exitCodeFor, formatEvent, pickProfile, type RunCommand } from '@shared/cli.js'
+import { exitCodeFor, formatEvent, pickProfile, type RunCommand, type ServeCommand } from '@shared/cli.js'
+import { planVram, unfitReason } from './planner.js'
+import { readGgufMetadata } from './gguf.js'
+import { readDevices } from './probe.js'
 import type { CodingRunSummary } from '@shared/coding.js'
-import type { ServerStatus } from '@shared/types.js'
+import type { BinaryInfo, LaunchConfig, ServerStatus } from '@shared/types.js'
 
 const READY_MS = 10 * 60_000
 const dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -116,6 +183,38 @@ export async function runHeadless(command: RunCommand): Promise<number> {
     coding.shutdown()
     await server.shutdown()
   }
+}
+
+/** Auto-fit is llama.cpp's own decision, so the estimate is not used to refuse it. */
+async function refuseIfUnfit(config: LaunchConfig, binary: BinaryInfo): Promise<void> {
+  if (config.autoFit) return
+  let meta
+  try {
+    meta = await readGgufMetadata(config.modelPath)
+  } catch {
+    return
+  }
+  let freeMiB: number | null = null
+  try {
+    freeMiB = (await readDevices(binary))[0]?.freeMiB ?? null
+  } catch {
+    return
+  }
+  const plan = planVram(
+    {
+      meta,
+      gpuLayers: config.gpuLayers,
+      contextSize: config.contextSize,
+      cacheTypeK: config.cacheTypeK,
+      cacheTypeV: config.cacheTypeV,
+      parallel: config.parallel,
+      cpuMoeLayers: config.cpuMoeLayers,
+      hasGpuBackend: freeMiB !== null
+    },
+    freeMiB
+  )
+  const reason = unfitReason(plan, basename(config.modelPath))
+  if (reason) throw new Error(reason)
 }
 
 function modelMatches(status: ServerStatus, model: string): boolean {

@@ -53,6 +53,9 @@ async function run(suite) {
       '@context': join(repo, 'src/context'),
       electron: join(here, 'stubs/electron.ts')
     },
+    // web-tree-sitter loads its wasm with a runtime require. Bundling it
+    // removes that require, so the package stays outside the test bundle.
+    external: ['web-tree-sitter'],
     logLevel: 'silent'
   })
 

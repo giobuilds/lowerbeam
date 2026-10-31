@@ -854,6 +854,18 @@ function Line({ event }: { event: JournalEvent }): React.JSX.Element | null {
           reminded that nothing has changed · after {event.record.rounds} rounds · {event.record.read.length} file{event.record.read.length === 1 ? '' : 's'} read
         </li>
       )
+    case 'repeat_guard':
+      return (
+        <li className="text-amber-200/80">
+          {event.action === 'stop' ? 'stopped' : 'nudged'} · {event.rule} · {event.count}
+        </li>
+      )
+    case 'snapshot':
+      return (
+        <li className={event.accepted ? 'text-amber-200/80' : 'text-rose-300'}>
+          {event.accepted ? 'snapshot kept' : `snapshot refused${event.reason ? ` · ${event.reason}` : ''}`}
+        </li>
+      )
     case 'applied':
       return (
         <li className={event.conflicts.length ? 'text-amber-300' : 'text-emerald-300/80'} title={event.conflicts.map((c) => `${c.path}: ${c.reason}`).join('\n')}>
@@ -895,6 +907,18 @@ function Outcome({ outcome }: { outcome: CodingRunSummary['outcome'] }): React.J
           ? 'text-amber-300'
           : 'text-rose-300'
   const label =
-    outcome === 'rounds' ? 'ran out of rounds' : outcome === 'timeout' ? 'timed out' : outcome
+    outcome === 'rounds'
+      ? 'ran out of rounds'
+      : outcome === 'timeout'
+        ? 'timed out'
+        : outcome === 'repeating'
+          ? 'kept repeating the same call'
+          : outcome === 'repeating_error'
+            ? 'kept hitting the same error'
+            : outcome === 'repeating_text'
+              ? 'kept repeating itself'
+              : outcome === 'bad_tool_format'
+                ? 'could not call a tool'
+                : outcome
   return <span className={colour}>{label}</span>
 }

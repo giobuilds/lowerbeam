@@ -4,13 +4,18 @@ import type { TokenUsage } from '@shared/chatClient.js'
 import type { CodingMode, JournalEvent, RunOutcome, TokenCount } from '@shared/coding.js'
 import { JOURNAL_VERSION, DEFAULT_TERMS, describeTerms, sameTerms, type GrantTerms } from '@shared/coding.js'
 import { streamChat, windowUsed, type ChatTurn, type StreamedToolCall } from '@shared/chatClient.js'
+import type { OutputConstraint } from '@shared/structuredOutput.js'
 import type { Grant } from './grant.js'
 import { AGENT_TOOLS, WRITE_TOOLS, readBudgetBytes, runAgentTool } from './tools.js'
 import { FIND_TOOL, findInGrant } from './find.js'
 import { projectFacts } from './facts.js'
+import { REPO_MAP_FACT_TOKENS, REPO_MAP_TOOL, renderRepoMap } from './repoMap.js'
+import { RepeatGuard } from './repeatGuard.js'
+import { buildToolGrammar, parseTextToolCall, renderToolPrompt, type ToolFormat } from './textTools.js'
 import { foldToolTurns, nextFoldIndex } from '@context/fold.js'
 import { checkpointFrom, renderCheckpoint, renderReminder, compactWorkingSet } from '@context/checkpoint.js'
 import { COMPACT_AT } from '@context/compact.js'
+import { acceptSnapshot, keptTurnIndexes, parseSnapshot, renderSnapshot, SNAPSHOT_SCHEMA, SNAPSHOT_TRIGGER_SHARE, type RunSnapshot } from '@context/snapshot.js'
 
 /**
  * The reference loop: inspect, decide, act, observe, repeat, answer.
@@ -88,6 +93,23 @@ export interface RunRequest {
    * before.
    */
   embedModel?: string | null
+  /**
+   * `text` when the model has no native tool calling. Absent means native,
+   * and the request is the one it has always been.
+   */
+  toolFormat?: ToolFormat
+  /** Include a short repo map with the task. The tool is available either way. */
+  repoMap?: boolean
+  /**
+   * Compact with a checked snapshot instead of the prose notes. Off unless
+   * set, so chat and the measured harness keep the record they were scored with.
+   */
+  snapshot?: boolean
+  /**
+   * Builds the snapshot a test wants, instead of asking the loaded model.
+   * Absent, the model is asked, in the JSON schema the snapshot requires.
+   */
+  proposeSnapshot?: (previous: RunSnapshot | null, replaced: string) => RunSnapshot | null
 }
 
 export interface Executed {
@@ -216,10 +238,21 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
   ]
   const canRun = mode === 'run' && Boolean(req.execute)
   const tools = toolsForRun(mode, canRun, req.embedModel)
+  const textMode = req.toolFormat === 'text'
+  if (textMode) turns[0] = { role: 'system', content: `${turns[0]!.content}\n\n${renderToolPrompt(tools)}` }
+  if (req.repoMap) {
+    const map = await renderRepoMap(req.grant, { task: req.task, budget: REPO_MAP_FACT_TOKENS })
+    turns[1] = { role: 'user', content: `${turns[1]!.content}\n\nRepo map:\n${map}` }
+  }
   const toolSpec = tools.map((t) => ({
     type: 'function',
     function: { name: t.name, description: t.description, parameters: t.parameters }
   }))
+  const grammar: OutputConstraint | null = textMode ? { kind: 'grammar', grammar: buildToolGrammar(tools) } : null
+  const guard = new RepeatGuard()
+  const touched: string[] = []
+  let formatMisses = 0
+  let previousSnapshot: RunSnapshot | null = null
 
   const tokens: TokenCount = { promptTokens: 0, predictedTokens: 0 }
   let denials = 0
@@ -249,7 +282,28 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
    * record. `foldNewest` when the newest round alone would overfill the
    * window — the case where the server has already refused the request.
    */
-  const compact = (reason: 'window' | 'overflow', foldNewest: boolean): void => {
+  const compact = async (reason: 'window' | 'overflow', foldNewest: boolean): Promise<void> => {
+    if (req.snapshot) {
+      const indexes = keptTurnIndexes(turns.length)
+      const replaced = turns.filter((_, index) => !indexes.includes(index)).map((turn) => turn.content).join('\n')
+      const proposed = req.proposeSnapshot ? req.proposeSnapshot(previousSnapshot, replaced) : await askSnapshot(req, previousSnapshot, replaced, deadline)
+      const verdict = acceptSnapshot(proposed, previousSnapshot, events, replaced)
+      if (!verdict.ok) {
+        emit({ type: 'snapshot', accepted: false, reason: verdict.reason })
+        return
+      }
+      previousSnapshot = verdict.snapshot
+      const notes = renderSnapshot(verdict.snapshot)
+      const tail = indexes.filter((index) => index > 1).map((index) => turns[index]!)
+      turns = [turns[0]!, turns[1]!, { role: 'system', content: notes }, ...tail]
+      foldBefore = 0
+      compactions += 1
+      roundBudget = Math.min(maxRounds + 4, roundBudget + 2)
+      emit({ type: 'snapshot', accepted: true, reason: null })
+      occupancy = null
+      appendedChars = 0
+      return
+    }
     const record = checkpointFrom(events)
     const notes = renderCheckpoint(record)
     turns = compactWorkingSet(turns, notes, foldNewest)
@@ -283,7 +337,8 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
     // the window, everything before the newest round becomes notes.
     if (req.fold !== false && occupancy !== null && req.contextLimit) {
       const projected = occupancy + roughTokens(appendedChars)
-      if (projected > req.contextLimit * COMPACT_AT) compact('window', false)
+      const trigger = req.snapshot ? SNAPSHOT_TRIGGER_SHARE : COMPACT_AT
+      if (projected > req.contextLimit * trigger) await compact('window', false)
     }
     // A write run that has spent half its rounds without changing anything
     // is told so, once, from the record. After compaction, so it stays in
@@ -328,7 +383,8 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
           failure = message
         }
       },
-      toolSpec
+      textMode ? undefined : toolSpec,
+      grammar
     )
 
     if (usage) {
@@ -358,7 +414,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
       // projection did — the newest round folded too — and asking again.
       if (OVERFLOW.test(failure) && req.fold !== false && !deadline.aborted && !overflowRetried) {
         overflowRetried = true
-        compact('overflow', true)
+        await compact('overflow', true)
         rounds -= 1
         continue
       }
@@ -372,6 +428,39 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
       return finish()
     }
 
+    const prose = textMode ? content.replace(/```tool[\s\S]*?```/g, '').trim() : content
+    const repeatedText = guard.observeProse(prose)
+    if (repeatedText?.action === 'stop' && repeatedText.reason) {
+      emit({ type: 'repeat_guard', action: 'stop', rule: repeatedText.rule, key: repeatedText.key, count: repeatedText.count })
+      outcome = repeatedText.reason
+      answer = 'Stopped because the same text was repeated.'
+      return finish()
+    }
+
+    if (textMode) {
+      const parsed = parseTextToolCall(content, tools)
+      if (parsed.kind === 'invalid') {
+        formatMisses += 1
+        turns.push({ role: 'assistant', content })
+        if (formatMisses >= 2) {
+          outcome = 'bad_tool_format'
+          answer = parsed.reason
+          return finish()
+        }
+        const correction = `That reply was not a tool call or a final answer (${parsed.reason}). Reply with one \`\`\`tool block, or with the final answer and no tool block.`
+        turns.push({ role: 'user', content: correction })
+        appendedChars += correction.length
+        continue
+      }
+      formatMisses = 0
+      if (parsed.kind === 'answer') {
+        answer = parsed.answer
+        outcome = 'answered'
+        return finish()
+      }
+      calls = [{ ...parsed.call, id: randomUUID() }]
+    }
+
     if (calls.length === 0) {
       answer = content.trim()
       outcome = 'answered'
@@ -379,8 +468,8 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
     }
 
     // Execute only completed, validated calls — never anything guessed from
-    // a code fence in the prose.
-    turns.push({ role: 'assistant', content, toolCalls: calls })
+    // a code fence in the prose. Text mode has already parsed its one fence.
+    turns.push({ role: 'assistant', content, ...(textMode ? {} : { toolCalls: calls }) })
     for (const call of calls) {
       let args: Record<string, unknown> = {}
       try {
@@ -402,10 +491,14 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
                 model: req.embedModel,
                 signal: deadline
               })
-            : await runAgentTool(req.grant, call.name, args, { contextLimit: req.contextLimit })
+            : await runAgentTool(req.grant, call.name, args, { contextLimit: req.contextLimit, touched })
       req.observe?.(call.name, args, result.content)
       if (result.denied) denials += 1
-      if ((call.name === 'edit_file' || call.name === 'write_file') && result.ok) edited = true
+      if ((call.name === 'edit_file' || call.name === 'write_file') && result.ok) {
+        edited = true
+        guard.noteWrite(call.name, args)
+      }
+      if (typeof args.path === 'string' && result.ok) touched.push(args.path)
       emit({
         type: 'tool.result',
         callId: call.id,
@@ -414,8 +507,17 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
         summary: result.content.split('\n')[0]?.slice(0, 120) ?? '',
         chars: result.content.length
       })
-      turns.push({ role: 'tool', toolCallId: call.id, content: result.content })
-      appendedChars += result.content.length
+      const notice = guard.observeCall(call.name, args, result.content, result.ok)
+      if (notice) emit({ type: 'repeat_guard', action: notice.action, rule: notice.rule, key: notice.key, count: notice.count })
+      const shown = notice?.action === 'nudge' && notice.note ? `${result.content}\n\n${notice.note}` : result.content
+      if (textMode) turns.push({ role: 'user', content: `Tool ${call.name} returned:\n${shown}` })
+      else turns.push({ role: 'tool', toolCallId: call.id, content: shown })
+      appendedChars += shown.length
+      if (notice?.action === 'stop' && notice.reason) {
+        outcome = notice.reason
+        answer = notice.reason === 'repeating_error' ? 'Stopped because the same error kept coming back.' : 'Stopped because the same tool call was made again.'
+        return finish()
+      }
     }
   }
 
@@ -441,13 +543,48 @@ export const RUN_COMMAND_TOOL: ToolDefinition = {
 
 /**
  * The tools a run is offered. `find` is added only when an embedding model
- * was named, so a run without one — the harness, a measurement — declares
- * exactly what it did before.
+ * was named, so a run without one — the harness, a measurement — does not
+ * gain find. `repo_map` is always offered.
  */
 export function toolsForRun(mode: CodingMode, canRun: boolean, embedModel?: string | null): ToolDefinition[] {
   const base =
     mode === 'inspect' ? AGENT_TOOLS : canRun ? [...AGENT_TOOLS, ...WRITE_TOOLS, RUN_COMMAND_TOOL] : [...AGENT_TOOLS, ...WRITE_TOOLS]
-  return embedModel ? [...base, FIND_TOOL] : base
+  const withMap = [...base, REPO_MAP_TOOL]
+  return embedModel ? [...withMap, FIND_TOOL] : withMap
+}
+
+async function askSnapshot(req: RunRequest, previous: RunSnapshot | null, replaced: string, signal: AbortSignal): Promise<RunSnapshot | null> {
+  const prompt = [
+    'Write a snapshot of the run so far. Keep every constraint that still holds.',
+    previous ? `Earlier snapshot:\n${renderSnapshot(previous)}` : '',
+    'Turns to replace:',
+    replaced
+  ].filter(Boolean).join('\n\n')
+  let content = ''
+  let failed = false
+  await streamChat(
+    { url: req.baseUrl, apiKey: req.apiKey, model: req.requestModel },
+    [{ role: 'user', content: prompt }],
+    req.settings,
+    signal,
+    {
+      onDelta: (text) => {
+        content += text
+      },
+      onDone: () => undefined,
+      onError: () => {
+        failed = true
+      }
+    },
+    undefined,
+    { kind: 'json', schema: SNAPSHOT_SCHEMA as unknown as Record<string, unknown> }
+  )
+  if (failed) return null
+  try {
+    return parseSnapshot(JSON.parse(content))
+  } catch {
+    return null
+  }
 }
 
 /** The tail of the output is what the model gets; the whole of it is an artifact. */
