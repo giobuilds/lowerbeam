@@ -12,6 +12,9 @@ extraResources:
   - from: resources/measure/corpus
     to: measure/corpus
   # Tree-sitter, so a packaged app can build a repo map offline.
+  # The wasm package is a devDependency (it depends on itself, and the
+  # production walk runs out of memory on that cycle). These copies are
+  # what the packaged app loads.
   - from: node_modules/web-tree-sitter/tree-sitter.wasm
     to: tree-sitter/tree-sitter.wasm
   - from: node_modules/tree-sitter-wasms/out/tree-sitter-typescript.wasm

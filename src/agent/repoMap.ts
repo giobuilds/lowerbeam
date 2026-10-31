@@ -7,8 +7,11 @@
  * hash. Paths the grant refuses never appear.
  *
  * The queries below were written for this app. The grammars are the
- * tree-sitter wasm builds (Unlicense). The idea is Aider's repo map and
- * Continue's content-hash cache. This is a new implementation.
+ * tree-sitter wasm builds (Unlicense). That package depends on itself, so it
+ * is a devDependency: the packager's production walk runs out of memory on
+ * the cycle. A packaged app loads the copies shipped as extra resources.
+ * The idea is Aider's repo map and Continue's content-hash cache. This is a
+ * new implementation.
  */
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
