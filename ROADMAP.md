@@ -43,6 +43,14 @@ This page shows what we're working on and roughly in what order. Releases come o
 - **Windows support.** First a trial run to check what works, then a proper port. Running code from Coding mode stays off on Windows until it has a safe sandbox.
 - **Voice.** Push-to-talk speech-to-text into the Coding mode prompt, running locally.
 - **Compaction research.** Keep long chats useful on small cards by keeping facts rather than a vague summary, and publish the results with their limits.
+- **Memory across chats.** Keep the important facts outside the context window so small models stop losing track. Built in this order, and each step has to beat plain compaction before the next one starts:
+  1. **Task journal.** The goal, decisions, files changed, test results and next step, saved as records that survive compaction and restarts.
+  2. **Project note and chat search.** A short note of key project facts at the start of each chat, plus one tool to search past chats and quote them exactly. Built on SQLite full-text search.
+  3. **Smarter Coding mode search.** Reuse the existing search and mark entries as stale when a file's hash changes.
+  4. **Context budget.** Fit relevant memory, code and recent messages into a fixed token budget, with links back to the source.
+  5. **Through `lowerbeam serve`.** Let apps like Chevron use the same memory.
+
+  Saved only after a chat ends, kept on your machine, and you can see, correct, turn off and delete everything. Secrets are never kept. Measured against compaction for task completion, repeated failures, tokens and speed, including a forced compaction partway through a task.
 
 ## Ideas
 
@@ -51,7 +59,7 @@ Worth doing, not yet scheduled. Tell us in Discussions if one matters to you.
 - **Usage dashboard.** Tokens and speed per model over time, kept on your machine, so you can see which models are actually worth the space.
 - **Answer arena.** Ask two models the same question, one after the other so they share one small card, and compare the answers blind.
 - **Ask your documents.** Point Lowerbeam at a folder and chat about what's in it, reusing the search Coding mode already has. Needs the shared engine first.
-- **Memory across chats.** A short note of key facts for the current project added at the start of each chat, plus one tool to search past chats and quote them exactly. Saved only after a chat ends, kept on your machine, and you can see and delete everything. Small models get context back instead of spending it re-asking.
+- **Lessons from past runs.** Remember what worked and what failed in earlier tool runs and bring it up when relevant. Parked until the task journal proves itself, because a model recording its own lessons can repeat its own mistakes.
 
 ## Not planned
 
