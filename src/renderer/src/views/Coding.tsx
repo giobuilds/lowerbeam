@@ -169,6 +169,7 @@ function Composer({ disabled: noProjectOrModel, modelName }: { disabled: boolean
           </p>
         )}
       </div>
+      <HarnessRow disabled={running} />
       {modelName && <MeasureBar runBusy={running} />}
     </div>
   )
@@ -263,6 +264,64 @@ function TermsRow({ disabled }: { disabled: boolean }): React.JSX.Element {
       </button>
       {toggle('network', 'network', 'Commands in the sandbox may reach the network. Off, nothing outside the box is reachable.')}
       {toggle('install', 'install', 'Commands may install dependencies: writes to node_modules land in the copy, on top of the project\u2019s tree, which is never changed. Usually needs the network too.')}
+    </div>
+  )
+}
+
+/** Repo map and snapshot compaction. Both off unless this run is asked to use them. */
+function HarnessRow({ disabled }: { disabled: boolean }): React.JSX.Element {
+  const repoMap = useCodingStore((s) => s.repoMap)
+  const snapshot = useCodingStore((s) => s.snapshot)
+  const trigger = useCodingStore((s) => s.snapshotTriggerShare)
+  const keep = useCodingStore((s) => s.snapshotKeepShare)
+  const setRepoMap = useCodingStore((s) => s.setRepoMap)
+  const setSnapshot = useCodingStore((s) => s.setSnapshot)
+  const setShare = useCodingStore((s) => s.setSnapshotShare)
+  const share = (which: 'trigger' | 'keep', value: string): void => {
+    const next = Number(value)
+    if (value.trim() === '') return
+    setShare(which, next)
+  }
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted">
+      <label className="flex items-center gap-1" title="A ranked map of the project with the task, and a repo_map tool.">
+        <input type="checkbox" disabled={disabled} checked={repoMap} onChange={(e) => setRepoMap(e.target.checked)} className="accent-emerald-300" />
+        Repo map
+      </label>
+      <label className="flex items-center gap-1" title="Compact into a checked snapshot instead of a prose note. Off, the run keeps the prose note.">
+        <input type="checkbox" disabled={disabled} checked={snapshot} onChange={(e) => setSnapshot(e.target.checked)} className="accent-emerald-300" />
+        Snapshot
+      </label>
+      {snapshot && (
+        <>
+          <label className="flex items-center gap-1" title="Compact once the next request would use this much of the window.">
+            Trigger
+            <input
+              type="number"
+              disabled={disabled}
+              min={0.05}
+              max={0.95}
+              step={0.05}
+              value={trigger}
+              onChange={(e) => share('trigger', e.target.value)}
+              className="w-16 rounded border border-edge bg-ink px-1 py-0.5 text-[11px] text-slate-200"
+            />
+          </label>
+          <label className="flex items-center gap-1" title="The newest share of turns left verbatim, besides the first message.">
+            Keep
+            <input
+              type="number"
+              disabled={disabled}
+              min={0.05}
+              max={0.95}
+              step={0.05}
+              value={keep}
+              onChange={(e) => share('keep', e.target.value)}
+              className="w-16 rounded border border-edge bg-ink px-1 py-0.5 text-[11px] text-slate-200"
+            />
+          </label>
+        </>
+      )}
     </div>
   )
 }

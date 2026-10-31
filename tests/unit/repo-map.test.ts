@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Grant } from '../../src/agent/grant.js'
 import { estimateTokens } from '../../src/context/snapshot.js'
-import { mapReadReport, renderRepoMap, repoMapCacheStats, resetRepoMapCache, REPO_MAP_TOKENS } from '../../src/agent/repoMap.js'
+import { mapReadReport, renderRepoMap, repoMapCacheStats, repoMapTool, resetRepoMapCache, useTreeSitterFilesForTest, REPO_MAP_MAX_FILE_BYTES, REPO_MAP_TOKENS } from '../../src/agent/repoMap.js'
 
 let n = 0
 const ok = (m: string) => {
@@ -49,6 +49,32 @@ console.log('\nwhat a harness comparison reports')
   assert.match(report, /locate-context-per-slot: 1 with the map, 3 without/)
   assert.match(report, /total: 3 with the map, 5 without/)
   ok('whole-file reads are reported with the map and without it')
+}
+
+console.log('\na scan stays within its caps, and a failed load can be tried again')
+{
+  const grant = await Grant.open(project)
+  await writeFile(join(project, 'src', 'big.ts'), `export function hugeMarker() {}\n${'x'.repeat(REPO_MAP_MAX_FILE_BYTES)}`)
+  const map = await renderRepoMap(grant)
+  assert.ok(!map.includes('hugeMarker'))
+  ok('a file of 256 KB or more is left out')
+  const capped = await renderRepoMap(grant, { maxFiles: 1 })
+  assert.match(capped, /stopped after 1 file/)
+  ok('the map says when the file cap was hit')
+  useTreeSitterFilesForTest({ runtime: '/no/such/tree-sitter.wasm', grammars: '/no/such/grammars' })
+  const failed = await repoMapTool(grant, {})
+  assert.equal(failed.ok, false)
+  assert.match(failed.content, /The repo map is unavailable:/)
+  useTreeSitterFilesForTest(null)
+  const again = await renderRepoMap(grant, { maxFiles: 1 })
+  assert.match(again, /src\//)
+  ok('a failed load is not cached, and the tool says the map is unavailable')
+  const notices = await readFile('resources/NOTICES', 'utf8')
+  const builder = await readFile('electron-builder.yml', 'utf8')
+  assert.match(notices, /MIT License/)
+  assert.match(notices, /tree-sitter/)
+  assert.match(builder, /resources\/NOTICES/)
+  ok('the packaged notices name the tree-sitter grammars and their MIT upstream')
 }
 
 await rm(base, { recursive: true, force: true })

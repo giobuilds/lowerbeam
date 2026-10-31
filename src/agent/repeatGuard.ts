@@ -21,6 +21,8 @@ export const REPEAT_ERROR_STREAK = 3
 /** A stretch of prose at least this long, seen this many times, ends the run. */
 export const REPEAT_TEXT_CHARS = 200
 export const REPEAT_TEXT_TIMES = 3
+/** How many replies the prose check remembers. Older ones drop off. */
+export const REPEAT_PROSE_KEEP = 50
 
 export type RepeatRule = 'same_call' | 'same_error' | 'same_text'
 
@@ -138,6 +140,7 @@ export class RepeatGuard {
     const text = content.trim()
     if (text.length < REPEAT_TEXT_CHARS) return null
     this.prose.push(text)
+    if (this.prose.length > REPEAT_PROSE_KEEP) this.prose.splice(0, this.prose.length - REPEAT_PROSE_KEEP)
     const exact = this.prose.filter((item) => item === text).length
     if (exact >= REPEAT_TEXT_TIMES) {
       return { action: 'stop', rule: 'same_text', key: text.slice(0, REPEAT_TEXT_CHARS), count: exact, reason: 'repeating_text' }

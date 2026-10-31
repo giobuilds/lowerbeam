@@ -57,7 +57,18 @@ console.log('\nedit_file tolerates the indentation a model cannot see')
   // would mean inventing indentation for the replacement. That is refused,
   // and the model is told to copy the passage as it is.
   const nested = await runAgentTool(edit, 'edit_file', { path: 'src/ind.ts', find: 'function g() {\n    const a = 1', replace: 'function g() {\n    const a = 9' })
-  assert.equal(nested.ok, false); assert.match(nested.content, /Not found/); ok('a block whose inner indentation differs from the file is not guessed at')
+  assert.equal(nested.ok, false); assert.match(nested.content, /Found in src\/ind\.ts at line \d+, but the relative indentation differs/)
+  ok('a block whose inner indentation differs says where it was found, not that it is missing')
+
+  await writeFile(join(project, 'src', 'quote.ts'), '  const name = "hi"\n')
+  const curly = await runAgentTool(edit, 'edit_file', { path: 'src/quote.ts', find: '    const name = \u201Chi\u201D', replace: '    const name = "yo"' })
+  assert.equal(curly.ok, true); assert.match(curly.content, /indentation taken from the file/)
+  assert.equal(await readFile(join(project, 'src', 'quote.ts'), 'utf8'), '  const name = "yo"\n')
+  ok('a curly quote with a uniform indent offset keeps the file indentation')
+  await writeFile(join(project, 'src', 'quote.ts'), 'function g() {\n  const a = "x"\n    return a\n}\n')
+  const uneven = await runAgentTool(edit, 'edit_file', { path: 'src/quote.ts', find: 'function g() {\n    const a = \u201Cx\u201D', replace: 'function g() {\n    const a = "z"' })
+  assert.equal(uneven.ok, false); assert.match(uneven.content, /relative indentation differs/)
+  ok('a curly quote whose relative indentation differs is refused the same way')
 }
 
 console.log('\nwrite_file needs the hash to overwrite')

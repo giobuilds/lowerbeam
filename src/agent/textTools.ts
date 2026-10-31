@@ -9,6 +9,7 @@
  */
 import type { ToolDefinition } from '@shared/types.js'
 import type { StreamedToolCall } from '@shared/chatClient.js'
+import { matchGbnf } from './gbnfMatch.js'
 
 export type ToolFormat = 'native' | 'text'
 
@@ -53,25 +54,46 @@ export function renderToolPrompt(tools: readonly ToolDefinition[]): string {
   return lines.join('\n')
 }
 
-/** A grammar that allows one fenced call for these tools, or a final answer. */
+/**
+ * A grammar that allows one fenced call for these tools, or a final answer.
+ *
+ * Each tool name is tied to that tool's own arguments. A final answer may
+ * contain backticks. A reply that opens a ```tool block and does not finish
+ * the call is not a final answer.
+ */
 export function buildToolGrammar(tools: readonly ToolDefinition[]): string {
-  const names = tools.map((tool) => `"${escapeGbnf(tool.name)}"`).join(' | ')
-  const argRules = tools.map((tool) => `${ruleName(tool.name)}-args ::= ${argsRule(tool)}`)
-  return [
+  const calls = tools.map((tool) => `call-${ruleName(tool.name)}`)
+  const lines = [
     'root ::= tool-reply | final-reply',
     'tool-reply ::= "```tool\\n" call "\\n```"',
-    `call ::= "{" ws "\\"name\\"" ws ":" ws name-value ws "," ws "\\"arguments\\"" ws ":" ws arguments "}"`,
-    `name-value ::= ${names || '"read"'}`,
-    `arguments ::= ${tools.map((tool) => `${ruleName(tool.name)}-args`).join(' | ') || '"{" ws "}"'}`,
-    ...argRules,
-    'final-reply ::= final-char+',
-    'final-char ::= [^`]',
-    'object-key ::= "\\"" [a-z_]+ "\\""',
+    `call ::= ${calls.join(' | ') || 'call-read'}`,
+    ...tools.flatMap((tool) => callRules(tool)),
+    // A code fence is allowed. ```tool is not, unless the whole reply is a finished call above.
+    'final-reply ::= final-pieces',
+    'final-pieces ::= final-chunk final-pieces | final-chunk | "`" | "``" | "```"',
+    'final-chunk ::= [^`]+ | "`" [^`] | "``" [^`] | "```" not-tool',
+    'not-tool ::= [^t] | "t" [^o] | "to" [^o] | "too" [^l] | "tool" [^ \\t\\n]',
     'ws ::= [ \\t\\n]*',
-    'string ::= "\\"" ([^"\\\\] | "\\\\" .)* "\\""',
+    'string ::= "\\"" string-char* "\\""',
+    // JSON escapes only. A raw newline or other control character is not a string.
+    'string-char ::= [^"\\\\\\x00-\\x1F] | "\\\\" (["\\\\/bfnrt] | "u" hex hex hex hex)',
+    'hex ::= [0-9a-fA-F]',
+    'integer ::= "-"? [0-9]+',
     'number ::= "-"? [0-9]+ ("." [0-9]+)?',
     'boolean ::= "true" | "false"'
-  ].join('\n')
+  ]
+  return lines.join('\n')
+}
+
+function callRules(tool: ToolDefinition): string[] {
+  const name = ruleName(tool.name)
+  const lines = [
+    `call-${name} ::= "{" ws "\\"name\\"" ws ":" ws "\\"${escapeGbnf(tool.name)}\\"" ws "," ws "\\"arguments\\"" ws ":" ws ${name}-args ws "}"`,
+    `${name}-args ::= ${argsRule(tool)}`
+  ]
+  const optional = optionalFields(tool)
+  if (optional.length) lines.push(`${name}-opt ::= ${optional.join(' | ')}`)
+  return lines
 }
 
 /** The same shape the loop already executes, or a final answer, or a refusal. */
@@ -109,38 +131,44 @@ export function parseTextToolCall(reply: string, tools: readonly ToolDefinition[
 }
 
 /**
- * Whether a reply is one the grammar's fixtures allow.
+ * Whether a reply is one the grammar accepts, and which side of it.
  *
- * This checks the grammar text and the reply together: an unknown name or a
- * missing required argument is rejected, and prose with no tool block is a
- * final answer. It is not a full GBNF parser; llama-server is.
+ * The decision is a GBNF match. The parser then says whether that match was
+ * a call or a final answer.
  */
 export function grammarFixture(grammar: string, reply: string, tools: readonly ToolDefinition[]): 'call' | 'final' | 'reject' {
-  if (!grammar.includes('root ::=') || !grammar.includes('tool-reply') || !grammar.includes('final-reply')) return 'reject'
+  if (!matchGbnf(grammar, reply)) return 'reject'
   const parsed = parseTextToolCall(reply, tools)
-  if (parsed.kind === 'answer') return reply.includes('`') ? 'reject' : 'final'
-  if (parsed.kind === 'invalid') return 'reject'
-  if (!grammar.includes(`"${parsed.call.name}"`)) return 'reject'
-  const tool = tools.find((item) => item.name === parsed.call.name)!
-  for (const key of tool.parameters.required ?? []) {
-    if (!grammar.includes(key)) return 'reject'
-  }
-  return 'call'
+  if (parsed.kind === 'answer') return 'final'
+  if (parsed.kind === 'call') return 'call'
+  return 'reject'
 }
 
 function argsRule(tool: ToolDefinition): string {
   const required = tool.parameters.required ?? []
   const optional = Object.keys(tool.parameters.properties).filter((key) => !required.includes(key))
-  const field = (key: string): string => {
-    const type = tool.parameters.properties[key]?.type ?? 'string'
-    const value = type === 'number' || type === 'integer' ? 'number' : type === 'boolean' ? 'boolean' : 'string'
-    return `"\\"${key}\\"" ws ":" ws ${value}`
-  }
+  const name = ruleName(tool.name)
+  const requiredBody = required.map((key) => fieldOf(tool, key)).join(' ws "," ws ')
   if (required.length === 0 && optional.length === 0) return '"{" ws "}"'
-  const head = required.map(field).join(' ws "," ws ')
-  const tail = optional.map((key) => `(ws "," ws ${field(key)})?`).join(' ')
-  const body = [head, tail].filter(Boolean).join(' ')
+  if (optional.length === 0) return `"{" ws ${requiredBody} ws "}"`
+  // No required key: the first optional stands alone, and further ones follow a comma.
+  // A required key is already there, so each optional brings its own comma.
+  const tail = required.length === 0 ? `(${name}-opt (ws "," ws ${name}-opt)*)?` : `(ws "," ws ${name}-opt)*`
+  const body = [requiredBody, tail].filter(Boolean).join(' ')
   return `"{" ws ${body} ws "}"`
+}
+
+function optionalFields(tool: ToolDefinition): string[] {
+  const required = tool.parameters.required ?? []
+  return Object.keys(tool.parameters.properties)
+    .filter((key) => !required.includes(key))
+    .map((key) => fieldOf(tool, key))
+}
+
+function fieldOf(tool: ToolDefinition, key: string): string {
+  const type = tool.parameters.properties[key]?.type ?? 'string'
+  const value = type === 'integer' ? 'integer' : type === 'number' ? 'number' : type === 'boolean' ? 'boolean' : 'string'
+  return `"\\"${key}\\"" ws ":" ws ${value}`
 }
 
 function ruleName(name: string): string {

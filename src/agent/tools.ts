@@ -320,8 +320,16 @@ async function editFile(grant: Grant, path: string, find: string, replace: strin
       content: `Ambiguous in ${resolved.relative}: the text to find appears more than once, at lines ${lines}. Include more surrounding lines so it is unique.`
     }
   }
-  if (hit && !refused) {
-    const indent = hit.level === 3 ? commonIndent(text.slice(hit.start, hit.end).split('\n')) : null
+  if (hit && refused) {
+    return {
+      ok: false,
+      content: `Found in ${resolved.relative} at line ${hit.line}, but the relative indentation differs. Copy the indentation as the file has it.`
+    }
+  }
+  if (hit) {
+    // Level 3 and 4 are the ones that ignore leading space. A uniform offset
+    // keeps the file's indentation; the replacement is not written as given.
+    const indent = hit.level >= 3 ? commonIndent(text.slice(hit.start, hit.end).split('\n')) : null
     const replacement = indent === null ? replace : reindent(replace, find, indent)
     const next = text.slice(0, hit.start) + replacement + text.slice(hit.end)
     await writeFile(resolved.path, next)

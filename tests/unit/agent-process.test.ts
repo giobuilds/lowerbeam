@@ -140,6 +140,27 @@ console.log('\nan embedding model is named for the run')
   await served
 }
 
+console.log('\na coding setting crosses to the loop')
+{
+  const { parent, child } = link()
+  const served = serveAgent(child, async (req) => {
+    assert.equal(req.repoMap, true)
+    assert.equal(req.repoMapTool, true)
+    assert.equal(req.snapshot, true)
+    assert.equal(req.snapshotTriggerShare, 0.5)
+    assert.equal(req.snapshotKeepShare, 0.3)
+    ok('repo map and snapshot settings reach the run')
+    return answered()
+  })
+  await driveAgent(parent, {
+    job: { ...job('inspect'), repoMap: true, repoMapTool: true, snapshot: true, snapshotTriggerShare: 0.5, snapshotKeepShare: 0.3 },
+    signal: new AbortController().signal,
+    onEvent: () => {},
+    keep: () => {}
+  })
+  await served
+}
+
 console.log('\na command that fails is the loop’s error')
 {
   const { parent, child } = link()

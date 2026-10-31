@@ -28,6 +28,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - Coding mode can ask for a short map of the project's files, ranked so the most relevant ones fit a token budget.
 - A model with no native tool calling can run Coding mode when its capability record says `toolFormat: text`. The tools are described in the prompt and the reply has to be one tool call or a final answer.
 
+### Fixed
+
+- `lowerbeam serve` does not start when Local API is open to the network and no key is set, and it no longer says only this machine can reach it in that case.
+- An edit whose indentation does not match the file says where the passage was found and to copy the indentation, instead of saying it was missing.
+- The repo map and snapshot compaction stay off unless Coding mode is asked to use them.
+
 ## [0.16.0] - 2026-10-25
 
 ### Added

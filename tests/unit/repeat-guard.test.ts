@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Grant } from '../../src/agent/grant.js'
 import { runTask } from '../../src/agent/loop.js'
-import { RepeatGuard, callKey } from '../../src/agent/repeatGuard.js'
+import { REPEAT_PROSE_KEEP, RepeatGuard, callKey } from '../../src/agent/repeatGuard.js'
 import type { JournalEvent } from '@shared/coding.js'
 
 let n = 0
@@ -56,6 +56,16 @@ console.log('\nthe same error, and a write that breaks the loop')
   assert.equal(prose.observeProse(chunk), null)
   assert.equal(prose.observeProse(chunk)?.reason, 'repeating_text')
   ok('the same stretch of prose three times stops the run')
+
+  const capped = new RepeatGuard()
+  const oldProse = 'A paragraph that is long enough to be remembered as prose, and that should fall out of the history. '.repeat(3)
+  capped.observeProse(oldProse)
+  capped.observeProse(oldProse)
+  for (let i = 0; i < REPEAT_PROSE_KEEP; i++) {
+    capped.observeProse(`Reply ${i} is its own paragraph, long enough to be stored, and not a copy of the first. `.repeat(3))
+  }
+  assert.equal(capped.observeProse(oldProse), null)
+  ok('prose older than the remembered replies does not count toward a stop')
 }
 
 console.log('\na coding run that keeps reading one file')

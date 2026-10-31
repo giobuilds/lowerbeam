@@ -16,6 +16,8 @@ export async function serveHeadless(command: ServeCommand): Promise<void> {
   if (!binary?.path) {
     throw new Error('No llama.cpp binary found. Download one in the app, set one there, or put llama on PATH.')
   }
+  const refused = serveRefusal(settings.current.localApi)
+  if (refused) throw new Error(refused)
 
   const server = new ServerSupervisor(binary, join(userData, 'server.json'))
   recordSuccessfulLaunches(server, profiles)
@@ -49,10 +51,8 @@ export async function serveHeadless(command: ServeCommand): Promise<void> {
     }
     if (stop.signal.aborted) return
     const port = server.status.port
-    const api = settings.current.localApi
     console.error(`serving at http://127.0.0.1:${port}/v1`)
-    if (api.lan) console.error('It is also open to other machines on this network.')
-    console.error(api.apiKey ? 'Requests need the API key set in the app under Local API.' : 'No API key is set. Only this machine can reach it.')
+    for (const line of serveStatusLines(settings.current.localApi)) console.error(line)
     await new Promise<void>((resolve) => {
       if (stop.signal.aborted) return resolve()
       stop.signal.addEventListener('abort', () => resolve(), { once: true })
@@ -82,7 +82,7 @@ import { CodingSupervisor } from './coding/supervisor.js'
 import { recordSuccessfulLaunches } from './profileRecorder.js'
 import { migrateLegacyUserData } from './migrate.js'
 import { launchConfigSchema } from '@shared/schema.js'
-import { exitCodeFor, formatEvent, pickProfile, type RunCommand, type ServeCommand } from '@shared/cli.js'
+import { exitCodeFor, formatEvent, pickProfile, serveRefusal, serveStatusLines, type RunCommand, type ServeCommand } from '@shared/cli.js'
 import { planVram, unfitReason } from './planner.js'
 import { readGgufMetadata } from './gguf.js'
 import { readDevices } from './probe.js'

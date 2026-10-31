@@ -140,6 +140,11 @@ export async function serveAgent(port: ChildPort, run: (req: RunRequest) => Prom
       terms: got.terms,
       embedModel: got.embedModel ?? null,
       toolFormat: got.toolFormat,
+      repoMap: got.repoMap === true,
+      repoMapTool: got.repoMapTool === true,
+      snapshot: got.snapshot === true,
+      snapshotTriggerShare: got.snapshotTriggerShare,
+      snapshotKeepShare: got.snapshotKeepShare,
       execute:
         got.mode === 'run'
           ? (command, signal) => {

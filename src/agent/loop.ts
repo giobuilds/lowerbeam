@@ -15,7 +15,7 @@ import { buildToolGrammar, parseTextToolCall, renderToolPrompt, type ToolFormat 
 import { foldToolTurns, nextFoldIndex } from '@context/fold.js'
 import { checkpointFrom, renderCheckpoint, renderReminder, compactWorkingSet } from '@context/checkpoint.js'
 import { COMPACT_AT } from '@context/compact.js'
-import { acceptSnapshot, keptTurnIndexes, parseSnapshot, renderSnapshot, SNAPSHOT_SCHEMA, SNAPSHOT_TRIGGER_SHARE, type RunSnapshot } from '@context/snapshot.js'
+import { acceptSnapshot, keptTurnIndexes, parseSnapshot, renderSnapshot, SNAPSHOT_KEEP_SHARE, SNAPSHOT_SCHEMA, SNAPSHOT_TRIGGER_SHARE, type RunSnapshot } from '@context/snapshot.js'
 
 /**
  * The reference loop: inspect, decide, act, observe, repeat, answer.
@@ -98,13 +98,19 @@ export interface RunRequest {
    * and the request is the one it has always been.
    */
   toolFormat?: ToolFormat
-  /** Include a short repo map with the task. The tool is available either way. */
+  /** Include a short repo map with the task. Off unless this run asks. */
   repoMap?: boolean
+  /** Offer `repo_map`. Off unless this run asks, so a measured run keeps its tools. */
+  repoMapTool?: boolean
   /**
    * Compact with a checked snapshot instead of the prose notes. Off unless
    * set, so chat and the measured harness keep the record they were scored with.
    */
   snapshot?: boolean
+  /** When to compact, as a share of the window. The default is half. */
+  snapshotTriggerShare?: number
+  /** How much of the newest turns to keep verbatim. The default is the newest 30%. */
+  snapshotKeepShare?: number
   /**
    * Builds the snapshot a test wants, instead of asking the loaded model.
    * Absent, the model is asked, in the JSON schema the snapshot requires.
@@ -237,12 +243,17 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
     { role: 'user', content: facts ? `${facts.text}\n\nThe task:\n${req.task}` : req.task }
   ]
   const canRun = mode === 'run' && Boolean(req.execute)
-  const tools = toolsForRun(mode, canRun, req.embedModel)
+  const tools = toolsForRun(mode, canRun, req.embedModel, req.repoMapTool === true)
   const textMode = req.toolFormat === 'text'
   if (textMode) turns[0] = { role: 'system', content: `${turns[0]!.content}\n\n${renderToolPrompt(tools)}` }
   if (req.repoMap) {
-    const map = await renderRepoMap(req.grant, { task: req.task, budget: REPO_MAP_FACT_TOKENS })
-    turns[1] = { role: 'user', content: `${turns[1]!.content}\n\nRepo map:\n${map}` }
+    try {
+      const map = await renderRepoMap(req.grant, { task: req.task, budget: REPO_MAP_FACT_TOKENS })
+      turns[1] = { role: 'user', content: `${turns[1]!.content}\n\nRepo map:\n${map}` }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'it failed to load'
+      turns[1] = { role: 'user', content: `${turns[1]!.content}\n\nRepo map unavailable: ${reason}` }
+    }
   }
   const toolSpec = tools.map((t) => ({
     type: 'function',
@@ -284,25 +295,26 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
    */
   const compact = async (reason: 'window' | 'overflow', foldNewest: boolean): Promise<void> => {
     if (req.snapshot) {
-      const indexes = keptTurnIndexes(turns.length)
+      const indexes = keptTurnIndexes(turns, req.snapshotKeepShare ?? SNAPSHOT_KEEP_SHARE)
       const replaced = turns.filter((_, index) => !indexes.includes(index)).map((turn) => turn.content).join('\n')
       const proposed = req.proposeSnapshot ? req.proposeSnapshot(previousSnapshot, replaced) : await askSnapshot(req, previousSnapshot, replaced, deadline)
       const verdict = acceptSnapshot(proposed, previousSnapshot, events, replaced)
-      if (!verdict.ok) {
-        emit({ type: 'snapshot', accepted: false, reason: verdict.reason })
+      if (verdict.ok) {
+        previousSnapshot = verdict.snapshot
+        const notes = renderSnapshot(verdict.snapshot)
+        const tail = indexes.filter((index) => index > 1).map((index) => turns[index]!)
+        turns = [turns[0]!, turns[1]!, { role: 'system', content: notes }, ...tail]
+        foldBefore = 0
+        compactions += 1
+        roundBudget = Math.min(maxRounds + 4, roundBudget + 2)
+        emit({ type: 'snapshot', accepted: true, reason: null })
+        occupancy = null
+        appendedChars = 0
         return
       }
-      previousSnapshot = verdict.snapshot
-      const notes = renderSnapshot(verdict.snapshot)
-      const tail = indexes.filter((index) => index > 1).map((index) => turns[index]!)
-      turns = [turns[0]!, turns[1]!, { role: 'system', content: notes }, ...tail]
-      foldBefore = 0
-      compactions += 1
-      roundBudget = Math.min(maxRounds + 4, roundBudget + 2)
-      emit({ type: 'snapshot', accepted: true, reason: null })
-      occupancy = null
-      appendedChars = 0
-      return
+      emit({ type: 'snapshot', accepted: false, reason: verdict.reason })
+      // A window that already overflowed still has to shrink, or the retry fails the same way.
+      if (reason !== 'overflow') return
     }
     const record = checkpointFrom(events)
     const notes = renderCheckpoint(record)
@@ -337,7 +349,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
     // the window, everything before the newest round becomes notes.
     if (req.fold !== false && occupancy !== null && req.contextLimit) {
       const projected = occupancy + roughTokens(appendedChars)
-      const trigger = req.snapshot ? SNAPSHOT_TRIGGER_SHARE : COMPACT_AT
+      const trigger = req.snapshot ? (req.snapshotTriggerShare ?? SNAPSHOT_TRIGGER_SHARE) : COMPACT_AT
       if (projected > req.contextLimit * trigger) await compact('window', false)
     }
     // A write run that has spent half its rounds without changing anything
@@ -479,19 +491,25 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
       }
       emit({ type: 'tool.call', callId: call.id, name: call.name, args })
       if (typeof args.path === 'string') reads.push(args.path)
-      const result =
-        call.name === 'run_command' && canRun
-          ? await runCommand(req.execute!, args, deadline, emit)
-          : call.name === 'find' && req.embedModel
-            ? await findInGrant({
-                grant: req.grant,
-                query: typeof args.query === 'string' ? args.query : '',
-                baseUrl: req.baseUrl,
-                apiKey: req.apiKey ?? null,
-                model: req.embedModel,
-                signal: deadline
-              })
-            : await runAgentTool(req.grant, call.name, args, { contextLimit: req.contextLimit, touched })
+      let result
+      try {
+        result =
+          call.name === 'run_command' && canRun
+            ? await runCommand(req.execute!, args, deadline, emit)
+            : call.name === 'find' && req.embedModel
+              ? await findInGrant({
+                  grant: req.grant,
+                  query: typeof args.query === 'string' ? args.query : '',
+                  baseUrl: req.baseUrl,
+                  apiKey: req.apiKey ?? null,
+                  model: req.embedModel,
+                  signal: deadline
+                })
+              : await runAgentTool(req.grant, call.name, args, { contextLimit: req.contextLimit, touched })
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : 'The tool failed.'
+        result = { ok: false, content: reason.length > 200 ? `${reason.slice(0, 200)}…` : reason }
+      }
       req.observe?.(call.name, args, result.content)
       if (result.denied) denials += 1
       if ((call.name === 'edit_file' || call.name === 'write_file') && result.ok) {
@@ -544,12 +562,12 @@ export const RUN_COMMAND_TOOL: ToolDefinition = {
 /**
  * The tools a run is offered. `find` is added only when an embedding model
  * was named, so a run without one — the harness, a measurement — does not
- * gain find. `repo_map` is always offered.
+ * gain find. `repo_map` is offered only when the run asks for it.
  */
-export function toolsForRun(mode: CodingMode, canRun: boolean, embedModel?: string | null): ToolDefinition[] {
+export function toolsForRun(mode: CodingMode, canRun: boolean, embedModel?: string | null, repoMapTool = false): ToolDefinition[] {
   const base =
     mode === 'inspect' ? AGENT_TOOLS : canRun ? [...AGENT_TOOLS, ...WRITE_TOOLS, RUN_COMMAND_TOOL] : [...AGENT_TOOLS, ...WRITE_TOOLS]
-  const withMap = [...base, REPO_MAP_TOOL]
+  const withMap = repoMapTool ? [...base, REPO_MAP_TOOL] : base
   return embedModel ? [...withMap, FIND_TOOL] : withMap
 }
 

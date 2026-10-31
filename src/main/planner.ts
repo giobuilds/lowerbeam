@@ -343,6 +343,12 @@ const fmt = (n: number): string => n.toLocaleString(undefined, { maximumFraction
  * once. Each model runs in its own process, so nothing is shared between
  * them — not the weights, not the cache, not the backend's own overhead.
  */
+export function routerWorstCase(plans: Array<{ id: string; totalMiB: number }>, modelsMax: number, freeMiB: number | null): { worstCase: string[]; worstCaseMiB: number; fits: boolean | null } {
+  const largest = [...plans].sort((a, b) => b.totalMiB - a.totalMiB).slice(0, Math.max(1, modelsMax))
+  const worstCaseMiB = largest.reduce((n, p) => n + p.totalMiB, 0)
+  return { worstCase: largest.map((p) => p.id), worstCaseMiB, fits: freeMiB === null ? null : worstCaseMiB <= freeMiB }
+}
+
 /**
  * Why a launch should not start, when the estimate says it will not fit.
  * No device, or a plan that fits, is not a reason to refuse.
@@ -353,12 +359,6 @@ export function unfitReason(plan: VramPlan, modelName: string): string | null {
     `${modelName} needs about ${Math.round(plan.totalMiB)} MiB of VRAM and this card has ` +
     `${Math.round(plan.freeMiB)} MiB free, so it was not started.`
   )
-}
-
-export function routerWorstCase(plans: Array<{ id: string; totalMiB: number }>, modelsMax: number, freeMiB: number | null): { worstCase: string[]; worstCaseMiB: number; fits: boolean | null } {
-  const largest = [...plans].sort((a, b) => b.totalMiB - a.totalMiB).slice(0, Math.max(1, modelsMax))
-  const worstCaseMiB = largest.reduce((n, p) => n + p.totalMiB, 0)
-  return { worstCase: largest.map((p) => p.id), worstCaseMiB, fits: freeMiB === null ? null : worstCaseMiB <= freeMiB }
 }
 
 /**
