@@ -76,6 +76,8 @@ console.log('\na scan stays within its caps, and a failed load can be tried agai
   assert.match(notices, /Copyright \(c\) 2014 Max Brunsfeld/)
   assert.match(notices, /Copyright \(c\) 2016 Max Brunsfeld/)
   assert.match(notices, /Copyright \(c\) 2017 Maxim Sokolov/)
+  assert.match(notices, /web-tree-sitter/)
+  assert.match(notices, /Copyright \(c\) 2018-2024 Max Brunsfeld/)
   assert.equal(notices.includes('\u2014'), false)
   assert.match(builder, /resources\/NOTICES/)
   ok('the packaged notices name the tree-sitter grammars and their MIT upstream')

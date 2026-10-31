@@ -27,12 +27,19 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - `edit_file` can match a passage that only differs by trailing space or curly quotes, and it says which match it used.
 - Coding mode can ask for a short map of the project's files, ranked so the most relevant ones fit a token budget.
 - A model with no native tool calling can run Coding mode when its capability record says `toolFormat: text`. The tools are described in the prompt and the reply has to be one tool call or a final answer.
+- Coding mode can compact a long run into a checked snapshot instead of a prose note, with settings for when it compacts and how much it keeps. Off unless asked.
+
+### Changed
+
+- The app ships licence notices for the tree-sitter grammars and runtime.
 
 ### Fixed
 
 - `lowerbeam serve` does not start when Local API is open to the network and no key is set, and it no longer says only this machine can reach it in that case.
 - An edit whose indentation does not match the file says where the passage was found and to copy the indentation, instead of saying it was missing.
 - The repo map and snapshot compaction stay off unless Coding mode is asked to use them.
+- A run that hits its deadline or is cancelled during a command now stops instead of giving the model another turn.
+- A snapshot taken mid-run records the hashes of files the run has changed.
 
 ## [0.16.0] - 2026-10-25
 

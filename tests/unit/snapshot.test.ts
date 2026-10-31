@@ -274,6 +274,7 @@ console.log('\na snapshot mid-run carries the edited file’s hash')
     mode: 'edit',
     snapshot: true,
     proposeSnapshot: () => snapshot(),
+    changedFiles: () => ws.changedHashes(),
     onEvent: (item) => events.push(item)
   })
   const hash = createHash('sha256').update(after).digest('hex')
@@ -331,6 +332,50 @@ console.log('\na deadline during a command ends the run')
   assert.equal(events.some((item) => item.type === 'tool.result'), false)
   assert.equal(result.outcome, 'timeout')
   ok('a deadline inside run_command ends the run, and the model does not get another turn')
+  server.close()
+  await rm(root, { recursive: true, force: true })
+}
+
+console.log('\na tool timeout before the deadline is a failed tool')
+{
+  const root = await mkdtemp(join(tmpdir(), 'snap-tool-timeout-'))
+  await writeFile(join(root, 'a.ts'), 'export const name = "Hearth"\n')
+  let requests = 0
+  const server = createServer((req, res) => {
+    req.resume()
+    req.on('end', () => {
+      requests += 1
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      const call = requests === 1 ? { index: 0, id: 'c', function: { name: 'run_command', arguments: '{"command":"npm test"}' } } : null
+      const content = requests === 1 ? '' : 'Carried on after the tool timed out.'
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content, ...(call ? { tool_calls: [call] } : {}) }, finish_reason: null }] })}\n\n`)
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: call ? 'tool_calls' : 'stop' }], timings: { prompt_n: 10, predicted_n: 2, cache_n: 0 } })}\n\n`)
+      res.end('data: [DONE]\n\n')
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+  const events: JournalEvent[] = []
+  const result = await runTask({
+    baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    model: 'm',
+    task: 'Run the tests.',
+    grant: await Grant.open(root, 'run'),
+    settings,
+    mode: 'run',
+    timeoutMs: 60_000,
+    execute: () => {
+      const err = new Error('The operation was aborted due to timeout')
+      err.name = 'TimeoutError'
+      return Promise.reject(err)
+    },
+    onEvent: (item) => events.push(item)
+  })
+  const tool = events.find((item) => item.type === 'tool.result')
+  assert.equal(requests, 2)
+  assert.equal(tool && tool.type === 'tool.result' && tool.ok, false)
+  assert.match(tool && tool.type === 'tool.result' ? tool.summary : '', /Could not run it/)
+  assert.equal(result.outcome, 'answered')
+  ok('a tool that throws TimeoutError before the deadline comes back as a failed result and the run goes on')
   server.close()
   await rm(root, { recursive: true, force: true })
 }

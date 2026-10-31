@@ -15,7 +15,6 @@ import { buildToolGrammar, parseTextToolCall, renderToolPrompt, type ToolFormat 
 import { foldToolTurns, nextFoldIndex } from '@context/fold.js'
 import { checkpointFrom, renderCheckpoint, renderReminder, compactWorkingSet } from '@context/checkpoint.js'
 import { COMPACT_AT } from '@context/compact.js'
-import { Workspace } from '../main/coding/workspace.js'
 import { acceptSnapshot, keptTurnIndexes, parseSnapshot, renderSnapshot, SNAPSHOT_KEEP_SHARE, SNAPSHOT_SCHEMA, SNAPSHOT_TRIGGER_SHARE, type RunSnapshot } from '@context/snapshot.js'
 
 /**
@@ -117,6 +116,12 @@ export interface RunRequest {
    * Absent, the model is asked, in the JSON schema the snapshot requires.
    */
   proposeSnapshot?: (previous: RunSnapshot | null, replaced: string) => RunSnapshot | null
+  /**
+   * Path to sha256 for files the run has changed in its copy. The loop does
+   * not open the workspace itself. Absent, a snapshot records the paths
+   * without hashes until apply.
+   */
+  changedFiles?: () => Promise<Readonly<Record<string, string>>>
 }
 
 export interface Executed {
@@ -299,7 +304,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
       const indexes = keptTurnIndexes(turns, req.snapshotKeepShare ?? SNAPSHOT_KEEP_SHARE)
       const replaced = turns.filter((_, index) => !indexes.includes(index)).map((turn) => turn.content).join('\n')
       const proposed = req.proposeSnapshot ? req.proposeSnapshot(previousSnapshot, replaced) : await askSnapshot(req, previousSnapshot, replaced, deadline)
-      const manifest = await changedInWorkspace(req.grant.root)
+      const manifest = await changedFilesOf(req)
       const verdict = acceptSnapshot(proposed, previousSnapshot, events, replaced, manifest)
       if (verdict.ok) {
         previousSnapshot = verdict.snapshot
@@ -511,7 +516,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
               : await runAgentTool(req.grant, call.name, args, { contextLimit: req.contextLimit, touched })
       } catch (err) {
         // A cancellation or a passed deadline ends the run. A tool that failed on its own comes back as a result.
-        if (isRunStopped(err, deadline)) throw err
+        if (isRunStopped(deadline, req.signal)) throw err
         const reason = err instanceof Error ? err.message : 'The tool failed.'
         result = { ok: false, content: reason.length > 200 ? `${reason.slice(0, 200)}…` : reason }
       }
@@ -547,7 +552,7 @@ export async function runTask(req: RunRequest): Promise<RunResult> {
   rounds = roundBudget
   return finish()
   } catch (err) {
-    if (!isRunStopped(err, deadline)) throw err
+    if (!isRunStopped(deadline, req.signal)) throw err
     outcome = req.signal?.aborted ? 'cancelled' : 'timeout'
     return finish()
   }
@@ -618,24 +623,26 @@ async function askSnapshot(req: RunRequest, previous: RunSnapshot | null, replac
 /** The tail of the output is what the model gets; the whole of it is an artifact. */
 export const COMMAND_OUTPUT_CHARS = 6000
 
-/** A cancellation, or the run's own deadline. A tool failure is neither. */
-function isRunStopped(err: unknown, deadline: AbortSignal): boolean {
-  if (deadline.aborted) return true
-  return err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')
+/**
+ * The run's own deadline, or the caller's cancel. A tool's own timeout is
+ * neither: the error's name is not consulted.
+ */
+function isRunStopped(deadline: AbortSignal, request?: AbortSignal): boolean {
+  return deadline.aborted || request?.aborted === true
+}
+
+async function changedFilesOf(req: RunRequest): Promise<Readonly<Record<string, string>>> {
+  if (!req.changedFiles) return {}
+  try {
+    return await req.changedFiles()
+  } catch {
+    return {}
+  }
 }
 
 function stopError(signal: AbortSignal): Error {
   if (signal.reason instanceof Error) return signal.reason
   return Object.assign(new Error('The run stopped.'), { name: 'AbortError' })
-}
-
-/** Path to sha256 for files this copy differs from the baseline it was taken from. Absent when the root is not a workspace. */
-async function changedInWorkspace(root: string): Promise<Record<string, string>> {
-  try {
-    return await (await Workspace.open(root)).changedHashes()
-  } catch {
-    return {}
-  }
 }
 
 async function runCommand(
@@ -650,7 +657,7 @@ async function runCommand(
   try {
     done = await execute(command, signal)
   } catch (err) {
-    if (isRunStopped(err, signal)) throw err
+    if (isRunStopped(signal)) throw err
     return { ok: false, content: `Could not run it: ${(err as Error).message}` }
   }
   if (signal.aborted) throw stopError(signal)
