@@ -337,6 +337,13 @@ export interface CodingStartRequest {
   /** Which of the server's models runs it, by the name requests give it; the only one, when absent. */
   model?: string
   grant?: GrantTerms
+  /** A repo map with the task, and the tool. Off unless the Coding tab asks. */
+  repoMap?: boolean
+  repoMapTool?: boolean
+  /** Checked snapshot compaction, and the shares of the window it uses. Off unless asked. */
+  snapshot?: boolean
+  snapshotTriggerShare?: number
+  snapshotKeepShare?: number
 }
 
 /** What a tool hands back to the loop. Text is what the model sees; the rest is for the journal. */

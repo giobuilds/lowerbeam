@@ -107,10 +107,11 @@ same stretch of text, stops the run as well.
 where the file has a straight one, can match, and the result says which.
 A change in relative indentation does not.
 
-A run can call `repo_map` for a short ranked list of the files and names
-most connected to the task, within a token budget. It is built on this
-machine with tree-sitter, and it only includes files the run is allowed
-to read.
+Coding mode can put a short ranked list of the files and names most
+connected to the task in front of the run, and offer `repo_map` to ask
+for it again, within a token budget. Both are off unless that run is
+asked. The map is built on this machine with tree-sitter, and it only
+includes files the run is allowed to read.
 
 With a CPU embedding model marked on the router, a run also gets `find`:
 the same path and line excerpts as search, ranked by that model, and only
@@ -135,7 +136,7 @@ over by itself.
 A coding run can compact into a snapshot instead of a prose note: the goal,
 the constraints and the next step, checked against the journal, and refused
 when it would not be any smaller. Chat keeps its prose summary. The snapshot
-is off unless that run asks for it.
+is off unless Coding mode is asked to use it.
 
 A third mode, *edit and run*, adds `run_command`, so the model can run the
 tests on its change. Commands run in a bubblewrap box over the copy: the

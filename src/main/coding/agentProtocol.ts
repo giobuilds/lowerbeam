@@ -35,6 +35,13 @@ export interface AgentJob {
   embedModel?: string | null
   /** Absent means native tool calling. */
   toolFormat?: ToolFormat
+  /** Put a repo map in the task, and offer the tool. Both off unless set. */
+  repoMap?: boolean
+  repoMapTool?: boolean
+  /** Checked snapshot compaction. Off unless set. */
+  snapshot?: boolean
+  snapshotTriggerShare?: number
+  snapshotKeepShare?: number
 }
 
 export type ParentToChild =

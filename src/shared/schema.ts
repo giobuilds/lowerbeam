@@ -154,7 +154,12 @@ export const codingStartSchema = z.object({
       network: z.boolean().default(false),
       install: z.boolean().default(false)
     })
-    .optional()
+    .optional(),
+  repoMap: z.boolean().optional(),
+  repoMapTool: z.boolean().optional(),
+  snapshot: z.boolean().optional(),
+  snapshotTriggerShare: z.number().gt(0).lt(1).optional(),
+  snapshotKeepShare: z.number().gt(0).lt(1).optional()
 })
 
 export const toolRunSchema = z.object({

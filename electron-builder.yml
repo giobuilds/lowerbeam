@@ -11,6 +11,9 @@ files:
 extraResources:
   - from: resources/measure/corpus
     to: measure/corpus
+  # Licence notices, including the tree-sitter grammars' MIT upstream.
+  - from: resources/NOTICES
+    to: NOTICES
   # Tree-sitter, so a packaged app can build a repo map offline.
   # The wasm package is a devDependency (it depends on itself, and the
   # production walk runs out of memory on that cycle). These copies are

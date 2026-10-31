@@ -48,6 +48,26 @@ console.log('a grammar and a parser for every built-in tool')
   assert.equal(answer.kind, 'answer')
   assert.equal(grammarFixture(grammar, 'The function is greet, in src/a.ts.', tools), 'final')
   ok('prose with no tool block is a final answer')
+
+  const fence = (body: unknown): string => '```tool\n' + JSON.stringify(body) + '\n```'
+  assert.equal(grammarFixture(grammar, fence({ name: 'list_files', arguments: {} }), tools), 'call')
+  assert.equal(grammarFixture(grammar, fence({ name: 'list_files', arguments: { path: 'src' } }), tools), 'call')
+  ok('list_files is a call with no path, and with a path, and the first optional has no leading comma')
+  assert.equal(grammarFixture(grammar, fence({ name: 'repo_map', arguments: { focus: 'greet' } }), tools), 'call')
+  ok('repo_map accepts a focus')
+  assert.equal(
+    grammarFixture(grammar, fence({ name: 'edit_file', arguments: { path: 'a.ts', find: 'alpha\nbeta', replace: 'gamma\ndelta' } }), tools),
+    'call'
+  )
+  ok('edit_file accepts a multi-line find and replace, escaped as JSON')
+  const coded = 'Use this:\n```\nconst x = 1\n```\nThat is the whole change.'
+  assert.equal(grammarFixture(grammar, coded, tools), 'final')
+  ok('a final answer may contain a code block')
+  assert.equal(grammarFixture(grammar, fence({ name: 'list_files', arguments: { command: 'npm test' } }), tools), 'reject')
+  assert.equal(grammarFixture(grammar, fence({ name: 'read', arguments: { path: 'a.ts', start: 1.5 } }), tools), 'reject')
+  ok('a name with another tool\'s arguments is rejected, and an integer parameter rejects a fraction')
+  assert.equal(grammarFixture(grammar, '```tool\n{"name":"read","arguments":{"path":"a\nb"}}\n```', tools), 'reject')
+  ok('a string with a raw newline is rejected')
 }
 
 console.log('\na text-mode run reads a file and answers')

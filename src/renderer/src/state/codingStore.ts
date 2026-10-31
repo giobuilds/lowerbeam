@@ -22,6 +22,12 @@ interface CodingState {
   mode: CodingMode
   /** The terms the next run will have beyond its mode: a visible change to the grant, made before the run. */
   terms: GrantTerms
+  /** A repo map with the task and the tool. Off until asked, so a measurement keeps its tools. */
+  repoMap: boolean
+  /** Checked snapshot compaction. Off until asked. */
+  snapshot: boolean
+  snapshotTriggerShare: number
+  snapshotKeepShare: number
   /** Whether "edit and run" can be offered, and why not when it cannot. */
   sandbox: { ok: boolean; reason: string | null; toolchain: string } | null
   /** What the capability record says about the loaded model; null while it is being identified. */
@@ -39,6 +45,9 @@ interface CodingState {
   init: () => Promise<void>
   setMode: (mode: CodingMode) => void
   setTerms: (patch: Partial<GrantTerms>) => void
+  setRepoMap: (on: boolean) => void
+  setSnapshot: (on: boolean) => void
+  setSnapshotShare: (which: 'trigger' | 'keep', value: number) => void
   addReadRoot: () => Promise<void>
   removeReadRoot: (dir: string) => void
   loadCapability: () => Promise<void>
@@ -68,6 +77,10 @@ export const useCodingStore = create<CodingState>((set, get) => ({
   task: '',
   mode: 'inspect',
   terms: DEFAULT_TERMS,
+  repoMap: false,
+  snapshot: false,
+  snapshotTriggerShare: 0.5,
+  snapshotKeepShare: 0.3,
   sandbox: null,
   capability: null,
   measure: null,
@@ -102,6 +115,20 @@ export const useCodingStore = create<CodingState>((set, get) => ({
 
   setTerms(patch) {
     set({ terms: { ...get().terms, ...patch } })
+  },
+
+  setRepoMap(on) {
+    set({ repoMap: on })
+  },
+
+  setSnapshot(on) {
+    set({ snapshot: on })
+  },
+
+  setSnapshotShare(which, value) {
+    if (!Number.isFinite(value) || value <= 0 || value >= 1) return
+    if (which === 'trigger') set({ snapshotTriggerShare: value })
+    else set({ snapshotKeepShare: value })
   },
 
   async addReadRoot() {
@@ -230,7 +257,19 @@ export const useCodingStore = create<CodingState>((set, get) => ({
     const { project, task } = get()
     if (!project || !task.trim()) return
     try {
-      const run = await window.llama.coding.start({ projectRoot: project, task: task.trim(), mode: get().mode, grant: get().terms, model: useServerStore.getState().activeModel ?? undefined })
+      const state = get()
+      const run = await window.llama.coding.start({
+        projectRoot: project,
+        task: task.trim(),
+        mode: state.mode,
+        grant: state.terms,
+        model: useServerStore.getState().activeModel ?? undefined,
+        repoMap: state.repoMap,
+        repoMapTool: state.repoMap,
+        snapshot: state.snapshot,
+        snapshotTriggerShare: state.snapshotTriggerShare,
+        snapshotKeepShare: state.snapshotKeepShare
+      })
       set({
         runs: [...get().runs, run],
         activeRunId: run.id,

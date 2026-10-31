@@ -198,7 +198,14 @@ export class CodingSupervisor extends EventEmitter<{
       terms,
       served.id,
       embeddingModel(status)?.id ?? null,
-      toolFormat
+      toolFormat,
+      {
+        repoMap: req.repoMap,
+        repoMapTool: req.repoMapTool,
+        snapshot: req.snapshot,
+        snapshotTriggerShare: req.snapshotTriggerShare,
+        snapshotKeepShare: req.snapshotKeepShare
+      }
     )
     return summary
   }
@@ -233,7 +240,8 @@ export class CodingSupervisor extends EventEmitter<{
     terms: GrantTerms,
     requestModel: string,
     embedModel: string | null,
-    toolFormat: 'native' | 'text'
+    toolFormat: 'native' | 'text',
+    harness: Pick<CodingStartRequest, 'repoMap' | 'repoMapTool' | 'snapshot' | 'snapshotTriggerShare' | 'snapshotKeepShare'>
   ): Promise<void> {
     // Each command's full output is kept beside the journal, numbered in the
     // order the journal has them, so the evidence can find the output of the
@@ -257,7 +265,12 @@ export class CodingSupervisor extends EventEmitter<{
           contextLimit,
           terms,
           embedModel,
-          toolFormat
+          toolFormat,
+          repoMap: harness.repoMap === true,
+          repoMapTool: harness.repoMapTool === true,
+          snapshot: harness.snapshot === true,
+          snapshotTriggerShare: harness.snapshotTriggerShare,
+          snapshotKeepShare: harness.snapshotKeepShare
         },
         signal: abort.signal,
         onEvent: (event) => {

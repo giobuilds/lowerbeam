@@ -11,6 +11,7 @@
  * unless a caller turns this on.
  */
 import type { JournalEvent } from '@shared/coding.js'
+import { unsupportedLines } from './verify.js'
 
 /** Compact once the next request would use this much of the window. */
 export const SNAPSHOT_TRIGGER_SHARE = 0.5
@@ -148,22 +149,33 @@ export interface JournalFacts {
   commands: SnapshotCommand[]
 }
 
-/** Files and commands as the journal recorded them, which win over the model. */
-export function factsFromJournal(events: readonly JournalEvent[]): JournalFacts {
+/**
+ * Files and commands as the journal recorded them, which win over the model.
+ *
+ * A hash comes from an apply in the journal, or from the workspace manifest.
+ * The tool result's summary is not a hash. A path or a hash that the journal
+ * and the manifest do not both contain is left out, by the same line check a
+ * compaction record uses.
+ */
+export function factsFromJournal(
+  events: readonly JournalEvent[],
+  manifest: Readonly<Record<string, string>> = {}
+): JournalFacts {
   const calls = new Map<string, JournalEvent & { type: 'tool.call' }>()
+  const applied = new Map<string, string | null>()
   const files: SnapshotFile[] = []
   const commands: SnapshotCommand[] = []
   for (const event of events) {
     if (event.type === 'tool.call') calls.set(event.callId, event)
+    if (event.type === 'applied') {
+      for (const file of event.files) applied.set(file.path, file.sha256)
+    }
     if (event.type === 'tool.result' && event.ok) {
       const call = calls.get(event.callId)
       if (!call || (call.name !== 'edit_file' && call.name !== 'write_file')) continue
       const path = typeof call.args.path === 'string' ? call.args.path : ''
-      if (!path) continue
-      const hash = /sha256 ([a-f0-9]+)/.exec(event.summary)?.[1] ?? null
-      const existing = files.find((file) => file.path === path)
-      if (existing) existing.sha256 = hash ?? existing.sha256
-      else files.push({ path, sha256: hash })
+      if (!path || files.some((file) => file.path === path)) continue
+      files.push({ path, sha256: null })
     }
     if (event.type === 'command.finished') {
       commands.push({
@@ -173,7 +185,18 @@ export function factsFromJournal(events: readonly JournalEvent[]): JournalFacts 
       })
     }
   }
-  return { filesChanged: files, commands }
+  const source = [
+    ...events.filter((event) => event.type !== 'tool.result').map((event) => JSON.stringify(event)),
+    ...Object.entries(manifest).flatMap(([path, hash]) => [path, hash])
+  ].join('\n')
+  const kept: SnapshotFile[] = []
+  for (const file of files) {
+    if (unsupportedLines(file.path, source).length) continue
+    const hash = applied.get(file.path) ?? manifest[file.path] ?? null
+    const usable = hash !== null && unsupportedLines(hash, source).length === 0 ? hash : null
+    kept.push({ path: file.path, sha256: usable })
+  }
+  return { filesChanged: kept, commands }
 }
 
 export type SnapshotVerdict = { ok: true; snapshot: RunSnapshot } | { ok: false; reason: string }
@@ -208,13 +231,25 @@ export function acceptSnapshot(
   return { ok: true, snapshot }
 }
 
-/** The first user message, plus the newest share of the turns after it. */
-export function keptTurnIndexes(count: number, keepShare = SNAPSHOT_KEEP_SHARE): number[] {
+/**
+ * The first user message, plus the newest share of the turns after it.
+ *
+ * The kept tail does not open on a tool result whose call was dropped.
+ * The cut moves back to include that call.
+ */
+export function keptTurnIndexes(countOrTurns: number | readonly { role: string }[], keepShare = SNAPSHOT_KEEP_SHARE): number[] {
+  const turns = typeof countOrTurns === 'number' ? null : countOrTurns
+  const count = typeof countOrTurns === 'number' ? countOrTurns : countOrTurns.length
   if (count <= 2) return Array.from({ length: count }, (_, index) => index)
   const body = count - 2
   const keep = Math.max(1, Math.ceil(body * keepShare))
-  const recent = Array.from({ length: keep }, (_, index) => count - keep + index)
-  return [0, 1, ...recent.filter((index) => index > 1)]
+  let start = count - keep
+  if (turns) {
+    while (start > 2 && turns[start]?.role === 'tool') start -= 1
+  }
+  const recent: number[] = []
+  for (let index = start; index < count; index++) if (index > 1) recent.push(index)
+  return [0, 1, ...recent]
 }
 
 function stringArray(value: unknown): value is string[] {

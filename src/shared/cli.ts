@@ -53,6 +53,31 @@ export function cliHelp(): string {
   ].join('\n')
 }
 
+export interface LocalApiAccess {
+  lan: boolean
+  apiKey: string
+}
+
+/**
+ * Why serve must not start. Network access without a key is refused here,
+ * before anything is loaded, with the same reason the app uses.
+ */
+export function serveRefusal(api: LocalApiAccess): string | null {
+  if (api.lan && !api.apiKey) {
+    return 'Listening on the local network needs an API key. Set one in the app under Local API, or turn the network off.'
+  }
+  return null
+}
+
+/** What serve prints once the model is up. Never claims the machine is alone when the network is open. */
+export function serveStatusLines(api: LocalApiAccess): string[] {
+  const lines: string[] = []
+  if (api.lan) lines.push('It is also open to other machines on this network.')
+  if (api.apiKey) lines.push('Requests need the API key set in the app under Local API.')
+  else if (!api.lan) lines.push('No API key is set. Only this machine can reach it.')
+  return lines
+}
+
 export function serveHelp(): string {
   return [
     'lowerbeam serve [--model NAME]',

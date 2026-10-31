@@ -1,0 +1,8 @@
+Third-party notices
+
+tree-sitter grammars
+The grammar WebAssembly files shipped with this app — TypeScript, TSX,
+JavaScript, Python, C, Rust and Go — are built from the upstream tree-sitter
+language grammars. Those grammars are licensed under the MIT License by their
+authors. The compiled copies are taken from the tree-sitter-wasms package,
+which is Unlicense. This app does not include the grammar source.

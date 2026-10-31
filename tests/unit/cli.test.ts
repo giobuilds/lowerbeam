@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cliHelp, exitCodeFor, formatEvent, parseCli, pickProfile, serveHelp } from '@shared/cli.js'
+import { cliHelp, exitCodeFor, formatEvent, parseCli, pickProfile, serveHelp, serveRefusal, serveStatusLines } from '@shared/cli.js'
 import type { JournalEvent } from '@shared/coding.js'
 
 let n = 0
@@ -67,6 +67,15 @@ console.log('parsing lowerbeam serve')
   assert.equal(parseCli(['lowerbeam', 'serve', 'extra']).kind, 'error')
   assert.equal(parseCli(['lowerbeam', 'run', '--task', 'x', 'serve']).kind, 'error')
   ok('a bare --model, an extra argument, or both commands is refused')
+
+  assert.match(serveRefusal({ lan: true, apiKey: '' }) ?? '', /Set one in the app under Local API/)
+  assert.equal(serveRefusal({ lan: false, apiKey: '' }), null)
+  assert.equal(serveRefusal({ lan: true, apiKey: 'k' }), null)
+  const open = serveStatusLines({ lan: true, apiKey: '' }).join('\n')
+  assert.match(open, /other machines/)
+  assert.doesNotMatch(open, /only this machine/i)
+  assert.match(serveStatusLines({ lan: false, apiKey: '' }).join('\n'), /Only this machine can reach it/)
+  ok('serve refuses network access without a key, and does not say the machine is alone when the network is open')
 }
 
 console.log('\nwhat the terminal shows')
