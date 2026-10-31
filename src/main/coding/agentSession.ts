@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Grant } from '../../agent/grant.js'
 import { runTask, type RunRequest, type RunResult } from '../../agent/loop.js'
+import { Workspace } from './workspace.js'
 import {
   CANCEL_GRACE_MS,
   type AgentJob,
@@ -145,6 +146,7 @@ export async function serveAgent(port: ChildPort, run: (req: RunRequest) => Prom
       snapshot: got.snapshot === true,
       snapshotTriggerShare: got.snapshotTriggerShare,
       snapshotKeepShare: got.snapshotKeepShare,
+      changedFiles: () => changedFilesIn(grant.root),
       execute:
         got.mode === 'run'
           ? (command, signal) => {
@@ -181,4 +183,13 @@ export async function serveAgent(port: ChildPort, run: (req: RunRequest) => Prom
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/** Hashes of files the copy differs from its baseline. Empty when this root is not a workspace. */
+async function changedFilesIn(root: string): Promise<Record<string, string>> {
+  try {
+    return await (await Workspace.open(root)).changedHashes()
+  } catch {
+    return {}
+  }
 }
