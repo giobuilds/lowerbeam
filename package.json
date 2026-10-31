@@ -48,6 +48,8 @@
     "marked": "^18.0.12",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "tree-sitter-wasms": "^0.1.13",
+    "web-tree-sitter": "^0.24.7",
     "zod": "^4.6.7",
     "zustand": "^5.0.15"
   },

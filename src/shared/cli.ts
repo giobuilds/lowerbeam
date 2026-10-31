@@ -146,6 +146,10 @@ export function formatEvent(event: JournalEvent): string | null {
       return `checkpoint ${event.reason}`
     case 'reminder':
       return `reminder before round ${event.round}`
+    case 'repeat_guard':
+      return event.action === 'stop' ? `stopped: ${event.rule}` : `repeat ${event.rule}`
+    case 'snapshot':
+      return event.accepted ? 'snapshot kept' : `snapshot refused: ${event.reason ?? ''}`
     case 'applied':
     case 'undone':
     case 'run.finished':

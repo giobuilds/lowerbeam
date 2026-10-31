@@ -11,6 +11,23 @@ files:
 extraResources:
   - from: resources/measure/corpus
     to: measure/corpus
+  # Tree-sitter, so a packaged app can build a repo map offline.
+  - from: node_modules/web-tree-sitter/tree-sitter.wasm
+    to: tree-sitter/tree-sitter.wasm
+  - from: node_modules/tree-sitter-wasms/out/tree-sitter-typescript.wasm
+    to: tree-sitter/grammars/tree-sitter-typescript.wasm
+  - from: node_modules/tree-sitter-wasms/out/tree-sitter-tsx.wasm
+    to: tree-sitter/grammars/tree-sitter-tsx.wasm
+  - from: node_modules/tree-sitter-wasms/out/tree-sitter-javascript.wasm
+    to: tree-sitter/grammars/tree-sitter-javascript.wasm
+  - from: node_modules/tree-sitter-wasms/out/tree-sitter-python.wasm
+    to: tree-sitter/grammars/tree-sitter-python.wasm
+  - from: node_modules/tree-sitter-wasms/out/tree-sitter-c.wasm
+    to: tree-sitter/grammars/tree-sitter-c.wasm
+  - from: node_modules/tree-sitter-wasms/out/tree-sitter-rust.wasm
+    to: tree-sitter/grammars/tree-sitter-rust.wasm
+  - from: node_modules/tree-sitter-wasms/out/tree-sitter-go.wasm
+    to: tree-sitter/grammars/tree-sitter-go.wasm
 linux:
   maintainer: giobuilds <57153417+giobuilds@users.noreply.github.com>
   icon: resources/icon.png

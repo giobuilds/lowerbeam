@@ -75,8 +75,8 @@ console.log('\nthe request')
 console.log('\nwhat a run is offered')
 {
   const inspect = toolsForRun('inspect', false, null).map((tool) => tool.name)
-  assert.deepEqual(inspect, ['list_files', 'search', 'read']); ok('without an embedding model, inspect is still list, search and read')
-  assert.deepEqual(toolsForRun('inspect', false, 'bge').map((tool) => tool.name), ['list_files', 'search', 'read', 'find']); ok('with one, find is added and search is unchanged')
+  assert.deepEqual(inspect, ['list_files', 'search', 'read', 'repo_map']); ok('without an embedding model, inspect is list, search, read and a repo map')
+  assert.deepEqual(toolsForRun('inspect', false, 'bge').map((tool) => tool.name), ['list_files', 'search', 'read', 'repo_map', 'find']); ok('with one, find is added and search is unchanged')
   assert.ok(!toolsForRun('edit', false, null).some((tool) => tool.name === 'find')); ok('an edit run without one does not grow a tool')
   assert.ok(FIND_TOOL.description.includes('path:line') && FIND_TOOL.description.includes('this project')); ok('find says it returns excerpts from this project')
 }

@@ -23,6 +23,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Added
 
 - `lowerbeam serve` starts the model last launched in the app, or one named with `--model`, and leaves it running as a local API until Ctrl+C. A model that will not fit is refused with a reason instead of being started.
+- A coding run that repeats the same tool call is told once and then stopped, and the same error or the same stretch of text stops it too.
+- `edit_file` can match a passage that only differs by trailing space or curly quotes, and it says which match it used.
+- Coding mode can ask for a short map of the project's files, ranked so the most relevant ones fit a token budget.
+- A model with no native tool calling can run Coding mode when its capability record says `toolFormat: text`. The tools are described in the prompt and the reply has to be one tool call or a final answer.
 
 ## [0.16.0] - 2026-10-25
 

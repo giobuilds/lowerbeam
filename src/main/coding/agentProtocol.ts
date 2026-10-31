@@ -1,3 +1,4 @@
+import type { ToolFormat } from '@shared/capability.js'
 import type { CodingMode, GrantTerms, JournalEvent } from '@shared/coding.js'
 import type { ChatSettingsView } from '@shared/types.js'
 import type { Executed, RunResult } from '../../agent/loop.js'
@@ -32,6 +33,8 @@ export interface AgentJob {
    * model the run is about to talk to.
    */
   embedModel?: string | null
+  /** Absent means native tool calling. */
+  toolFormat?: ToolFormat
 }
 
 export type ParentToChild =

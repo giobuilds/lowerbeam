@@ -12,7 +12,7 @@ import { Journal } from './journal.js'
 import { Workspace } from './workspace.js'
 import { findNode, maskedFor, probeSandbox, runInSandbox } from './sandbox.js'
 import { LocalRecord, ModelIdentifier } from './capability.js'
-import { verdictFor, type CapabilityStatus, type MeasureProgress } from '@shared/capability.js'
+import { toolFormatOf, verdictFor, type CapabilityStatus, type MeasureProgress } from '@shared/capability.js'
 import { embeddingModel, servedModel } from '@shared/served.js'
 import { MEASURE_TASKS, entryFrom, measureTask, noToolsEntry, type MeasureBox, type TaskOutcome } from './measure.js'
 import type { LaunchConfig } from '@shared/types.js'
@@ -131,7 +131,9 @@ export class CodingSupervisor extends EventEmitter<{
     // offered every mode; the record says so and the journal is the evidence.
     // The model this run uses, loaded and read: in a router, the one asked for.
     const served = await server.ensureLoaded(req.model)
-    const verdict = verdictFor(await this.identifier.status(served.modelPath), req.mode)
+    const identified = await this.identifier.status(served.modelPath)
+    const verdict = verdictFor(identified, req.mode)
+    const toolFormat = identified.state === 'measured' ? toolFormatOf(identified.record) : 'native'
     if (verdict.verdict === 'refused') throw new Error(`This model is not cleared to ${describe(req.mode)}: ${verdict.evidence}`)
     // The terms are checked here, where they are enforced, whatever the
     // interface offered: an extra root must be a real directory, narrow
@@ -195,7 +197,8 @@ export class CodingSupervisor extends EventEmitter<{
       req.mode,
       terms,
       served.id,
-      embeddingModel(status)?.id ?? null
+      embeddingModel(status)?.id ?? null,
+      toolFormat
     )
     return summary
   }
@@ -229,7 +232,8 @@ export class CodingSupervisor extends EventEmitter<{
     mode: CodingRunSummary['mode'],
     terms: GrantTerms,
     requestModel: string,
-    embedModel: string | null
+    embedModel: string | null,
+    toolFormat: 'native' | 'text'
   ): Promise<void> {
     // Each command's full output is kept beside the journal, numbered in the
     // order the journal has them, so the evidence can find the output of the
@@ -252,7 +256,8 @@ export class CodingSupervisor extends EventEmitter<{
           runId: id,
           contextLimit,
           terms,
-          embedModel
+          embedModel,
+          toolFormat
         },
         signal: abort.signal,
         onEvent: (event) => {

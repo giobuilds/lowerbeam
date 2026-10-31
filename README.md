@@ -99,6 +99,19 @@ out at any depth, and the home folder or `/` cannot be the project. Notes a
 project keeps for coding agents — `AGENTS.md`, `CLAUDE.md`, `.cursorrules`
 and the like — are read the same way and given with the task as facts about
 the project, never as instructions that could widen what the run may do.
+A run that calls the same tool and gets the same result is told so once,
+and stopped the third time. The same error three times in a row, or the
+same stretch of text, stops the run as well.
+
+`edit_file` still requires one match. A trailing space, or a curly quote
+where the file has a straight one, can match, and the result says which.
+A change in relative indentation does not.
+
+A run can call `repo_map` for a short ranked list of the files and names
+most connected to the task, within a token budget. It is built on this
+machine with tree-sitter, and it only includes files the run is allowed
+to read.
+
 With a CPU embedding model marked on the router, a run also gets `find`:
 the same path and line excerpts as search, ranked by that model, and only
 from the project. The embedding model stays on the CPU and is not offered
@@ -111,6 +124,18 @@ it was shown — against a copy of the project, never the project. The
 Changes panel shows what it did as diffs; apply writes each file back only if
 the project still holds what the copy started from, and anything you edited
 meanwhile is left alone and named. Undo restores what was applied.
+
+A model whose chat template has no tool calling can still run: set
+`toolFormat` to `text` on its capability record. The tools are described
+in the prompt, and the reply is constrained to one fenced tool call or a
+final answer. Absent, or `native`, is the chat template's own tool
+calling, which is what a measured model uses. Nothing switches a model
+over by itself.
+
+A coding run can compact into a snapshot instead of a prose note: the goal,
+the constraints and the next step, checked against the journal, and refused
+when it would not be any smaller. Chat keeps its prose summary. The snapshot
+is off unless that run asks for it.
 
 A third mode, *edit and run*, adds `run_command`, so the model can run the
 tests on its change. Commands run in a bubblewrap box over the copy: the

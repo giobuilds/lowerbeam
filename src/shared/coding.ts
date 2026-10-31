@@ -152,6 +152,26 @@ export type JournalEvent =
       reverted?: string[]
     })
   | (Base & {
+      /**
+       * The run called the same tool again, hit the same error, or wrote
+       * the same text. A nudge is a note to the model. A stop ends the run.
+       */
+      type: 'repeat_guard'
+      action: 'nudge' | 'stop'
+      rule: 'same_call' | 'same_error' | 'same_text'
+      key: string
+      count: number
+    })
+  | (Base & {
+      /**
+       * A snapshot was accepted in place of older turns, or refused. A
+       * refusal keeps the previous record.
+       */
+      type: 'snapshot'
+      accepted: boolean
+      reason: string | null
+    })
+  | (Base & {
       type: 'run.finished'
       outcome: RunOutcome
       answer: string
@@ -170,6 +190,14 @@ export type RunOutcome =
   | 'timeout'
   | 'cancelled'
   | 'error'
+  /** The same tool call and result came back three times. */
+  | 'repeating'
+  /** The same error came back three times in a row. */
+  | 'repeating_error'
+  /** The same stretch of prose came back three times. */
+  | 'repeating_text'
+  /** A text-mode reply was not a tool call or a final answer, twice. */
+  | 'bad_tool_format'
 
 /**
  * What a run may do. `inspect` is list, search and read inside the project.
