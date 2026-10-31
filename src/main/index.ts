@@ -18,8 +18,8 @@ import { migrateLegacyUserData } from './migrate.js'
 import { attachContextMenu, registerContextMenuCommands } from './contextMenu.js'
 import { attachReader } from './reader.js'
 import { CodingSupervisor } from './coding/supervisor.js'
-import { cliHelp, parseCli } from '@shared/cli.js'
-import { runHeadless } from './headless.js'
+import { cliHelp, parseCli, serveHelp } from '@shared/cli.js'
+import { runHeadless, serveHeadless } from './headless.js'
 import { isWebUrl } from '@shared/url.js'
 import { APP_INDEX_PATH, isAppUrl, trustWindow } from './sender.js'
 import { Updater } from './updater.js'
@@ -202,21 +202,34 @@ async function bootstrap(): Promise<void> {
 const cli = parseCli(process.argv)
 if (cli.kind === 'help' || cli.kind === 'error') {
   void app.whenReady().then(() => {
-    if (cli.kind === 'help') console.log(cliHelp())
+    const help = cli.kind === 'help'
+      ? (cli.command === 'serve' ? serveHelp() : cliHelp())
+      : (cli.command === 'serve' ? serveHelp() : cliHelp())
+    if (cli.kind === 'help') console.log(help)
     else {
       console.error(cli.message)
-      console.error(cliHelp())
+      console.error(help)
     }
     app.exit(cli.kind === 'help' ? 0 : 2)
   })
 } else if (!app.requestSingleInstanceLock()) {
   // A second instance would fight over the handoff file and spawn a rival server.
-  if (cli.kind === 'run') {
-    console.error('Lowerbeam is already open. Quit it before running a task from the command line, so this does not start a second server.')
+  if (cli.kind === 'run' || cli.kind === 'serve') {
+    console.error('Lowerbeam is already open. Quit it before using the command line, so this does not start a second server.')
     app.exit(1)
   } else {
     app.quit()
   }
+} else if (cli.kind === 'serve') {
+  void app.whenReady().then(async () => {
+    try {
+      await serveHeadless(cli)
+      app.exit(0)
+    } catch (err) {
+      console.error((err as Error).message)
+      app.exit(1)
+    }
+  })
 } else if (cli.kind === 'run') {
   void app.whenReady().then(async () => {
     let code = 1

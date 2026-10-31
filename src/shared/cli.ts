@@ -2,8 +2,8 @@
  * The command line in front of the window.
  *
  * `lowerbeam` with no subcommand is the app. `lowerbeam run` is one coding
- * run, printed as it happens, and then the process exits. Parsing lives here
- * so a test can refuse a bad invocation without starting Electron.
+ * run, and `lowerbeam serve` keeps a saved launch up as the local API.
+ * Parsing lives here so a test can refuse a bad invocation without starting Electron.
  */
 import type { CodingMode, JournalEvent, RunOutcome } from './coding.js'
 
@@ -19,7 +19,18 @@ export interface RunCommand {
   model: string | null
 }
 
-export type CliCommand = { kind: 'app' } | { kind: 'help' } | { kind: 'error'; message: string } | RunCommand
+/** Keep a saved launch running as the local API. Null is the last launch. */
+export interface ServeCommand {
+  kind: 'serve'
+  model: string | null
+}
+
+export type CliCommand =
+  | { kind: 'app' }
+  | { kind: 'help'; command: 'run' | 'serve' }
+  | { kind: 'error'; message: string; command?: 'run' | 'serve' }
+  | RunCommand
+  | ServeCommand
 
 export function cliHelp(): string {
   return [
@@ -42,6 +53,19 @@ export function cliHelp(): string {
   ].join('\n')
 }
 
+export function serveHelp(): string {
+  return [
+    'lowerbeam serve [--model NAME]',
+    '',
+    'Start the model last launched in the app, or the saved launch named here,',
+    'and leave it running as a local OpenAI-compatible API. Quit the app first.',
+    'The port and key are the ones set under Local API. Ctrl+C stops the server.',
+    'A model whose saved settings will not fit on this card is not started.',
+    '',
+    '--model NAME    Which saved model to launch. Defaults to the latest one.'
+  ].join('\n')
+}
+
 /**
  * Read our arguments out of Electron's argv.
  *
@@ -50,9 +74,12 @@ export function cliHelp(): string {
  */
 export function parseCli(argv: readonly string[]): CliCommand {
   const runAt = argv.findIndex((arg, index) => arg === 'run' && index > 0)
+  const serveAt = argv.findIndex((arg, index) => arg === 'serve' && index > 0)
+  if (runAt >= 0 && serveAt >= 0) return { kind: 'error', message: 'Pass one command: run or serve.' }
+  if (serveAt >= 0) return parseServe(argv.slice(serveAt + 1))
   if (runAt < 0) return { kind: 'app' }
   const rest = argv.slice(runAt + 1)
-  if (rest.includes('--help') || rest.includes('-h')) return { kind: 'help' }
+  if (rest.includes('--help') || rest.includes('-h')) return { kind: 'help', command: 'run' }
 
   let project: string | null = null
   let task: string | null = null
@@ -75,6 +102,23 @@ export function parseCli(argv: readonly string[]): CliCommand {
   }
   if (!task?.trim()) return { kind: 'error', message: '--task is required.' }
   return { kind: 'run', project, task: task.trim(), mode, model }
+}
+
+function parseServe(rest: readonly string[]): CliCommand {
+  if (rest.includes('--help') || rest.includes('-h')) return { kind: 'help', command: 'serve' }
+  let model: string | null = null
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i]!
+    if (arg === '--model') {
+      const value = rest[++i]
+      if (!value || value.startsWith('--')) return { kind: 'error', message: '--model needs a value.', command: 'serve' }
+      model = value
+      continue
+    }
+    if (arg.startsWith('--')) return { kind: 'error', message: `Unknown option ${arg}.`, command: 'serve' }
+    return { kind: 'error', message: `Unexpected argument ${arg}.`, command: 'serve' }
+  }
+  return { kind: 'serve', model }
 }
 
 function isMode(value: string): value is CodingMode {

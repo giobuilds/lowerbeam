@@ -132,6 +132,11 @@ and `--mode run` work on a copy and leave it unapplied; open the Coding tab
 to apply it. From a source checkout, after `npm run build`, the same command
 is `npx electron . run --task TEXT`.
 
+`lowerbeam serve` starts that same saved launch and leaves it running as the
+local API, until Ctrl+C. `--model NAME` picks a launch by its saved name.
+The port and key are the ones under Local API. A model whose saved settings
+will not fit on this card is refused before it is loaded.
+
 **MCP servers** — any program that speaks the Model Context Protocol over stdin
 and stdout can supply more tools. Give Lowerbeam its command and it starts it,
 lists what it offers, and adds those tools to the same list chat picks from —

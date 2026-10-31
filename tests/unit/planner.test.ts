@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import type { GgufMetadata } from '../../src/main/gguf.js'
-import { planVram, kvCacheBytes, computeBufferBytes, weightBytesOnGpu, attentionLayers } from '../../src/main/planner.js'
+import { planVram, kvCacheBytes, computeBufferBytes, weightBytesOnGpu, attentionLayers, unfitReason } from '../../src/main/planner.js'
 
 // Recorded from qwen2.5-0.5b-instruct-q4_k_m.gguf, whose allocations llama.cpp
 // reported directly and which the assertions below are calibrated against. Kept
@@ -95,6 +95,11 @@ console.log('\nhybrid attention — only the blocks with a cache count')
   assert.equal(Math.round(trained.kvCacheMiB), 8192); ok('a context of 0 is the trained length: 262,144 tokens, an 8 GiB cache')
   assert.ok(trained.notes.some((l) => l.includes('trained length'))); ok('and the notes say so')
   assert.ok(!trained.fits); ok('which does not fit an 8 GB card')
+  assert.match(unfitReason(trained, 'Ornith.gguf') ?? '', /Ornith\.gguf needs about/)
+  ok('a model that will not fit is refused with the size and the free memory')
+  assert.equal(unfitReason({ ...trained, fits: true }, 'Ornith.gguf'), null)
+  assert.equal(unfitReason({ ...trained, fits: null, freeMiB: null }, 'Ornith.gguf'), null)
+  ok('a plan that fits, or a machine with no measured card, is not refused')
 }
 
 console.log(`\n${n} assertions passed`)

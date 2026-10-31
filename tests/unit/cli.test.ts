@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cliHelp, exitCodeFor, formatEvent, parseCli, pickProfile } from '@shared/cli.js'
+import { cliHelp, exitCodeFor, formatEvent, parseCli, pickProfile, serveHelp } from '@shared/cli.js'
 import type { JournalEvent } from '@shared/coding.js'
 
 let n = 0
@@ -17,7 +17,8 @@ console.log('parsing lowerbeam run')
   assert.equal(parseCli(['electron', '/app/out/main/index.js']).kind, 'app')
   ok('no run token opens the window')
 
-  assert.equal(parseCli(['electron', '.', 'run', '--help']).kind, 'help')
+  const runHelp = parseCli(['electron', '.', 'run', '--help'])
+  assert.equal(runHelp.kind === 'help' && runHelp.command, 'run')
   assert.equal(parseCli(['lowerbeam', 'run', '-h']).kind, 'help')
   assert.equal(cliHelp().includes('--task'), true)
   ok('run --help explains the command')
@@ -47,6 +48,25 @@ console.log('parsing lowerbeam run')
   assert.equal(parseCli(['lowerbeam', 'run', '--task', 'x', '--nope']).kind, 'error')
   assert.equal(parseCli(['lowerbeam', 'run', '--task', 'x', 'extra']).kind, 'error')
   ok('a missing task, a bad mode, or an unknown argument is refused')
+}
+
+console.log('parsing lowerbeam serve')
+{
+  const serve = parseCli(['lowerbeam', 'serve', '--model', 'Ornith.gguf'])
+  assert.deepEqual(serve, { kind: 'serve', model: 'Ornith.gguf' })
+  const latest = parseCli(['electron', '.', 'serve'])
+  assert.deepEqual(latest, { kind: 'serve', model: null })
+  ok('serve names a saved model, or the latest launch when none is given')
+
+  const help = parseCli(['lowerbeam', 'serve', '--help'])
+  assert.equal(help.kind === 'help' && help.command, 'serve')
+  assert.equal(serveHelp().includes('--model'), true)
+  ok('serve --help explains the command')
+
+  assert.equal(parseCli(['lowerbeam', 'serve', '--model']).kind, 'error')
+  assert.equal(parseCli(['lowerbeam', 'serve', 'extra']).kind, 'error')
+  assert.equal(parseCli(['lowerbeam', 'run', '--task', 'x', 'serve']).kind, 'error')
+  ok('a bare --model, an extra argument, or both commands is refused')
 }
 
 console.log('\nwhat the terminal shows')
