@@ -32,7 +32,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - The app ships licence notices for the tree-sitter grammars and runtime.
-- Models search lists more distinct chat models. The same file uploaded again, or a renamed fork of one already listed, no longer takes another row. A search by name still looks through every GGUF.
+- The Models page lists more distinct chat models. A renamed fork or a reupload of a model already listed no longer takes another row. A search by name still shows every uploader.
 
 ### Fixed
 

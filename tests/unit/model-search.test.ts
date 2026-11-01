@@ -60,18 +60,18 @@ console.log('\nthe browse page keeps one of each model')
   ok('one Qwen 27B, and the other sizes and families stay')
 }
 
-console.log('\na search keeps a fork someone asked for')
+console.log('\na search keeps each uploader')
 {
   const listed = distinctModels(
     [
-      model('unsloth/Qwen3-4B-GGUF', 100),
-      model('Qwen/Qwen3-4B-GGUF', 80),
-      model('someone/Qwen3-4B-Uncensored-GGUF', 10)
+      model('unsloth/X-GGUF', 100),
+      model('bartowski/X-GGUF', 80),
+      model('unsloth/X-GGUF', 50)
     ],
     false
   ).map((item) => item.id)
-  assert.deepEqual(listed, ['unsloth/Qwen3-4B-GGUF', 'someone/Qwen3-4B-Uncensored-GGUF'])
-  ok('the same name uploaded twice is one row, and the uncensored upload remains')
+  assert.deepEqual(listed, ['unsloth/X-GGUF', 'bartowski/X-GGUF'])
+  ok('bartowski and unsloth each keep a row, and the same repo twice is one')
 }
 
 console.log(`\n${n} assertions passed`)
