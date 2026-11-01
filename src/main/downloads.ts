@@ -60,11 +60,91 @@ export function projectorFor(modelFile: string, files: HfFile[]): HfFile | null 
   return matching ?? [...projectors].sort((a, b) => a.size - b.size)[0]!
 }
 
-export async function searchModels(query: string, limit = 20): Promise<HfModel[]> {
-  const url =
-    `${HF_API}/models?filter=gguf&sort=downloads&direction=-1&limit=${limit}` +
-    (query.trim() ? `&search=${encodeURIComponent(query.trim())}` : '')
-  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+/** How many repos the Models list shows. The request asks for more, then drops duplicates. */
+export const MODEL_SEARCH_LIMIT = 48
+/** Hugging Face page read before that cut. Wide enough that dropping forks still fills the list. */
+const MODEL_SEARCH_FETCH = 100
+
+/**
+ * Words that mark a republish or a renamed fork, not a different model.
+ * Stripped only for the untyped browse, so a search for one of them still finds it.
+ */
+const FORK_TOKENS = new Set([
+  'uncensored', 'abliterated', 'heretic', 'obliterated', 'distill', 'distilled',
+  'imatrix', 'mtp', 'gsq', 'rco', 'nvfp4', 'gptq'
+])
+
+/**
+ * The model a repo is, without the account that uploaded it.
+ *
+ * `browse` also drops fork decoration, so `Qwen3.8-27B-Uncensored` and
+ * `Huihui-Qwen3.8-27B-abliterated` share a name with `Qwen3.8-27B`.
+ */
+export function modelFamily(id: string, browse: boolean): string {
+  const raw = (id.split('/').pop() ?? id).toLowerCase()
+  const tokens = raw.split(/[-_]+/).filter((token) => {
+    if (!token || token === 'gguf' || token === 'ggml') return false
+    return !(browse && FORK_TOKENS.has(token))
+  })
+  return tokens.join('-')
+}
+
+const SIZE = /(?:^|-)\d+(?:\.\d+)?b(?:-|$)|(?:^|-)a\d+b(?:-|$)/
+
+/** True when one name is the other with an account or a fork label added. A further size is a different model. */
+function sameFamily(a: string, b: string): boolean {
+  if (a === b) return true
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a]
+  const at = longer.indexOf(shorter)
+  if (at < 0) return false
+  const before = at === 0 ? '' : longer.slice(0, at)
+  const after = longer.slice(at + shorter.length)
+  if (before && !before.endsWith('-')) return false
+  if (after && !after.startsWith('-')) return false
+  const extra = `${before}${after}`.replace(/^-|-$/g, '')
+  if (!extra) return true
+  if (SIZE.test(extra)) return false
+  // `qwen3` must not swallow `qwen3-8b`.
+  if (!SIZE.test(shorter) && SIZE.test(longer)) return false
+  return true
+}
+
+/**
+ * One row per model, highest downloads first.
+ *
+ * A search only collapses the same name uploaded twice. The untyped browse
+ * also collapses a renamed fork of a model already listed, which is what
+ * made the page look like the same Qwen over and over.
+ */
+export function distinctModels(models: readonly HfModel[], browse: boolean): HfModel[] {
+  const sorted = [...models].sort((a, b) => b.downloads - a.downloads || a.id.localeCompare(b.id))
+  const kept: HfModel[] = []
+  const keys: string[] = []
+  for (const model of sorted) {
+    const key = modelFamily(model.id, browse)
+    if (!key) continue
+    const clash = browse ? keys.some((have) => sameFamily(have, key)) : keys.includes(key)
+    if (clash) continue
+    keys.push(key)
+    kept.push(model)
+  }
+  return kept
+}
+
+export async function searchModels(query: string, limit = MODEL_SEARCH_LIMIT): Promise<HfModel[]> {
+  const q = query.trim()
+  // No query is the page people land on, so it is chat models only: the
+  // all-time GGUF list is audio, embeddings and the same fork many times.
+  // A typed search stays every GGUF, so a vision or embedding repo can be named.
+  const params = new URLSearchParams({
+    filter: 'gguf',
+    sort: 'downloads',
+    direction: '-1',
+    limit: String(q ? Math.min(MODEL_SEARCH_FETCH, Math.max(limit * 4, limit)) : MODEL_SEARCH_FETCH)
+  })
+  if (q) params.set('search', q)
+  else params.set('pipeline_tag', 'text-generation')
+  const res = await fetch(`${HF_API}/models?${params}`, { signal: AbortSignal.timeout(15_000) })
   if (!res.ok) throw new Error(`Hugging Face search failed (HTTP ${res.status})`)
   const raw = (await res.json()) as Array<{
     id: string
@@ -73,7 +153,7 @@ export async function searchModels(query: string, limit = 20): Promise<HfModel[]
     gated?: boolean | string
     lastModified?: string
   }>
-  return raw.map((m) => ({
+  const models = raw.map((m) => ({
     id: m.id,
     downloads: m.downloads ?? 0,
     likes: m.likes ?? 0,
@@ -82,6 +162,7 @@ export async function searchModels(query: string, limit = 20): Promise<HfModel[]
     gated: Boolean(m.gated),
     lastModified: m.lastModified ?? null
   }))
+  return distinctModels(models, !q).slice(0, limit)
 }
 
 /** The GGUF files in a repo, so a quant can be chosen by name and size. */

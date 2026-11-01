@@ -78,6 +78,11 @@ export function Downloads(): React.JSX.Element {
         )}
 
         <div className="min-h-0 flex-1 overflow-y-auto">
+          {!query && results.length > 0 && (
+            <p className="border-b border-edge/60 px-4 py-1.5 text-[11px] text-muted">
+              Popular chat models. Search for a name to look through every GGUF, including vision and embeddings.
+            </p>
+          )}
           {results.length === 0 && !searching && (
             <p className="p-6 text-center text-xs text-muted">No results.</p>
           )}
