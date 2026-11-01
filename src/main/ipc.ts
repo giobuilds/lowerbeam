@@ -627,7 +627,7 @@ export function registerIpc(
     return dir
   })
 
-  handle<HfModel[]>(IPC.hfSearch, (query) => searchModels(String(query ?? ''), 24))
+  handle<HfModel[]>(IPC.hfSearch, (query) => searchModels(String(query ?? '')))
   handle<HfFile[]>(IPC.hfFiles, (repo) => listRepoFiles(String(repo ?? '')))
   /**
    * Fit estimates cost a ranged HTTP fetch of each distinct model's header, so
