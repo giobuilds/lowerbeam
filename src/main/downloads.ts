@@ -112,16 +112,16 @@ function sameFamily(a: string, b: string): boolean {
 /**
  * One row per model, highest downloads first.
  *
- * A search only collapses the same name uploaded twice. The untyped browse
- * also collapses a renamed fork of a model already listed, which is what
- * made the page look like the same Qwen over and over.
+ * The untyped browse collapses by name, including a renamed fork of a model
+ * already listed. A typed search keys on the full repo id, so each uploader
+ * keeps its own row.
  */
 export function distinctModels(models: readonly HfModel[], browse: boolean): HfModel[] {
   const sorted = [...models].sort((a, b) => b.downloads - a.downloads || a.id.localeCompare(b.id))
   const kept: HfModel[] = []
   const keys: string[] = []
   for (const model of sorted) {
-    const key = modelFamily(model.id, browse)
+    const key = browse ? modelFamily(model.id, true) : model.id
     if (!key) continue
     const clash = browse ? keys.some((have) => sameFamily(have, key)) : keys.includes(key)
     if (clash) continue
