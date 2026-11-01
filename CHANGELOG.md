@@ -20,6 +20,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-01
+
 ### Added
 
 - `lowerbeam serve` starts the model last launched in the app, or one named with `--model`, and leaves it running as a local API until Ctrl+C. A model that will not fit is refused with a reason instead of being started.
