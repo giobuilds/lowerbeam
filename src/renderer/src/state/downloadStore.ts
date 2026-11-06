@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { DownloadJob, FitVerdict, HfFile, HfModel, RemoteFit } from '@shared/types.js'
+import { recommendedQuant } from '@shared/moeFit.js'
 import { useServerStore } from './serverStore.js'
 
 interface DownloadState {
@@ -153,20 +154,21 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
   }
 }))
 
-/** Best first: a full offload beats a partial one, which beats CPU-only. */
-export const FIT_RANK: Record<FitVerdict, number> = { full: 0, partial: 1, cpu: 2, unknown: 3 }
+/** Best first: a full offload, then experts-in-RAM, then a partial split, then CPU-only. */
+export const FIT_RANK: Record<FitVerdict, number> = { full: 0, hybrid: 1, partial: 2, cpu: 3, unknown: 4 }
 
 /**
- * The best choice is the *largest* quantisation that still fits entirely in
- * VRAM — more bits means better quality, and spilling to CPU costs far more
- * speed than the extra quality is worth.
+ * The best choice is the largest quantisation that still fits entirely in
+ * VRAM. When none do, a mixture of experts gets the sweet spot for this card
+ * — IQ2_M or Q3 on about 8 GB, Q4_K_M on about 12 GB — rather than no
+ * recommendation at all. `cardMiB` is total VRAM when the device reports it.
  */
-export function recommendedFile(files: HfFile[], fits: Record<string, RemoteFit>): string | null {
-  // A projector is never the recommendation: it is a companion file, not a
-  // model, and it is fetched alongside whichever model is chosen.
-  const fitting = files.filter((f) => !f.isProjector && !f.isDraft && fits[f.path]?.verdict === 'full')
-  if (fitting.length === 0) return null
-  return fitting.reduce((best, f) => (f.size > best.size ? f : best)).path
+export function recommendedFile(
+  files: HfFile[],
+  fits: Record<string, RemoteFit>,
+  cardMiB: number | null = null
+): string | null {
+  return recommendedQuant(files, fits, cardMiB)
 }
 
 /** Push job updates from main into the store. */

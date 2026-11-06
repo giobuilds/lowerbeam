@@ -1,7 +1,7 @@
 import { basename } from 'node:path'
 import { parseGgufHeader } from './gguf.js'
 import type { GgufMetadata } from './gguf.js'
-import { planVram, type ComputeProfile } from './planner.js'
+import { kvCacheBytes, planVram, type ComputeProfile } from './planner.js'
 import type { BinaryInfo, FitVerdict, HfFile, RemoteFit } from '@shared/types.js'
 import { estimateSpeed, comfortOf, type MachineProfile } from './speed.js'
 
@@ -79,10 +79,48 @@ async function fetchHeader(repo: string, file: string): Promise<Partial<GgufMeta
   }
 }
 
-function verdictFor(offloaded: number, total: number): FitVerdict {
-  if (offloaded >= total) return 'full'
+const MiB = 1024 * 1024
+
+/**
+ * VRAM-only "full" is not the only usable answer. A mixture of experts that
+ * does not fit in VRAM can keep its experts in system RAM (`hybrid-moe`).
+ * One that is larger than VRAM and RAM together will not load; that stays
+ * `cpu` and the note says so. With no speed estimate, placement is empty and
+ * the verdict is the VRAM layer count, as before.
+ */
+export function verdictFor(offloaded: number, total: number, placement = ''): FitVerdict {
+  if (placement === 'wont-load') return 'cpu'
+  if (placement === 'hybrid-moe') return 'hybrid'
+  if (total > 0 && offloaded >= total) return 'full'
   if (offloaded > 0) return 'partial'
   return 'cpu'
+}
+
+/**
+ * The speed figure is for a short context. The KV cache of a long trained
+ * context stays on the GPU with the attention, and on a small card it can
+ * cost more than the expert weights that were moved to system RAM.
+ */
+export function hybridKvNote(meta: GgufMetadata, freeMiB: number): string | null {
+  const trained = meta.contextLength
+  if (!trained || trained < 32_768) return null
+  const kv = kvCacheBytes(meta, trained, 'f16', 'f16')
+  const q8 = kvCacheBytes(meta, trained, 'q8_0', 'q8_0')
+  if (kv == null) {
+    return (
+      `Estimate is for ${CONTEXT_FOR_ESTIMATE.toLocaleString()} tokens. ` +
+      `The trained ${trained.toLocaleString()}-token context keeps its KV cache on the GPU, ` +
+      'which can erase the hybrid speed. A shorter context or q8_0 KV keeps it.'
+    )
+  }
+  const kvMiB = kv / MiB
+  if (kvMiB < 1024 && kvMiB < freeMiB * 0.35) return null
+  const q8Text = q8 == null ? '' : ` (${Math.round(q8 / MiB).toLocaleString()} MiB at q8_0)`
+  return (
+    `Estimate is for ${CONTEXT_FOR_ESTIMATE.toLocaleString()} tokens. ` +
+    `The trained ${trained.toLocaleString()}-token context needs about ${Math.round(kvMiB).toLocaleString()} MiB of f16 KV cache${q8Text}, ` +
+    'on the GPU, which can erase the hybrid speed.'
+  )
 }
 
 /**
@@ -152,17 +190,21 @@ export async function estimateRepoFit(
         const offloaded = plan.fits ? plan.totalLayers : (plan.maxGpuLayers ?? 0)
         // Speed is a separate question from fit: a mixture of experts that does
         // not fit in VRAM can still be perfectly usable, and a model that does
-        // fit can still be slow.
+        // fit can still be slow. The verdict follows that placement when we
+        // have one, so a usable hybrid is not labelled as a slow partial.
         const speed = machine ? estimateSpeed(meta, machine) : null
+        const placement = speed?.placement ?? ''
+        const shortContext =
+          shape.contextLength && shape.contextLength < CONTEXT_FOR_ESTIMATE
+            ? `trained for ${shape.contextLength} tokens`
+            : null
+        const kv = placement === 'hybrid-moe' ? hybridKvNote(meta, freeMiB) : null
         out.push({
           file: file.path,
-          verdict: verdictFor(offloaded, plan.totalLayers),
+          verdict: verdictFor(offloaded, plan.totalLayers, placement),
           totalMiB: Math.round(plan.totalMiB),
           maxGpuLayers: plan.maxGpuLayers,
-          note:
-            shape.contextLength && shape.contextLength < CONTEXT_FOR_ESTIMATE
-              ? `trained for ${shape.contextLength} tokens`
-              : null,
+          note: [shortContext, kv].filter(Boolean).join(' ') || null,
           tokensPerSecond: speed?.tokensPerSecond ?? null,
           comfort: comfortOf(speed?.tokensPerSecond ?? null),
           moe: speed?.moe ?? Boolean(shape.expertCount),

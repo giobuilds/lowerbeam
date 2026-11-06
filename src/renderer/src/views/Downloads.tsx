@@ -37,6 +37,7 @@ export function Downloads(): React.JSX.Element {
   const setOnlyFitting = useDownloadStore((s) => s.setOnlyFitting)
   const setChatOnly = useDownloadStore((s) => s.setChatOnly)
   const device = useServerStore((s) => s.devices[0] ?? null)
+  const cardMiB = device ? device.totalMiB || device.freeMiB : null
 
   useEffect(() => {
     if (results.length === 0) void search()
@@ -167,13 +168,16 @@ export function Downloads(): React.JSX.Element {
                             MTP heads and speculative draft GGUFs are hidden. Turn off Chat-runnable only to download one as a draft.
                           </p>
                         )}
+                        {kvWarning(files, fits) && (
+                          <p className="mb-1.5 text-[11px] leading-snug text-amber-200/90">{kvWarning(files, fits)}</p>
+                        )}
                         <ul className="space-y-1">
                           {orderFiles(files, fits, sortBy, onlyFitting, chatOnly).map((f) => (
                             <FileRow
                               key={f.path}
                               file={f}
                               fit={fits[f.path] ?? null}
-                              recommended={f.path === recommendedFile(files, fits)}
+                              recommended={f.path === recommendedFile(files, fits, cardMiB)}
                               onStart={() => void start(m.id, f)}
                             />
                           ))}
@@ -181,7 +185,7 @@ export function Downloads(): React.JSX.Element {
                             <li className="text-[11px] text-muted">
                               {chatOnly && files.some((f) => f.isDraft)
                                 ? 'No chat model in this list. MTP heads and draft GGUFs are hidden — turn off Chat-runnable only to see them.'
-                                : 'None of these quantisations fit in VRAM. Uncheck the filter to download one anyway — it will run partly on CPU.'}
+                                : 'None of these fit in VRAM, and none are a mixture of experts that can keep its experts in system RAM. Uncheck the filter to download one anyway.'}
                             </li>
                           )}
                         </ul>
@@ -227,6 +231,15 @@ export function Downloads(): React.JSX.Element {
   )
 }
 
+/** One warning for the repo: every quant of one model shares the trained context. */
+function kvWarning(files: HfFile[], fits: Record<string, RemoteFit>): string | null {
+  for (const file of files) {
+    const note = fits[file.path]?.note
+    if (note?.includes('KV cache')) return note
+  }
+  return null
+}
+
 /** Ordering and filtering by how well each quantisation suits this machine. */
 function orderFiles(
   files: HfFile[],
@@ -243,7 +256,7 @@ function orderFiles(
         const v = fits[f.path]?.verdict
         // While estimates are still loading, hiding everything would look
         // broken, so unknowns stay visible.
-        return v === 'full' || v === undefined || v === 'unknown'
+        return v === 'full' || v === 'hybrid' || v === undefined || v === 'unknown'
       })
     : choosable
   if (sortBy === 'size') return [...visible].sort((a, b) => a.size - b.size)
@@ -283,6 +296,11 @@ const FIT_STYLE: Record<FitVerdict, { label: string; className: string; title: s
     label: 'fits GPU',
     className: 'bg-emerald-900/50 text-emerald-200',
     title: 'Every layer is expected to fit in VRAM'
+  },
+  hybrid: {
+    label: 'hybrid',
+    className: 'bg-sky-900/60 text-sky-200',
+    title: 'Experts in system RAM, attention on the GPU (--cpu-moe). Speed uses both, not VRAM alone.'
   },
   partial: {
     label: 'partial',
@@ -330,9 +348,13 @@ function FileRow({
         {recommended && (
           <span
             className="ml-1.5 rounded bg-emerald-800/70 px-1 text-[10px] text-emerald-100"
-            title="Largest quantisation that still fits entirely in VRAM"
+            title={
+              fit?.verdict === 'hybrid'
+                ? 'Sweet spot for this card with experts in system RAM (--cpu-moe). A larger file is slower: the active experts are read from RAM each token.'
+                : 'Largest quantisation that still fits entirely in VRAM'
+            }
           >
-            best for your GPU
+            {fit?.verdict === 'hybrid' ? 'best MoE for this GPU' : 'best for your GPU'}
           </span>
         )}
       </span>
@@ -359,10 +381,14 @@ function FileRow({
       <span
         className={`shrink-0 rounded px-1.5 text-[10px] ${style.className}`}
         title={
-          fit?.totalMiB ? `${style.title} — about ${fit.totalMiB.toLocaleString()} MiB` : style.title
+          fit?.placement === 'wont-load'
+            ? 'Larger than free VRAM and system RAM together, so it will not load.'
+            : fit?.totalMiB
+              ? `${style.title} — about ${fit.totalMiB.toLocaleString()} MiB`
+              : style.title
         }
       >
-        {style.label}
+        {fit?.placement === 'wont-load' ? "won't load" : style.label}
       </span>
       <span className="shrink-0 text-[11px] text-muted">{mb(file.size)}</span>
       <button

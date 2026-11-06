@@ -23,6 +23,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 ### Added
 
 - The Models search and each repo’s file list hide MTP heads and speculative draft GGUFs unless Chat-runnable only is turned off. Those files cannot run as the Chat model. A vision projector is still downloaded with the model it belongs to.
+- A mixture-of-experts quant that does not fit in VRAM is marked hybrid, using free VRAM and system RAM together. The Models list recommends IQ2_M or a Q3 on an 8 GB card and Q4_K_M on a 12 GB card, instead of only quants that fit entirely. The Server panel’s Use hybrid offload sets `--cpu-moe` (and q8_0 KV when the cache is still f16). `lowerbeam serve` does the same when the saved launch left experts on the GPU. A long trained context warns that its KV cache can erase that speed.
 
 ## [0.17.0] - 2026-11-01
 

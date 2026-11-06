@@ -86,6 +86,8 @@ export function serveHelp(): string {
     'and leave it running as a local OpenAI-compatible API. Quit the app first.',
     'The port and key are the ones set under Local API. Ctrl+C stops the server.',
     'A model whose saved settings will not fit on this card is not started.',
+    'A mixture-of-experts model that does not fit in VRAM is started with its',
+    'experts in system RAM (--cpu-moe), unless that launch already chose otherwise.',
     '',
     '--model NAME    Which saved model to launch. Defaults to the latest one.'
   ].join('\n')

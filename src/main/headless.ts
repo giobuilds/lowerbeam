@@ -40,7 +40,8 @@ export async function serveHeadless(command: ServeCommand): Promise<void> {
             : 'No model has been launched from the app yet. Launch one there once, then run this again.'
         )
       }
-      const config = launchConfigSchema.parse({ ...profile.config, modelPath: profile.modelPath })
+      const saved = launchConfigSchema.parse({ ...profile.config, modelPath: profile.modelPath })
+      const config = await hybridServeConfig(saved, binary)
       await refuseIfUnfit(config, binary)
       console.error(`loading ${profile.modelName}`)
       await server.start(config, settings.current.localApi)
@@ -70,12 +71,13 @@ export async function serveHeadless(command: ServeCommand): Promise<void> {
  * does not apply it.
  */
 import { basename, join } from 'node:path'
+import { totalmem } from 'node:os'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { app } from 'electron'
 import { ProfileStore } from './profiles.js'
 import { SettingsStore } from './settings.js'
-import { probeAll } from './probe.js'
+import { probeAll, readDevices } from './probe.js'
 import { binaryToProbe } from './llamaManage.js'
 import { ServerSupervisor } from './supervisor.js'
 import { CodingSupervisor } from './coding/supervisor.js'
@@ -84,8 +86,8 @@ import { migrateLegacyUserData } from './migrate.js'
 import { launchConfigSchema } from '@shared/schema.js'
 import { exitCodeFor, formatEvent, pickProfile, serveRefusal, serveStatusLines, type RunCommand, type ServeCommand } from '@shared/cli.js'
 import { planVram, unfitReason } from './planner.js'
+import { withHybridExperts } from './hybridLaunch.js'
 import { readGgufMetadata } from './gguf.js'
-import { readDevices } from './probe.js'
 import type { CodingRunSummary } from '@shared/coding.js'
 import type { BinaryInfo, LaunchConfig, ServerStatus } from '@shared/types.js'
 
@@ -183,6 +185,29 @@ export async function runHeadless(command: RunCommand): Promise<number> {
     coding.shutdown()
     await server.shutdown()
   }
+}
+
+/**
+ * Apply hybrid expert offload when the saved launch never set it and the
+ * model will not fit in VRAM. Failure to read the file leaves the launch as
+ * saved: serve already refuses or starts that one on its own.
+ */
+async function hybridServeConfig(config: LaunchConfig, binary: BinaryInfo): Promise<LaunchConfig> {
+  let meta
+  try {
+    meta = await readGgufMetadata(config.modelPath)
+  } catch {
+    return config
+  }
+  let freeMiB: number | null = null
+  try {
+    freeMiB = (await readDevices(binary))[0]?.freeMiB ?? null
+  } catch {
+    freeMiB = null
+  }
+  const choice = withHybridExperts(config, meta, freeMiB, totalmem(), binary.flags)
+  if (choice.note) console.error(choice.note)
+  return choice.config
 }
 
 /** Auto-fit is llama.cpp's own decision, so the estimate is not used to refuse it. */

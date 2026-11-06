@@ -709,9 +709,14 @@ export interface BenchRunView {
 export type FitVerdict =
   /** Every layer fits in VRAM. */
   | 'full'
+  /**
+   * A mixture of experts: attention on the GPU, experts in system RAM.
+   * Usable on a small card. Not the same as a dense model split across both.
+   */
+  | 'hybrid'
   /** Some layers fit; the rest run on CPU, which is far slower. */
   | 'partial'
-  /** Nothing meaningful fits in VRAM. */
+  /** Nothing meaningful fits in VRAM, or the file is larger than VRAM and RAM together. */
   | 'cpu'
   /** The header could not be read, so no claim is made. */
   | 'unknown'

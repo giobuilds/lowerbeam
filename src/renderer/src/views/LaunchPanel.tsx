@@ -16,7 +16,7 @@ import { managedLabel, showFirstRunOffer } from '@shared/llamaOffer.js'
 const LIVE_PHASES = new Set(['starting', 'loading', 'ready', 'degraded', 'stopping'])
 
 export function LaunchPanel(): React.JSX.Element {
-  const { status, binary, binaries, managed, devices, draft, busy, error, plan, fit, fitLoading } =
+  const { status, binary, binaries, managed, devices, draft, busy, error, plan, fit, fitLoading, models } =
     useServerStore()
   const adoptBinaries = useServerStore((s) => s.adoptBinaries)
   const setDraft = useServerStore((s) => s.setDraft)
@@ -30,6 +30,7 @@ export function LaunchPanel(): React.JSX.Element {
   const phase = status?.phase ?? 'stopped'
   const live = LIVE_PHASES.has(phase)
   const supports = (flag: string): boolean => !binary || binary.flags.includes(flag)
+  const moeBlocks = plan?.moeBlocks ?? 0
 
   return (
     <aside className="flex w-[380px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-edge bg-panel p-4">
@@ -119,13 +120,25 @@ export function LaunchPanel(): React.JSX.Element {
 
       <HealthCheck disabled={live} />
 
-      {plan?.moeBlocks && supports('--n-cpu-moe') && (
+      {moeBlocks > 0 && plan && (supports('--n-cpu-moe') || supports('--cpu-moe')) && (
         <ExpertOffload
-          blocks={plan.moeBlocks}
+          blocks={moeBlocks}
           value={draft.cpuMoeLayers}
           onCpuMiB={plan.expertsOnCpuMiB}
+          fits={plan.fits}
+          trainedContext={models.find((m) => m.path === draft.modelPath)?.contextLength ?? 0}
           disabled={live}
           onChange={(cpuMoeLayers) => setDraft({ cpuMoeLayers })}
+          onUseHybrid={() =>
+            setDraft({
+              cpuMoeLayers: supports('--cpu-moe') ? -1 : moeBlocks,
+              flashAttn: true,
+              // f16 is the untouched default. A cache someone already chose is left alone.
+              ...(draft.cacheTypeK === 'f16' && draft.cacheTypeV === 'f16'
+                ? { cacheTypeK: 'q8_0' as const, cacheTypeV: 'q8_0' as const }
+                : {})
+            })
+          }
         />
       )}
 
@@ -425,46 +438,71 @@ function ExpertOffload({
   blocks,
   value,
   onCpuMiB,
+  fits,
+  trainedContext,
   disabled,
-  onChange
+  onChange,
+  onUseHybrid
 }: {
   blocks: number
   value: number
   onCpuMiB: number
+  fits: boolean | null
+  trainedContext: number
   disabled: boolean
   onChange: (cpuMoeLayers: number) => void
+  onUseHybrid: () => void
 }): React.JSX.Element {
   const mode = value === -1 ? 'all' : value > 0 ? 'some' : 'off'
   const hint =
     mode === 'off'
       ? 'Experts stay with their layers. Move them to system RAM when the model is too large for VRAM.'
       : `${Math.round(onCpuMiB).toLocaleString()} MiB of experts in system RAM; attention stays on the GPU.`
+  const longContext = trainedContext >= 32_768 && (mode !== 'off' || fits === false)
   return (
-    <Field label="MoE experts in system RAM (--cpu-moe)" hint={hint}>
-      <div className="flex gap-2">
-        <select
-          className={inputClass}
-          value={mode}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value === 'all' ? -1 : e.target.value === 'some' ? Math.max(1, Math.floor(blocks / 2)) : 0)}
-        >
-          <option value="off">Off</option>
-          <option value="all">All {blocks} layers</option>
-          <option value="some">The first N layers</option>
-        </select>
-        {mode === 'some' && (
-          <input
-            type="number"
-            min={1}
-            max={blocks}
+    <div className="space-y-1.5">
+      <Field label="MoE experts in system RAM (--cpu-moe)" hint={hint}>
+        <div className="flex gap-2">
+          <select
             className={inputClass}
-            value={value}
+            value={mode}
             disabled={disabled}
-            onChange={(e) => onChange(Math.max(1, Math.min(blocks, Number(e.target.value) || 1)))}
-          />
-        )}
-      </div>
-    </Field>
+            onChange={(e) => onChange(e.target.value === 'all' ? -1 : e.target.value === 'some' ? Math.max(1, Math.floor(blocks / 2)) : 0)}
+          >
+            <option value="off">Off</option>
+            <option value="all">All {blocks} layers</option>
+            <option value="some">The first N layers</option>
+          </select>
+          {mode === 'some' && (
+            <input
+              type="number"
+              min={1}
+              max={blocks}
+              className={inputClass}
+              value={value}
+              disabled={disabled}
+              onChange={(e) => onChange(Math.max(1, Math.min(blocks, Number(e.target.value) || 1)))}
+            />
+          )}
+        </div>
+      </Field>
+      {mode === 'off' && fits === false && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onUseHybrid}
+          title="Sets --cpu-moe so every layer’s experts stay in system RAM. If the KV cache is still f16, switches it to q8_0 and turns flash attention on."
+          className="rounded border border-sky-800 bg-sky-950/40 px-2 py-1 text-[11px] text-sky-100 hover:border-sky-500 disabled:opacity-50"
+        >
+          Use hybrid offload
+        </button>
+      )}
+      {longContext && (
+        <p className="text-[11px] leading-snug text-amber-200/90">
+          Trained for {trainedContext.toLocaleString()} tokens. That KV cache stays on the GPU with the attention and can erase the speed from keeping experts in system RAM, especially when system RAM is tight. A shorter context, or q8_0 KV, keeps it.
+        </p>
+      )}
+    </div>
   )
 }
 
