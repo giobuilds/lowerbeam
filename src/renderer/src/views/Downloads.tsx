@@ -23,7 +23,7 @@ const compact = (n: number): string =>
 export function Downloads(): React.JSX.Element {
   const {
     query, results, searching, expanded, files, filesLoading,
-    fits, fitsLoading, sortBy, onlyFitting, jobs, error
+    fits, fitsLoading, sortBy, onlyFitting, chatOnly, jobs, error
   } = useDownloadStore()
   const setQuery = useDownloadStore((s) => s.setQuery)
   const search = useDownloadStore((s) => s.search)
@@ -35,6 +35,7 @@ export function Downloads(): React.JSX.Element {
   const clearFinished = useDownloadStore((s) => s.clearFinished)
   const setSortBy = useDownloadStore((s) => s.setSortBy)
   const setOnlyFitting = useDownloadStore((s) => s.setOnlyFitting)
+  const setChatOnly = useDownloadStore((s) => s.setChatOnly)
   const device = useServerStore((s) => s.devices[0] ?? null)
 
   useEffect(() => {
@@ -66,6 +67,17 @@ export function Downloads(): React.JSX.Element {
           >
             {searching ? 'Searching…' : 'Search'}
           </button>
+          <label
+            className="flex items-center gap-1.5 text-[11px] text-muted"
+            title="Hide MTP heads and speculative-decoding draft GGUFs. Chat cannot run them on their own. Turn this off to download one as a draft."
+          >
+            <input
+              type="checkbox"
+              checked={chatOnly}
+              onChange={(e) => setChatOnly(e.target.checked)}
+            />
+            Chat-runnable only
+          </label>
         </header>
 
         {error && (
@@ -150,8 +162,13 @@ export function Downloads(): React.JSX.Element {
                             Vision model — the projector it needs is downloaded with it.
                           </p>
                         )}
+                        {chatOnly && files.some((f) => f.isDraft) && (
+                          <p className="mb-1.5 text-[11px] text-muted">
+                            MTP heads and speculative draft GGUFs are hidden. Turn off Chat-runnable only to download one as a draft.
+                          </p>
+                        )}
                         <ul className="space-y-1">
-                          {orderFiles(files, fits, sortBy, onlyFitting).map((f) => (
+                          {orderFiles(files, fits, sortBy, onlyFitting, chatOnly).map((f) => (
                             <FileRow
                               key={f.path}
                               file={f}
@@ -160,10 +177,11 @@ export function Downloads(): React.JSX.Element {
                               onStart={() => void start(m.id, f)}
                             />
                           ))}
-                          {orderFiles(files, fits, sortBy, onlyFitting).length === 0 && (
+                          {orderFiles(files, fits, sortBy, onlyFitting, chatOnly).length === 0 && (
                             <li className="text-[11px] text-muted">
-                              None of these quantisations fit in VRAM. Uncheck the filter to
-                              download one anyway — it will run partly on CPU.
+                              {chatOnly && files.some((f) => f.isDraft)
+                                ? 'No chat model in this list. MTP heads and draft GGUFs are hidden — turn off Chat-runnable only to see them.'
+                                : 'None of these quantisations fit in VRAM. Uncheck the filter to download one anyway — it will run partly on CPU.'}
                             </li>
                           )}
                         </ul>
@@ -214,10 +232,12 @@ function orderFiles(
   files: HfFile[],
   fits: Record<string, RemoteFit>,
   sortBy: 'size' | 'fit' | 'speed',
-  onlyFitting: boolean
+  onlyFitting: boolean,
+  chatOnly: boolean
 ): HfFile[] {
   // Projectors are downloaded with their model, never chosen on their own.
-  const choosable = files.filter((f) => !f.isProjector)
+  // Draft and MTP files are not chat models; they stay hidden until asked for.
+  const choosable = files.filter((f) => !f.isProjector && !(chatOnly && f.isDraft))
   const visible = onlyFitting
     ? choosable.filter((f) => {
         const v = fits[f.path]?.verdict

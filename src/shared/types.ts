@@ -460,6 +460,11 @@ export interface HfFile {
    * alongside its model instead.
    */
   isProjector: boolean
+  /**
+   * An MTP head or a speculative-decoding draft. It is a GGUF file, but Chat
+   * cannot run it on its own; it only drafts for another model.
+   */
+  isDraft: boolean
 }
 
 /** One row of `llama bench` output. */

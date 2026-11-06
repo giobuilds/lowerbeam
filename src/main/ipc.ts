@@ -78,6 +78,7 @@ import type { Evidence } from '@shared/evidence.js'
 import type { ApplyResult, ChangeSet, CodingRunList, CodingRunTicket, GitState, JournalEvent } from '@shared/coding.js'
 import { modelKey, type ProfileStore } from './profiles.js'
 import {
+  modelSearchRequest,
   searchModels,
   listRepoFiles,
   projectorFor,
@@ -627,7 +628,10 @@ export function registerIpc(
     return dir
   })
 
-  handle<HfModel[]>(IPC.hfSearch, (query) => searchModels(String(query ?? '')))
+  handle<HfModel[]>(IPC.hfSearch, (raw) => {
+    const req = modelSearchRequest(raw)
+    return searchModels(req.query, undefined, req.chatOnly)
+  })
   handle<HfFile[]>(IPC.hfFiles, (repo) => listRepoFiles(String(repo ?? '')))
   /**
    * Fit estimates cost a ranged HTTP fetch of each distinct model's header, so
