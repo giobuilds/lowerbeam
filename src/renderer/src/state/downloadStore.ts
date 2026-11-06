@@ -15,6 +15,8 @@ interface DownloadState {
   fitsLoading: boolean
   sortBy: 'size' | 'fit' | 'speed'
   onlyFitting: boolean
+  /** MTP heads and speculative drafts are hidden. Off shows them. */
+  chatOnly: boolean
   jobs: DownloadJob[]
   error: string | null
 
@@ -23,6 +25,7 @@ interface DownloadState {
   expand: (repo: string) => Promise<void>
   setSortBy: (by: 'size' | 'fit' | 'speed') => void
   setOnlyFitting: (only: boolean) => void
+  setChatOnly: (chatOnly: boolean) => void
   start: (repo: string, file: HfFile) => Promise<void>
   cancel: (id: string) => Promise<void>
   forget: (id: string) => Promise<void>
@@ -42,6 +45,7 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
   fitsLoading: false,
   sortBy: 'fit',
   onlyFitting: false,
+  chatOnly: true,
   jobs: [],
   error: null,
 
@@ -52,7 +56,7 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
   async search() {
     set({ searching: true, error: null })
     try {
-      set({ results: await window.llama.downloads.search(get().query), expanded: null, files: [] })
+      set({ results: await window.llama.downloads.search(get().query, get().chatOnly), expanded: null, files: [] })
     } catch (err) {
       set({ error: (err as Error).message })
     } finally {
@@ -90,6 +94,11 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
 
   setOnlyFitting(onlyFitting) {
     set({ onlyFitting })
+  },
+
+  setChatOnly(chatOnly) {
+    set({ chatOnly })
+    void get().search()
   },
 
   async start(repo, file) {
@@ -155,7 +164,7 @@ export const FIT_RANK: Record<FitVerdict, number> = { full: 0, partial: 1, cpu: 
 export function recommendedFile(files: HfFile[], fits: Record<string, RemoteFit>): string | null {
   // A projector is never the recommendation: it is a companion file, not a
   // model, and it is fetched alongside whichever model is chosen.
-  const fitting = files.filter((f) => !f.isProjector && fits[f.path]?.verdict === 'full')
+  const fitting = files.filter((f) => !f.isProjector && !f.isDraft && fits[f.path]?.verdict === 'full')
   if (fitting.length === 0) return null
   return fitting.reduce((best, f) => (f.size > best.size ? f : best)).path
 }

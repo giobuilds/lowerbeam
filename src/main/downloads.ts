@@ -41,6 +41,47 @@ export function isProjectorName(path: string): boolean {
 }
 
 /**
+ * MTP heads and speculative-decoding drafts are GGUF files, but they are not
+ * a model Chat can run. They only work beside a full model.
+ *
+ * Names in the wild: a `mtp`, `draft` or `dflash` token
+ * (`model-Q4_K_M-mtp.gguf`, `…-MTP-APEX-….gguf`, `foo-draft-Q4_K_M.gguf`,
+ * `Model-DFlash2-Q4_K_M.gguf`), `draft` jammed against a quant
+ * (`draftQ4_K_M.gguf`), or a `draft/` / `mtp/` directory of companions.
+ * The check uses the file name, or the repo slug when there is no file, so
+ * an account named like one of these words does not hide its models.
+ * A vision projector is a different companion and stays on `isProjectorName`.
+ */
+const DRAFT_TOKEN = /(?:^|[-_.])(?:mtp|draft|dflash\d*)(?:[-_.]|$)/i
+const DRAFT_QUANT = /draft[-_.]?(?:iq|q)\d/i
+
+export function isDraftCompanionName(path: string): boolean {
+  const parts = path.split('/')
+  const file = (parts.pop() ?? path).replace(/\.gguf$/i, '')
+  if (DRAFT_TOKEN.test(file) || DRAFT_QUANT.test(file)) return true
+  if (!path.toLowerCase().endsWith('.gguf')) return false
+  return parts.some((seg) => /^(mtp|draft|drafts)$/i.test(seg))
+}
+
+/** Drop MTP and draft repos. A typed search would otherwise list them as chat models. */
+export function withoutDraftRepos<T extends { id: string }>(models: readonly T[]): T[] {
+  return models.filter((model) => !isDraftCompanionName(model.id))
+}
+
+/**
+ * What the Models search was asked for.
+ * A bare string is the old call, and it keeps the chat-only default.
+ */
+export function modelSearchRequest(raw: unknown): { query: string; chatOnly: boolean } {
+  if (typeof raw === 'string' || raw == null) return { query: String(raw ?? ''), chatOnly: true }
+  if (typeof raw === 'object' && raw !== null && 'query' in raw) {
+    const body = raw as { query?: unknown; chatOnly?: unknown }
+    return { query: String(body.query ?? ''), chatOnly: body.chatOnly !== false }
+  }
+  return { query: '', chatOnly: true }
+}
+
+/**
  * The projector to fetch alongside a model.
  *
  * Prefers one sharing the model's quantisation. Failing that it takes the
@@ -131,11 +172,14 @@ export function distinctModels(models: readonly HfModel[], browse: boolean): HfM
   return kept
 }
 
-export async function searchModels(query: string, limit = MODEL_SEARCH_LIMIT): Promise<HfModel[]> {
+export async function searchModels(query: string, limit = MODEL_SEARCH_LIMIT, chatOnly = true): Promise<HfModel[]> {
   const q = query.trim()
   // No query is the page people land on, so it is chat models only: the
   // all-time GGUF list is audio, embeddings and the same fork many times.
   // A typed search stays every GGUF, so a vision or embedding repo can be named.
+  // Either way, MTP heads and speculative drafts are left out unless asked for:
+  // they are not models Chat can run, and on the browse page the most-downloaded
+  // copy of a family would otherwise be the draft.
   const params = new URLSearchParams({
     filter: 'gguf',
     sort: 'downloads',
@@ -162,7 +206,8 @@ export async function searchModels(query: string, limit = MODEL_SEARCH_LIMIT): P
     gated: Boolean(m.gated),
     lastModified: m.lastModified ?? null
   }))
-  return distinctModels(models, !q).slice(0, limit)
+  const listed = chatOnly ? withoutDraftRepos(models) : models
+  return distinctModels(listed, !q).slice(0, limit)
 }
 
 /** The GGUF files in a repo, so a quant can be chosen by name and size. */
@@ -178,6 +223,7 @@ export async function listRepoFiles(repo: string): Promise<HfFile[]> {
       path: f.path,
       size: f.size ?? 0,
       isProjector: isProjectorName(f.path),
+      isDraft: isDraftCompanionName(f.path),
       // A split model is handed to llama.cpp as its first shard; the rest are
       // found automatically, so offering them individually would mislead.
       shard: /-(\d{5})-of-(\d{5})\.gguf$/i.test(f.path)

@@ -152,7 +152,7 @@ const api = {
     onMeasureSpeculationProgress: (cb: (step: string) => void) => subscribe<string>(IPC.modelMeasureSpeculationProgress, cb)
   },
   downloads: {
-    search: (query: string) => invoke<HfModel[]>(IPC.hfSearch, query),
+    search: (query: string, chatOnly = true) => invoke<HfModel[]>(IPC.hfSearch, { query, chatOnly }),
     files: (repo: string) => invoke<HfFile[]>(IPC.hfFiles, repo),
     /** Whether each quant in a repo will fit this machine's VRAM. */
     fit: (repo: string) => invoke<RemoteFit[]>(IPC.hfFit, repo),
