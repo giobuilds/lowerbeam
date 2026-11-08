@@ -20,6 +20,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-08
+
 ### Added
 
 - The Models search and each repo’s file list hide MTP heads and speculative draft GGUFs unless Chat-runnable only is turned off. Those files cannot run as the Chat model. A vision projector is still downloaded with the model it belongs to.
