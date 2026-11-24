@@ -18,6 +18,7 @@ import type {
   ConversationView,
   FitSuggestion,
   GpuDevice,
+  GpuSensor,
   BenchRequest,
   BenchRunView,
   ContextMenuCommand,
@@ -105,6 +106,10 @@ const api = {
     healthCheck: (modelPath: string, gpuLayers: number) =>
       invoke<HealthCheckResult>(IPC.binaryHealthCheck, { modelPath, gpuLayers }),
     devices: () => invoke<GpuDevice[]>(IPC.binaryDevices)
+  },
+  gpu: {
+    /** Temperature, power and clock. Empty when this machine has nothing to read. */
+    sensors: () => invoke<GpuSensor[]>(IPC.gpuSensors)
   },
   official: {
     /** The downloaded build, or null when there is none. */

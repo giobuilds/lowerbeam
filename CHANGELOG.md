@@ -20,6 +20,10 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The Server panel shows a GPU's temperature, power and graphics clock, and says when that card is at its power or temperature limit.
+
 ## [0.18.0] - 2026-11-08
 
 ### Added

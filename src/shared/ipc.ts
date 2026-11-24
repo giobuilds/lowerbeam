@@ -20,6 +20,7 @@ export const IPC = {
   binarySelect: 'binary:select',
   binaryPick: 'binary:pick',
   binaryDevices: 'binary:devices',
+  gpuSensors: 'gpu:sensors',
   llamaManaged: 'llama:managed',
   llamaInstall: 'llama:install',
   llamaCancel: 'llama:cancel',

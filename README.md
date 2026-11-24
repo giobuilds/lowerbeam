@@ -42,7 +42,7 @@ On first run, if no llama.cpp is found, Lowerbeam offers to download the officia
 
 | Area | What it covers |
 | --- | --- |
-| **Server** | Launch llama.cpp, live log, GPU/VRAM, crash hints, binary check that actually generates tokens |
+| **Server** | Launch llama.cpp, live log, GPU temperature, power, clock and VRAM, crash hints, binary check that actually generates tokens |
 | **Local API** | OpenAI-compatible endpoint for editors and agents (`lowerbeam serve`) |
 | **Models** | Scan GGUF on disk, VRAM estimate (or `--fit`), remembered launch settings |
 | **Chat** | Streaming markdown, search/export, images, JSON/GBNF constraints, compaction |

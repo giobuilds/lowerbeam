@@ -25,6 +25,7 @@ import type {
   HfModel,
   RemoteFit,
   GpuDevice,
+  GpuSensor,
   HealthCheckResult,
   LaunchProfileView,
   IpcResponse,
@@ -53,6 +54,7 @@ import { measureSpeculation } from './specMeasure.js'
 import type { SlotCache } from './slots.js'
 import type { ServerSupervisor } from './supervisor.js'
 import { missingBinary, probeBinary, readDevices } from './probe.js'
+import { readHostGpuSensors } from './gpuReadout.js'
 import { LlamaRelease } from './llamaRelease.js'
 import { expectNoChoice, installOfferedUpdate, LlamaUpdateSchedule, restorePreviousBuild } from './llamaUpdate.js'
 import {
@@ -417,6 +419,7 @@ export function registerIpc(
   })
 
   handle<GpuDevice[]>(IPC.binaryDevices, () => readDevices(supervisor.binaryInfo))
+  handle<GpuSensor[]>(IPC.gpuSensors, () => readHostGpuSensors())
 
   // The scan touches only file headers, but it walks whole directory trees, so
   // the result is cached and refreshed on demand rather than on every render.

@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { useServerStore } from '../state/serverStore.js'
 import { canDraftFor } from '@shared/speculation.js'
 import { contextAdvice, type CapabilityStatus } from '@shared/capability.js'
+import { assignSensors } from '@shared/gpuReadout.js'
 import { KV_CACHE_TYPES, type LocalApiSettings, type ServerStatus } from '@shared/types.js'
 import { Field, inputClass } from '../components/Field.js'
+import { GpuReadout, useGpuSensors } from '../components/GpuReadout.js'
 import { StatusBadge } from '../components/StatusBadge.js'
 import { ModelPicker } from '../components/ModelPicker.js'
 import { VramBar } from '../components/VramBar.js'
@@ -26,6 +28,8 @@ export function LaunchPanel(): React.JSX.Element {
   const selectBinary = useServerStore((s) => s.selectBinary)
   const clearError = useServerStore((s) => s.clearError)
   const launchMode = useServerStore((s) => s.launchMode)
+  const sensors = useGpuSensors()
+  const readout = assignSensors(devices, sensors)
 
   const phase = status?.phase ?? 'stopped'
   const live = LIVE_PHASES.has(phase)
@@ -309,26 +313,30 @@ export function LaunchPanel(): React.JSX.Element {
         {devices.length === 0 ? (
           <p className="mt-1 text-[11px] text-muted">CPU only — no GPU devices reported.</p>
         ) : (
-          devices.map((d) => (
-            <div key={d.id} className="mt-2">
-              <div className="flex justify-between text-[11px]">
-                <span className="text-slate-300">
-                  {d.id} · {d.name}
-                </span>
-                <span className="text-muted">
-                  {(d.totalMiB - d.freeMiB).toLocaleString()} / {d.totalMiB.toLocaleString()} MiB
-                </span>
+          devices.map((d, i) => {
+            const sensor = readout[i]
+            return (
+              <div key={d.id} className="mt-2">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-slate-300">
+                    {d.id} · {d.name}
+                  </span>
+                  <span className="text-muted">
+                    {(d.totalMiB - d.freeMiB).toLocaleString()} / {d.totalMiB.toLocaleString()} MiB
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink">
+                  <div
+                    className="h-full bg-accent"
+                    style={{
+                      width: `${Math.min(100, ((d.totalMiB - d.freeMiB) / d.totalMiB) * 100)}%`
+                    }}
+                  />
+                </div>
+                {sensor && <GpuReadout sensor={sensor} />}
               </div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ink">
-                <div
-                  className="h-full bg-accent"
-                  style={{
-                    width: `${Math.min(100, ((d.totalMiB - d.freeMiB) / d.totalMiB) * 100)}%`
-                  }}
-                />
-              </div>
-            </div>
-          ))
+            )
+          })
         )}
       </section>
 
