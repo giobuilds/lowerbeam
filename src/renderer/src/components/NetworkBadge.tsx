@@ -20,7 +20,7 @@ export function NetworkBadge(): React.JSX.Element {
 
   const label = view.offline ? 'Offline' : view.active.length > 0 ? view.active.join(' · ') : 'Local'
   const title = view.offline
-    ? 'Offline. Lowerbeam is not checking for updates, downloading, searching, or fetching pages. A link you open, and an MCP server you enable, still run. Click to allow the app’s own requests again.'
+    ? 'Offline. Lowerbeam is not checking for updates, downloading, searching, fetching pages, or loading shared profiles. A link you open, and an MCP server you enable, still run. Click to allow the app’s own requests again.'
     : view.active.length > 0
       ? `Reaching the internet: ${view.active.join(', ')}. Click to stop.`
       : 'Nothing is leaving this machine. Click to turn Lowerbeam’s own network requests off.'

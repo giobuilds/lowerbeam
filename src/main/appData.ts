@@ -86,6 +86,9 @@ const OWN_DATA = [
   'slots',
   'settings.json',
   'profiles.json',
+  // The last shared catalog that verified, and hashes of model files it named.
+  'shared-profiles',
+  'profile-hashes.json',
   'server.json',
   'router-presets.ini',
   'router-cache',

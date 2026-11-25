@@ -11,6 +11,7 @@ import { ModelPicker } from '../components/ModelPicker.js'
 import { VramBar } from '../components/VramBar.js'
 import { HealthCheck } from '../components/HealthCheck.js'
 import { ProfileBadge } from '../components/ProfileBadge.js'
+import { SharedProfileNote } from '../components/SharedProfileNote.js'
 import { ManagedBuildRow, OfficialBuild, OfficialUpdate } from '../components/OfficialBuild.js'
 import { managedLabel, showFirstRunOffer } from '@shared/llamaOffer.js'
 
@@ -73,6 +74,7 @@ export function LaunchPanel(): React.JSX.Element {
       <ModelPicker disabled={live} />
 
       <ProfileBadge disabled={live} />
+      <SharedProfileNote />
 
       {draft.mmprojPath && <ProjectorPlacement disabled={live} projectorMiB={plan?.projectorMiB ?? 0} />}
 

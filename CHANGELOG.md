@@ -24,6 +24,7 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 - The Server panel shows a GPU's temperature, power and graphics clock, and says when that card is at its power or temperature limit.
 - A badge in the window says when Lowerbeam is reaching the internet and why, and one switch turns those requests off. A link you open, and an MCP server you enable, are unchanged. PRIVACY.md describes the switch.
+- A shared profile for this GPU and model can fill in the launch. A short run on this machine checks the speed, and a measurement from this machine always wins. Share opens a pre-filled issue; nothing is sent until you submit it.
 
 ## [0.18.0] - 2026-11-08
 

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc.js'
 import type { ThemeChoice } from '@shared/theme.js'
 import type { NetworkView } from '@shared/network.js'
+import type { SharedProfileOffer } from '@shared/sharedProfile.js'
 import type { ApplyOptions, ApplyResult, ChangeSet, CodingRunList, CodingRunSummary, CodingRunTicket, CodingStartRequest, GitState, JournalEvent } from '@shared/coding.js'
 import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
@@ -195,7 +196,13 @@ const api = {
     /** The known-good settings remembered for a model, if any. */
     get: (modelPath: string) => invoke<LaunchProfileView | null>(IPC.profileGet, modelPath),
     list: () => invoke<LaunchProfileView[]>(IPC.profileList),
-    forget: (modelPath: string) => invoke<null>(IPC.profileForget, modelPath)
+    forget: (modelPath: string) => invoke<null>(IPC.profileForget, modelPath),
+    /** A shared starting point when this machine has no measurement of its own. */
+    shared: (modelPath: string) => invoke<SharedProfileOffer | null>(IPC.profileShared, modelPath),
+    /** Open the measurement issue with this machine's numbers filled in. Nothing is sent here. */
+    share: (modelPath: string, tokPerSec: number | null) => invoke<null>(IPC.profileShare, modelPath, tokPerSec),
+    /** Tokens per second from a short completion on the server that is already running. */
+    confirm: () => invoke<number | null>(IPC.profileConfirm)
   },
   app: {
     /** Name, version and the runtimes underneath, for the About panel. */

@@ -1,3 +1,4 @@
+import { comparisonLine } from '@shared/sharedProfile.js'
 import { useServerStore } from '../state/serverStore.js'
 
 const ago = (ts: number): string => {
@@ -18,8 +19,17 @@ const ago = (ts: number): string => {
 export function ProfileBadge({ disabled }: { disabled: boolean }): React.JSX.Element | null {
   const profile = useServerStore((s) => s.profile)
   const applied = useServerStore((s) => s.profileApplied)
+  const sharedCheck = useServerStore((s) => s.sharedCheck)
+  const modelPath = useServerStore((s) => s.draft.modelPath)
   const forget = useServerStore((s) => s.forgetProfile)
   if (!profile) return null
+
+  const share = (): void => {
+    const got = useServerStore.getState().sharedCheck?.got ?? null
+    void window.llama.profiles.share(modelPath, got).catch((err: unknown) => {
+      useServerStore.setState({ error: err instanceof Error ? err.message : String(err) })
+    })
+  }
 
   return (
     <div className="rounded-md border border-emerald-900/70 bg-emerald-950/25 p-2.5">
@@ -27,15 +37,28 @@ export function ProfileBadge({ disabled }: { disabled: boolean }): React.JSX.Ele
         <span className="text-[11px] font-medium text-emerald-200">
           {applied ? 'Using settings that worked before' : 'Saved settings available'}
         </span>
-        <button
-          type="button"
-          onClick={() => void forget()}
-          disabled={disabled}
-          className="shrink-0 text-[11px] text-muted hover:text-rose-300 disabled:opacity-40"
-        >
-          Forget
-        </button>
+        <span className="flex shrink-0 items-baseline gap-2">
+          <button
+            type="button"
+            onClick={share}
+            title="Opens a GitHub issue with these numbers filled in. Nothing is sent until you submit it."
+            className="text-[11px] text-muted hover:text-slate-200"
+          >
+            Share
+          </button>
+          <button
+            type="button"
+            onClick={() => void forget()}
+            disabled={disabled}
+            className="text-[11px] text-muted hover:text-rose-300 disabled:opacity-40"
+          >
+            Forget
+          </button>
+        </span>
       </div>
+      {sharedCheck && (
+        <p className="mt-0.5 text-[11px] leading-snug text-slate-300">{comparisonLine(sharedCheck.said, sharedCheck.got)}</p>
+      )}
       <p className="mt-0.5 text-[11px] leading-snug text-muted">
         Last launched {ago(profile.lastUsedAt)}
         {profile.loadMs !== null && ` · ready in ${(profile.loadMs / 1000).toFixed(1)}s`}

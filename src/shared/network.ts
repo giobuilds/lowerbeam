@@ -10,7 +10,8 @@ export const NET_REASONS = {
   llama: 'Official llama.cpp build',
   models: 'Hugging Face',
   search: 'Web search',
-  page: 'Fetching a page'
+  page: 'Fetching a page',
+  profiles: 'Shared profiles'
 } as const
 
 export type NetReason = keyof typeof NET_REASONS
