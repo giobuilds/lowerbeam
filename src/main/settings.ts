@@ -62,6 +62,11 @@ const settingsSchema = z.object({
     .default({ port: null, apiKey: '', lan: false }),
   /** Whether to look for a new release on GitHub. On unless turned off. */
   updateChecks: z.boolean().default(true),
+  /**
+   * The app's own network requests are off. A link the person opens, and an
+   * MCP server they enable, are not these requests and still run.
+   */
+  offline: z.boolean().default(false),
   /** Light, dark, or whatever the desktop is using. */
   theme: z.enum(THEME_CHOICES).default('system'),
   /** Workspace copies and command outputs of coding runs finished longer ago than this are removed on start. Null keeps them. */
@@ -105,6 +110,7 @@ const DEFAULTS: Settings = {
   promptPresets: [],
   localApi: { port: null, apiKey: '', lan: false },
   updateChecks: true,
+  offline: false,
   theme: 'system',
   retentionDays: null,
   managedBuild: null,

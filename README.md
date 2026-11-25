@@ -78,7 +78,7 @@ Node 22.12 or later. On Fedora, `libxcrypt-compat` is needed for the RPM target.
 
 ## Privacy and security
 
-No telemetry, analytics or account. [PRIVACY.md](PRIVACY.md) lists every network connection and how to turn each off. To report a vulnerability, use GitHub's private reporting (**Security** → **Report a vulnerability**). See [SECURITY.md](SECURITY.md).
+No telemetry, analytics or account. [PRIVACY.md](PRIVACY.md) lists every network connection and how to turn each off. One switch turns the app's own network requests off. To report a vulnerability, use GitHub's private reporting (**Security** → **Report a vulnerability**). See [SECURITY.md](SECURITY.md).
 
 ## Licence
 

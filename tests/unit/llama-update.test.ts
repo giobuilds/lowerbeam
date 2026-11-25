@@ -15,7 +15,8 @@ import {
 } from '../../src/shared/llamaOffer.js'
 import { llamaOfferSchema, llamaUpdateSetSchema } from '../../src/shared/schema.js'
 import type { BinaryInfo, ManagedBuild } from '../../src/shared/types.js'
-import type { InstalledBuild, ResolvedAsset } from '../../src/main/llamaRelease.js'
+import { LlamaReleaseError, type InstalledBuild, type ResolvedAsset } from '../../src/main/llamaRelease.js'
+import { OfflineError } from '../../src/main/network.js'
 import { SettingsStore } from '../../src/main/settings.js'
 import {
   LlamaUpdateSchedule,
@@ -268,6 +269,35 @@ console.log('\nasking once')
     )
     assert.equal(store.current.llamaUpdateOffer, null)
     ok('an equal tag clears the offer')
+
+    const kept = store.current.llamaCheckedAt
+    assert.ok(kept)
+    const due = new Date(Date.parse(kept) + LLAMA_CHECK_INTERVAL_MS + 1000)
+    assert.equal(
+      await runLlamaUpdateCheck({
+        settings: store,
+        currentPath: managed.path,
+        now: due,
+        resolve: async () => {
+          throw new OfflineError()
+        }
+      }),
+      'skipped'
+    )
+    assert.equal(
+      await runLlamaUpdateCheck({
+        settings: store,
+        currentPath: managed.path,
+        now: due,
+        resolve: async () => {
+          throw new LlamaReleaseError('cancelled', 'Download cancelled.')
+        }
+      }),
+      'skipped'
+    )
+    assert.equal(store.current.llamaCheckedAt, kept)
+    assert.equal(store.current.llamaUpdateOffer, null)
+    ok('going offline or cancelling leaves the day’s check still due')
   })
 }
 
@@ -481,6 +511,40 @@ console.log('\nonce a day from the schedule')
       await new Promise((resolve) => setTimeout(resolve, 40))
       assert.equal(calls, 1)
       ok('the schedule asks when the check is turned on, and not again that day')
+    } finally {
+      schedule.stop()
+    }
+  })
+}
+
+{
+  await withSettings(async (store, root) => {
+    const managed = managedAt(root, 'b1')
+    await store.patch({ binaryPath: managed.path, managedBuild: managed, llamaUpdateCheck: true })
+    let calls = 0
+    let blocked = true
+    const schedule = new LlamaUpdateSchedule(
+      store,
+      async () => {
+        calls += 1
+        return { tag: 'b2' }
+      },
+      () => managed.path,
+      () => new Date(DAY),
+      () => blocked
+    )
+    try {
+      schedule.start()
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      assert.equal(calls, 0)
+      assert.equal(store.current.llamaCheckedAt, null)
+      blocked = false
+      schedule.nudge()
+      for (let i = 0; i < 50 && calls < 1; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      assert.equal(calls, 1)
+      ok('a blocked schedule waits, and asks once the network is allowed again')
     } finally {
       schedule.stop()
     }

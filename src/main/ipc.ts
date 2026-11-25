@@ -93,6 +93,8 @@ import { derive } from './calibration.js'
 import { totalmem } from 'node:os'
 import { BenchRunner } from './bench.js'
 import { BUILT_IN_TOOLS, runTool, setSearxngUrl } from './tools.js'
+import { NetworkGate, OfflineError } from './network.js'
+import type { NetworkView } from '@shared/network.js'
 import type { McpRegistry } from './mcpRegistry.js'
 import { unconfirmedMcpCall } from '@shared/mcpConfirm.js'
 import { benchRequestSchema } from '@shared/schema.js'
@@ -164,7 +166,8 @@ export function registerIpc(
   /** Every llama.cpp install found at startup, best first. */
   discovered: BinaryInfo[],
   updater: Updater,
-  slots: SlotCache
+  slots: SlotCache,
+  gate: NetworkGate
 ): void {
   handle<ServerStatus>(IPC.serverStatus, () => supervisor.status)
 
@@ -198,6 +201,16 @@ export function registerIpc(
     await settings.patch({ theme })
     nativeTheme.themeSource = theme
     return theme
+  })
+  handle<NetworkView>(IPC.networkGet, () => gate.view())
+  handle<NetworkView>(IPC.networkSetOffline, async (raw) => {
+    // Only an explicit true turns requests off. Anything else leaves them on.
+    const offline = raw === true
+    await settings.patch({ offline })
+    gate.setOffline(offline)
+    // A check that found the switch off did not arm another timer.
+    if (!offline) llamaSchedule?.nudge()
+    return gate.view()
   })
   // Where another machine would reach this one: each non-internal IPv4 address.
   handle<string[]>(IPC.lanAddresses, () =>
@@ -242,8 +255,14 @@ export function registerIpc(
   // not run for a binary the person chose themselves.
   llamaSchedule = new LlamaUpdateSchedule(
     settings,
-    (backend) => new LlamaRelease().resolve(backend, 'pinned'),
-    () => supervisor.binaryInfo.path
+    (backend) => {
+      const abort = new AbortController()
+      const stop = gate.onStop(() => abort.abort())
+      return gate.reach('llama', () => new LlamaRelease().resolve(backend, 'pinned', abort.signal)).finally(stop)
+    },
+    () => supervisor.binaryInfo.path,
+    () => new Date(),
+    () => gate.isOffline
   )
   const noteBinary = (): void => {
     llamaSchedule?.publishView()
@@ -283,13 +302,31 @@ export function registerIpc(
   handle<ManagedBuild | null>(IPC.llamaManaged, () => settings.current.managedBuild)
 
   let llamaAbort: AbortController | null = null
+  gate.onStop(() => {
+    llamaAbort?.abort()
+    for (const job of downloads.list()) {
+      if (job.state === 'running' || job.state === 'queued') downloads.cancel(job.id)
+    }
+  })
+  const modelHolds = new Map<string, () => void>()
+  downloads.on('update', (job) => {
+    const live = job.state === 'running' || job.state === 'queued'
+    if (live && !modelHolds.has(job.id)) modelHolds.set(job.id, gate.hold('models'))
+    if (!live) {
+      modelHolds.get(job.id)?.()
+      modelHolds.delete(job.id)
+    }
+  })
+
   handle<BinarySelection>(IPC.llamaInstall, async (raw) => {
+    if (gate.isOffline) throw new OfflineError()
     const choice = llamaInstallSchema.parse(raw)
     assertServerStopped()
     if (llamaAbort) throw new Error('A download is already running.')
     const abort = new AbortController()
     llamaAbort = abort
     let lastProgress = 0
+    const release = gate.hold('llama')
     try {
       const installed = await new LlamaRelease().install({
         root: llamaRoot(app.getPath('userData')),
@@ -311,6 +348,7 @@ export function registerIpc(
       noteBinary()
       return selection()
     } finally {
+      release()
       if (llamaAbort === abort) llamaAbort = null
     }
   })
@@ -370,11 +408,13 @@ export function registerIpc(
   // The tag was stored by the check. The renderer sends no tag, path or URL.
   handle<BinarySelection>(IPC.llamaUpdateInstall, async (...args) => {
     expectNoChoice(args)
+    if (gate.isOffline) throw new OfflineError()
     assertServerStopped()
     if (llamaAbort) throw new Error('A download is already running.')
     const abort = new AbortController()
     llamaAbort = abort
     let lastProgress = 0
+    const release = gate.hold('llama')
     try {
       const installed = await installOfferedUpdate({
         settings,
@@ -393,6 +433,7 @@ export function registerIpc(
       placeBinary(installed.binary)
       return selection()
     } finally {
+      release()
       if (llamaAbort === abort) llamaAbort = null
     }
   })
@@ -633,9 +674,9 @@ export function registerIpc(
 
   handle<HfModel[]>(IPC.hfSearch, (raw) => {
     const req = modelSearchRequest(raw)
-    return searchModels(req.query, undefined, req.chatOnly)
+    return gate.reach('models', () => searchModels(req.query, undefined, req.chatOnly))
   })
-  handle<HfFile[]>(IPC.hfFiles, (repo) => listRepoFiles(String(repo ?? '')))
+  handle<HfFile[]>(IPC.hfFiles, (repo) => gate.reach('models', () => listRepoFiles(String(repo ?? ''))))
   /**
    * Fit estimates cost a ranged HTTP fetch of each distinct model's header, so
    * they are cached per repo. The answer only changes if the binary does, which
@@ -671,18 +712,20 @@ export function registerIpc(
     const cached = repoFitCache.get(key)
     if (cached) return cached
 
-    const files = await listRepoFiles(repo)
-    // Free VRAM is read now rather than reused from startup: what fits depends
-    // on what else is currently using the card.
-    let freeMiB: number | null = null
-    try {
-      freeMiB = (await readDevices(binary))[0]?.freeMiB ?? null
-    } catch {
-      freeMiB = null
-    }
-    const fits = await estimateRepoFit(repo, files, freeMiB, binary, machineProfile())
-    repoFitCache.set(key, fits)
-    return fits
+    return gate.reach('models', async () => {
+      const files = await listRepoFiles(repo)
+      // Free VRAM is read now rather than reused from startup: what fits depends
+      // on what else is currently using the card.
+      let freeMiB: number | null = null
+      try {
+        freeMiB = (await readDevices(binary))[0]?.freeMiB ?? null
+      } catch {
+        freeMiB = null
+      }
+      const fits = await estimateRepoFit(repo, files, freeMiB, binary, machineProfile())
+      repoFitCache.set(key, fits)
+      return fits
+    })
   })
 
   handle<DownloadJob[]>(IPC.downloadList, () => downloads.listWithDiskState())
@@ -696,20 +739,22 @@ export function registerIpc(
   })
   handle<DownloadJob>(IPC.downloadStart, async (raw) => {
     const req = downloadRequestSchema.parse(raw)
+    if (gate.isOffline) throw new OfflineError()
     const job = await downloads.start(req.repo, req.file, req.expectedBytes)
 
     // A vision model without its projector loads as text-only and never says
     // so. `llama download` does not fetch it for a specific --hf-file, so the
     // pair is queued here rather than leaving the user a half-usable model.
     try {
-      const files = await listRepoFiles(req.repo)
+      const files = await gate.reach('models', () => listRepoFiles(req.repo))
       const projector = projectorFor(req.file, files)
       if (projector && !isProjectorName(req.file)) {
+        if (gate.isOffline) throw new OfflineError()
         await downloads.start(req.repo, projector.path, projector.size)
       }
     } catch {
       // The model itself is already downloading; failing to pair a projector
-      // should not undo that.
+      // should not undo that. Going offline cancels the job from the switch.
     }
     return job
   })
@@ -1029,7 +1074,7 @@ export function registerIpc(
       if (req.confirmed !== true) return unconfirmedMcpCall(req.name)
       return mcp.call(req.name, req.args)
     }
-    return runTool(req.name, req.args)
+    return runTool(req.name, req.args, gate)
   })
 
   handle<ConversationSummaryView[]>(IPC.chatList, () => conversations.list())
@@ -1105,7 +1150,8 @@ export function wireEvents(
   mcp: McpRegistry,
   coding: CodingSupervisor,
   updater: Updater,
-  settings: SettingsStore
+  settings: SettingsStore,
+  gate: NetworkGate
 ): void {
   const broadcast = (channel: string, payload?: unknown): void => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -1124,6 +1170,7 @@ export function wireEvents(
   coding.on('runs', (runs) => broadcast(IPC.codingRunsChanged, runs))
   coding.on('measure', (progress) => broadcast(IPC.codingMeasureChanged, progress))
   updater.on('state', (state: UpdateState) => broadcast(IPC.updateChanged, { ...state, enabled: settings.current.updateChecks }))
+  gate.subscribe((view) => broadcast(IPC.networkChanged, view))
   llamaSchedule?.setPublisher((view) => broadcast(IPC.llamaUpdateChanged, view))
   llamaSchedule?.start()
 
