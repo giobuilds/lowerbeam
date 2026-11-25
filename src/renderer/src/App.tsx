@@ -21,6 +21,7 @@ import { subscribeToCoding } from './state/codingStore.js'
 import { isWebUrl } from '@shared/url.js'
 import { servedModel } from '@shared/served.js'
 import { StatusBadge } from './components/StatusBadge.js'
+import { NetworkBadge } from './components/NetworkBadge.js'
 import { InstalledModels } from './components/InstalledModels.js'
 
 type Tab = 'chat' | 'server' | 'models' | 'tuning' | 'coding'
@@ -179,6 +180,7 @@ export default function App(): React.JSX.Element {
               vision
             </span>
           )}
+          <NetworkBadge />
           <StatusBadge phase={status?.phase ?? 'stopped'} />
         </div>
       </nav>

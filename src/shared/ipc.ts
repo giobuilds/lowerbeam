@@ -10,6 +10,9 @@ export const IPC = {
   menuAction: 'menu:action',
   themeGet: 'settings:theme-get',
   themeSet: 'settings:theme-set',
+  networkGet: 'network:get',
+  networkSetOffline: 'network:set-offline',
+  networkChanged: 'network:changed',
   /** Main forwards a right-click's spelling data; the renderer draws the menu. */
   contextMenuShow: 'context-menu:show',
   contextMenuCommand: 'context-menu:command',
@@ -20,6 +23,7 @@ export const IPC = {
   binarySelect: 'binary:select',
   binaryPick: 'binary:pick',
   binaryDevices: 'binary:devices',
+  gpuSensors: 'gpu:sensors',
   llamaManaged: 'llama:managed',
   llamaInstall: 'llama:install',
   llamaCancel: 'llama:cancel',

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ThemeChoice } from '@shared/theme.js'
+import type { NetworkView } from '@shared/network.js'
 
 /**
  * Settings for the app itself.
@@ -33,6 +34,7 @@ export function AppSettings({ onClose }: { onClose: () => void }): React.JSX.Ele
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
           <Appearance />
+          <Network />
         </div>
       </div>
     </div>
@@ -84,6 +86,51 @@ function Appearance(): React.JSX.Element {
           </label>
         ))}
       </fieldset>
+      {error && <p className="mt-2 text-[11px] text-rose-200">{error}</p>}
+    </section>
+  )
+}
+
+function Network(): React.JSX.Element {
+  const [offline, setOffline] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let stop = (): void => {}
+    void window.llama.network
+      .get()
+      .then((view) => setOffline(view.offline))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+    stop = window.llama.network.onChanged((view: NetworkView) => setOffline(view.offline))
+    return () => stop()
+  }, [])
+
+  const choose = (next: boolean): void => {
+    setOffline(next)
+    setError('')
+    void window.llama.network
+      .setOffline(next)
+      .then((view) => setOffline(view.offline))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+  }
+
+  return (
+    <section className="rounded border border-edge bg-ink/40 p-3">
+      <h3 className="text-xs font-semibold text-slate-200">Network</h3>
+      <label className="mt-2 flex cursor-pointer items-start gap-2">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={offline}
+          onChange={(e) => choose(e.target.checked)}
+        />
+        <span>
+          <span className="block text-sm text-slate-100">Offline</span>
+          <span className="block text-[11px] text-muted">
+            Stop every request Lowerbeam makes: update checks, the official llama.cpp build, Hugging Face, web search, and pages a model fetches. A link you open, and an MCP server you turn on, still run. The model on this machine is unchanged.
+          </span>
+        </span>
+      </label>
       {error && <p className="mt-2 text-[11px] text-rose-200">{error}</p>}
     </section>
   )

@@ -23,6 +23,7 @@ import { runHeadless, serveHeadless } from './headless.js'
 import { isWebUrl } from '@shared/url.js'
 import { APP_INDEX_PATH, isAppUrl, trustWindow } from './sender.js'
 import { Updater } from './updater.js'
+import { NetworkGate } from './network.js'
 import { tightenTree } from './private.js'
 import { SlotCache } from './slots.js'
 
@@ -178,12 +179,13 @@ async function bootstrap(): Promise<void> {
   // Retention, when it is set: old runs' workspace copies and command outputs go.
   if (settings.current.retentionDays) void coding.pruneOlderThan(settings.current.retentionDays).catch(() => {})
 
-  const updater = new Updater(() => settings.current.updateChecks)
+  const gate = new NetworkGate(settings.current.offline)
+  const updater = new Updater(() => settings.current.updateChecks, gate)
   // A long chat's server slot, saved when you leave it and restored on return.
   const slots = new SlotCache(join(app.getPath('userData'), 'slots'), () => (supervisor ? { status: supervisor.status, build: supervisor.binaryInfo.version } : null))
   void slots.sweep(async (id) => (await conversations.get(id).catch(() => null)) !== null).catch(() => {})
-  registerIpc(supervisor, settings, conversations, profiles, mcp, downloads, coding, discovered, updater, slots)
-  wireEvents(supervisor, downloads, mcp, coding, updater, settings)
+  registerIpc(supervisor, settings, conversations, profiles, mcp, downloads, coding, discovered, updater, slots, gate)
+  wireEvents(supervisor, downloads, mcp, coding, updater, settings, gate)
   await supervisor.adoptOrReap()
 
   registerContextMenuCommands()

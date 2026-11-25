@@ -1,6 +1,7 @@
 import { SEARCH_RATE_LIMITED } from '@shared/searchBudget.js'
 import { searchWeb, searchSearxng, fetchPage, SearchRateLimited, DEFAULT_LIMITS } from './web.js'
 import type { ToolDefinition, ToolResult } from '@shared/types.js'
+import type { NetworkGate } from './network.js'
 
 /**
  * Tools the model can call.
@@ -68,10 +69,20 @@ export function setSearxngUrl(url: string): void {
   searxngUrl = url.trim()
 }
 
-export async function runTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+export async function runTool(
+  name: string,
+  args: Record<string, unknown>,
+  gate?: NetworkGate
+): Promise<ToolResult> {
   try {
-    if (name === WEB_SEARCH) return await runSearch(String(args['query'] ?? ''))
-    if (name === FETCH_PAGE) return await runFetch(String(args['url'] ?? ''))
+    if (name === WEB_SEARCH) {
+      const run = (): Promise<ToolResult> => runSearch(String(args['query'] ?? ''))
+      return gate ? await gate.reach('search', run) : await run()
+    }
+    if (name === FETCH_PAGE) {
+      const run = (): Promise<ToolResult> => runFetch(String(args['url'] ?? ''))
+      return gate ? await gate.reach('page', run) : await run()
+    }
     return { ok: false, summary: `Unknown tool ${name}`, content: `There is no tool called ${name}.` }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

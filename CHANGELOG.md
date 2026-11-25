@@ -20,6 +20,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The Server panel shows a GPU's temperature, power and graphics clock, and says when that card is at its power or temperature limit.
+- A badge in the window says when Lowerbeam is reaching the internet and why, and one switch turns those requests off. A link you open, and an MCP server you enable, are unchanged. PRIVACY.md describes the switch.
+
 ## [0.18.0] - 2026-11-08
 
 ### Added

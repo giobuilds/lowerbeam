@@ -345,6 +345,41 @@ export interface GpuDevice {
   freeMiB: number
 }
 
+/**
+ * Live readings from the card. llama.cpp's device list is only a name and a
+ * VRAM total, which cannot show why a run slowed down. The PCI ids are for a
+ * later profile match; nothing here is stored or sent.
+ */
+export interface GpuSensor {
+  /** DRM node such as `card0`, or `nvidia0` when only nvidia-smi answered. */
+  id: string
+  vendor: 'amd' | 'nvidia'
+  /** Lowercase `0x1002` form. Null when the driver did not say. */
+  vendorId: string | null
+  deviceId: string | null
+  /** Marketing name when the driver printed one. AMD sysfs usually has none. */
+  name: string | null
+  /** Total VRAM in MiB, so this can be paired with a llama.cpp device. */
+  vramMiB: number | null
+  /** Edge temperature in °C. */
+  tempC: number | null
+  /** Junction or hotspot in °C, when the driver reports it apart from the edge. */
+  junctionC: number | null
+  /** Draw in watts. */
+  powerW: number | null
+  /** The card's power cap in watts. */
+  powerLimitW: number | null
+  /** Graphics clock in MHz. */
+  clockMHz: number | null
+  /** Highest graphics clock the driver lists, in MHz. */
+  clockMaxMHz: number | null
+  /**
+   * Set only from a driver flag or from sitting on the published limit.
+   * A low clock by itself is not a limit: an idle card also clocks down.
+   */
+  limit: 'temperature' | 'power' | 'temperature-and-power' | null
+}
+
 /** Mirrors main/planner.ts VramPlan; duplicated here so the renderer can type it. */
 /**
  * What a router launch can hold at once. Every model is planned with its own

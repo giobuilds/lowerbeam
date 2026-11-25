@@ -42,7 +42,7 @@ On first run, if no llama.cpp is found, Lowerbeam offers to download the officia
 
 | Area | What it covers |
 | --- | --- |
-| **Server** | Launch llama.cpp, live log, GPU/VRAM, crash hints, binary check that actually generates tokens |
+| **Server** | Launch llama.cpp, live log, GPU temperature, power, clock and VRAM, crash hints, binary check that actually generates tokens |
 | **Local API** | OpenAI-compatible endpoint for editors and agents (`lowerbeam serve`) |
 | **Models** | Scan GGUF on disk, VRAM estimate (or `--fit`), remembered launch settings |
 | **Chat** | Streaming markdown, search/export, images, JSON/GBNF constraints, compaction |
@@ -78,7 +78,7 @@ Node 22.12 or later. On Fedora, `libxcrypt-compat` is needed for the RPM target.
 
 ## Privacy and security
 
-No telemetry, analytics or account. [PRIVACY.md](PRIVACY.md) lists every network connection and how to turn each off. To report a vulnerability, use GitHub's private reporting (**Security** → **Report a vulnerability**). See [SECURITY.md](SECURITY.md).
+No telemetry, analytics or account. [PRIVACY.md](PRIVACY.md) lists every network connection and how to turn each off. One switch turns the app's own network requests off. To report a vulnerability, use GitHub's private reporting (**Security** → **Report a vulnerability**). See [SECURITY.md](SECURITY.md).
 
 ## Licence
 

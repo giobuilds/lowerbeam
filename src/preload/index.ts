@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc.js'
 import type { ThemeChoice } from '@shared/theme.js'
+import type { NetworkView } from '@shared/network.js'
 import type { ApplyOptions, ApplyResult, ChangeSet, CodingRunList, CodingRunSummary, CodingRunTicket, CodingStartRequest, GitState, JournalEvent } from '@shared/coding.js'
 import type { CapabilityStatus, MeasureProgress } from '@shared/capability.js'
 import type { Evidence } from '@shared/evidence.js'
@@ -18,6 +19,7 @@ import type {
   ConversationView,
   FitSuggestion,
   GpuDevice,
+  GpuSensor,
   BenchRequest,
   BenchRunView,
   ContextMenuCommand,
@@ -105,6 +107,10 @@ const api = {
     healthCheck: (modelPath: string, gpuLayers: number) =>
       invoke<HealthCheckResult>(IPC.binaryHealthCheck, { modelPath, gpuLayers }),
     devices: () => invoke<GpuDevice[]>(IPC.binaryDevices)
+  },
+  gpu: {
+    /** Temperature, power and clock. Empty when this machine has nothing to read. */
+    sensors: () => invoke<GpuSensor[]>(IPC.gpuSensors)
   },
   official: {
     /** The downloaded build, or null when there is none. */
@@ -308,6 +314,11 @@ const api = {
   settings: {
     theme: () => invoke<ThemeChoice>(IPC.themeGet),
     setTheme: (theme: ThemeChoice) => invoke<ThemeChoice>(IPC.themeSet, theme)
+  },
+  network: {
+    get: () => invoke<NetworkView>(IPC.networkGet),
+    setOffline: (offline: boolean) => invoke<NetworkView>(IPC.networkSetOffline, offline),
+    onChanged: (cb: (view: NetworkView) => void) => subscribe(IPC.networkChanged, cb)
   },
   dialog: {
     pickModelFile: () => invoke<string | null>(IPC.pickModelFile),

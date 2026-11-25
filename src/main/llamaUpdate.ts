@@ -18,7 +18,8 @@ import {
 } from '@shared/llamaOffer.js'
 import type { BinaryInfo, LlamaUpdateView, ManagedBuild } from '@shared/types.js'
 import { managedDirectory, rememberManagedBuild } from './llamaManage.js'
-import type { InstallTreeOptions, InstalledBuild, ResolvedAsset } from './llamaRelease.js'
+import { LlamaReleaseError, type InstallTreeOptions, type InstalledBuild, type ResolvedAsset } from './llamaRelease.js'
+import { OfflineError } from './network.js'
 import type { Settings, SettingsStore } from './settings.js'
 
 /** The slice of the release client the check and Install use. */
@@ -76,7 +77,12 @@ export async function runLlamaUpdateCheck(opts: {
       llamaUpdateOffer: newer === null ? null : { tag: asset.tag, backend: managed.backend }
     })
     return 'checked'
-  } catch {
+  } catch (err) {
+    // Going offline, or cancelling, is not a failed day. The next time the
+    // network is allowed, the check is still due.
+    if (err instanceof OfflineError || (err instanceof LlamaReleaseError && err.code === 'cancelled')) {
+      return 'skipped'
+    }
     await opts.settings.patch({ llamaCheckedAt: opts.now.toISOString() })
     return 'failed'
   }
@@ -189,7 +195,9 @@ export class LlamaUpdateSchedule {
     private readonly settings: SettingsStore,
     private readonly resolve: (backend: ManagedBuild['backend']) => Promise<{ tag: string }>,
     private readonly currentPath: () => string,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
+    /** When true, the day's check waits. It does not count as done. */
+    private readonly blocked: () => boolean = () => false
   ) {}
 
   setPublisher(fn: (view: LlamaUpdateView) => void): void {
@@ -248,6 +256,7 @@ export class LlamaUpdateSchedule {
       clearTimeout(this.timer)
       this.timer = null
     }
+    if (this.blocked()) return
     if (!this.settings.current.llamaUpdateCheck) return
     const outcome = await runLlamaUpdateCheck({
       settings: this.settings,
