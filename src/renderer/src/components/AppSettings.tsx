@@ -127,7 +127,7 @@ function Network(): React.JSX.Element {
         <span>
           <span className="block text-sm text-slate-100">Offline</span>
           <span className="block text-[11px] text-muted">
-            Stop every request Lowerbeam makes: update checks, the official llama.cpp build, Hugging Face, web search, and pages a model fetches. A link you open, and an MCP server you turn on, still run. The model on this machine is unchanged.
+            Stop every request Lowerbeam makes: update checks, the official llama.cpp build, Hugging Face, web search, pages a model fetches, and shared profiles. A link you open, and an MCP server you turn on, still run. The model on this machine is unchanged.
           </span>
         </span>
       </label>

@@ -1,7 +1,7 @@
 import { app, ipcMain, dialog, session, shell, BrowserWindow, nativeTheme, type WebContents } from 'electron'
 import { createRequire } from 'node:module'
 import { stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { networkInterfaces } from 'node:os'
 import { conversationMarkdown, exportFileName } from '@shared/chatExport.js'
 import { z, ZodError } from 'zod'
@@ -95,6 +95,25 @@ import { BenchRunner } from './bench.js'
 import { BUILT_IN_TOOLS, runTool, setSearxngUrl } from './tools.js'
 import { NetworkGate, OfflineError } from './network.js'
 import type { NetworkView } from '@shared/network.js'
+import { readGgufMetadata } from './gguf.js'
+import type { ProfileCatalog } from './profileCatalog.js'
+import type { ProfileHashes } from './profileHashes.js'
+import { confirmLocalSpeed } from './profileConfirm.js'
+import { machineForProfiles } from './profileMachine.js'
+import {
+  comparisonLine,
+  describeGpu,
+  describeLaunch,
+  describeLlama,
+  describeSpeed,
+  matchShared,
+  measurementIssueUrl,
+  sharedOffer,
+  shouldHashModel,
+  urlHidesPath,
+  type SharedMatch,
+  type SharedProfileOffer
+} from '@shared/sharedProfile.js'
 import type { McpRegistry } from './mcpRegistry.js'
 import { unconfirmedMcpCall } from '@shared/mcpConfirm.js'
 import { benchRequestSchema } from '@shared/schema.js'
@@ -146,6 +165,11 @@ function handleFrom<T>(channel: string, fn: (sender: WebContents, ...args: unkno
  * A raw ZodError serialises to an unreadable JSON blob. The UI shows this string
  * verbatim, so it is flattened into "field: reason" here.
  */
+function appVersion(): string {
+  const manifest = createRequire(import.meta.url)('../../package.json') as { version?: string }
+  return typeof manifest.version === 'string' ? manifest.version : ''
+}
+
 function describeError(err: unknown): string {
   if (err instanceof ZodError) {
     return err.issues
@@ -167,7 +191,9 @@ export function registerIpc(
   discovered: BinaryInfo[],
   updater: Updater,
   slots: SlotCache,
-  gate: NetworkGate
+  gate: NetworkGate,
+  catalog: ProfileCatalog,
+  hashes: ProfileHashes
 ): void {
   handle<ServerStatus>(IPC.serverStatus, () => supervisor.status)
 
@@ -209,7 +235,11 @@ export function registerIpc(
     await settings.patch({ offline })
     gate.setOffline(offline)
     // A check that found the switch off did not arm another timer.
-    if (!offline) llamaSchedule?.nudge()
+    // The catalog fetch is the same kind of request, so coming back on tries again.
+    if (!offline) {
+      llamaSchedule?.nudge()
+      void catalog.refresh()
+    }
     return gate.view()
   })
   // Where another machine would reach this one: each non-internal IPv4 address.
@@ -870,6 +900,68 @@ export function registerIpc(
     await profiles.forget(String(modelPath ?? ''))
     return null
   })
+
+  // The card and the build this process is using, for a catalog match.
+  const machineNow = async () =>
+    machineForProfiles({
+      binary: supervisor.binaryInfo,
+      managed: settings.current.managedBuild,
+      sensors: await readHostGpuSensors()
+    })
+
+  // Hash only when a catalog row names this file. A local profile is the caller's concern.
+  const matchModel = async (path: string): Promise<SharedMatch | null> => {
+    const info = await stat(path)
+    const meta = await readGgufMetadata(path)
+    const rows = catalog.rows()
+    const fileName = basename(path)
+    const sha256 = shouldHashModel(rows, fileName, info.size)
+      ? await hashes.sha256(path, info.size, info.mtimeMs)
+      : null
+    return matchShared(rows, await machineNow(), {
+      sha256,
+      arch: meta.architecture || null,
+      quant: meta.quant,
+      paramsB: meta.parameterCount === null ? null : meta.parameterCount / 1e9
+    })
+  }
+
+  handle<SharedProfileOffer | null>(IPC.profileShared, async (modelPath) => {
+    const path = z.string().min(1).max(4096).parse(modelPath)
+    // This machine's measurement wins before any shared row is considered.
+    if (await profiles.get(path)) return null
+    return sharedOffer(false, await matchModel(path))
+  })
+
+  handle<null>(IPC.profileShare, async (modelPath, got) => {
+    const path = z.string().min(1).max(4096).parse(modelPath)
+    const saved = await profiles.get(path)
+    if (!saved) throw new Error('Launch this model once so there is a measurement to share.')
+    const speed = typeof got === 'number' && Number.isFinite(got) && got > 0 && got < 100_000 ? got : null
+    const meta = await readGgufMetadata(path)
+    const machine = await machineNow()
+    const said = (await matchModel(path))?.profile.measured.genTokPerSec ?? null
+    const url = measurementIssueUrl({
+      version: appVersion(),
+      gpu: describeGpu(machine),
+      llamacpp: describeLlama(supervisor.binaryInfo.version, machine.backend),
+      model: meta.quant ? `${basename(path)} ${meta.quant}` : basename(path),
+      context: String(saved.actualContext ?? saved.config.contextSize),
+      settings: describeLaunch(saved.config),
+      speed: describeSpeed(speed),
+      vram: '',
+      notes:
+        said !== null && speed !== null
+          ? `${comparisonLine(said, speed)} Measured inside Lowerbeam.`
+          : 'Measured inside Lowerbeam.'
+    })
+    if (!urlHidesPath(url, path)) throw new Error('The share form would have included a file path.')
+    // The person opens this. The offline switch does not block a link they chose.
+    openExternally(url)
+    return null
+  })
+
+  handle<number | null>(IPC.profileConfirm, () => confirmLocalSpeed(supervisor.status))
 
   // Built-in and MCP tools are one list: the model cannot tell them apart, and
   // the only thing that differs for the user is where a tool came from.

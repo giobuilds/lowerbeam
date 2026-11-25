@@ -24,6 +24,8 @@ import { isWebUrl } from '@shared/url.js'
 import { APP_INDEX_PATH, isAppUrl, trustWindow } from './sender.js'
 import { Updater } from './updater.js'
 import { NetworkGate } from './network.js'
+import { ProfileCatalog } from './profileCatalog.js'
+import { ProfileHashes } from './profileHashes.js'
 import { tightenTree } from './private.js'
 import { SlotCache } from './slots.js'
 
@@ -181,10 +183,12 @@ async function bootstrap(): Promise<void> {
 
   const gate = new NetworkGate(settings.current.offline)
   const updater = new Updater(() => settings.current.updateChecks, gate)
+  const catalog = new ProfileCatalog(join(app.getPath('userData'), 'shared-profiles'), gate)
+  const hashes = new ProfileHashes(join(app.getPath('userData'), 'profile-hashes.json'))
   // A long chat's server slot, saved when you leave it and restored on return.
   const slots = new SlotCache(join(app.getPath('userData'), 'slots'), () => (supervisor ? { status: supervisor.status, build: supervisor.binaryInfo.version } : null))
   void slots.sweep(async (id) => (await conversations.get(id).catch(() => null)) !== null).catch(() => {})
-  registerIpc(supervisor, settings, conversations, profiles, mcp, downloads, coding, discovered, updater, slots, gate)
+  registerIpc(supervisor, settings, conversations, profiles, mcp, downloads, coding, discovered, updater, slots, gate, catalog, hashes)
   wireEvents(supervisor, downloads, mcp, coding, updater, settings, gate)
   await supervisor.adoptOrReap()
 
@@ -197,6 +201,8 @@ async function bootstrap(): Promise<void> {
     for (const win of BrowserWindow.getAllWindows()) win.setBackgroundColor(color)
   })
   updater.start()
+  // After the badge is listening. A cache hit does not reach the network.
+  void catalog.start()
 }
 
 // `lowerbeam run` is one coding run and no window. Help and a bad invocation

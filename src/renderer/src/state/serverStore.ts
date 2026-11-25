@@ -18,8 +18,12 @@ import type {
   VramPlanView
 } from '@shared/types.js'
 import { DEFAULT_LAUNCH_CONFIG } from '@shared/types.js'
+import { draftFromOffer, type SharedProfileOffer } from '@shared/sharedProfile.js'
 import { embeddingLaunch } from '@shared/embed.js'
 import { servedModel } from '@shared/served.js'
+
+/** Bumps when the selected model changes, so a slow shared-profile lookup cannot land on the next one. */
+let selectSeq = 0
 
 const MAX_RENDERED_LOGS = 2000
 
@@ -41,6 +45,12 @@ interface ServerState {
   profile: LaunchProfileView | null
   /** True while the draft still matches the profile that was applied. */
   profileApplied: boolean
+  /** A shared catalog row for this model, when this machine has no measurement of its own. */
+  shared: SharedProfileOffer | null
+  /** True while the draft is still the exact or close shared starting point. */
+  sharedApplied: boolean
+  /** Speed the shared profile published, and what a short run on this machine got. */
+  sharedCheck: { said: number; got: number } | null
   logs: LogLine[]
   lastSeq: number
   draft: LaunchConfig
@@ -104,6 +114,9 @@ export const useServerStore = create<ServerState>((set, get) => ({
   healthRunning: false,
   profile: null,
   profileApplied: false,
+  shared: null,
+  sharedApplied: false,
+  sharedCheck: null,
   logs: [],
   lastSeq: 0,
   draft: { modelPath: '', ...DEFAULT_LAUNCH_CONFIG },
@@ -303,7 +316,22 @@ export const useServerStore = create<ServerState>((set, get) => ({
   async selectModel(modelPath) {
     const previous = get().draft.modelPath
     if (modelPath === previous) return
-    set({ health: null, fit: null, profile: null, profileApplied: false })
+    const seq = ++selectSeq
+    // A vision model without its projector loads as text-only and never says
+    // so, so the pairing found on disk is applied unless a profile overrides it.
+    const projector = get().models.find((m) => m.path === modelPath)?.projectorPath ?? null
+    set((s) => ({
+      health: null,
+      fit: null,
+      profile: null,
+      profileApplied: false,
+      shared: null,
+      sharedApplied: false,
+      sharedCheck: null,
+      projectorChoice: null,
+      draft: { ...s.draft, modelPath, mmprojPath: projector }
+    }))
+    void get().refreshPlan()
 
     let profile: LaunchProfileView | null = null
     try {
@@ -311,35 +339,73 @@ export const useServerStore = create<ServerState>((set, get) => ({
     } catch {
       // A missing profile is the normal case for a new model.
     }
+    if (seq !== selectSeq) return
 
-    // A vision model without its projector loads as text-only and never says
-    // so, so the pairing found on disk is applied unless a profile overrides it.
-    const projector = get().models.find((m) => m.path === modelPath)?.projectorPath ?? null
+    if (profile) {
+      set((s) => ({
+        draft: { ...s.draft, ...profile.config, modelPath },
+        profile,
+        profileApplied: true
+      }))
+      void get().refreshPlan()
+      void get().refreshFit()
+      return
+    }
 
-    // Where the projector goes, when no profile says: on the GPU only if the
-    // model still has room there for the context coding runs need (#147).
-    const placement = !profile && projector ? await projectorPlacement(modelPath, projector, get().draft) : null
-
-    set((s) => ({
-      draft: profile
-        ? { ...s.draft, ...profile.config, modelPath }
-        : { ...s.draft, modelPath, mmprojPath: projector, mmprojOffload: placement?.onGpu ?? true },
-      projectorChoice: placement?.why ?? null,
-      profile,
-      profileApplied: Boolean(profile)
-    }))
+    // The shared lookup can hash a large file. The projector decision runs with it.
+    const placementPromise = projector ? projectorPlacement(modelPath, projector, get().draft) : Promise.resolve(null)
+    const sharedPromise = window.llama.profiles.shared(modelPath).catch(() => null)
+    const [placement, shared] = await Promise.all([placementPromise, sharedPromise])
+    if (seq !== selectSeq) return
+    const launch = draftFromOffer(shared, modelPath, projector)
+    if (launch) {
+      set({ draft: launch, projectorChoice: null, shared, sharedApplied: true })
+    } else {
+      // Where the projector goes, when no profile says: on the GPU only if the
+      // model still has room there for the context coding runs need (#147).
+      set((s) => ({
+        draft: { ...s.draft, modelPath, mmprojPath: projector, mmprojOffload: placement?.onGpu ?? true },
+        projectorChoice: placement?.why ?? null,
+        shared,
+        sharedApplied: false
+      }))
+    }
     void get().refreshPlan()
     void get().refreshFit()
   },
 
   async forgetProfile() {
-    const { draft } = get()
-    if (!draft.modelPath) return
+    const modelPath = get().draft.modelPath
+    if (!modelPath) return
     try {
-      await window.llama.profiles.forget(draft.modelPath)
-      set({ profile: null, profileApplied: false })
+      await window.llama.profiles.forget(modelPath)
     } catch (err) {
       set({ error: (err as Error).message })
+      return
+    }
+    if (get().draft.modelPath !== modelPath) return
+    // Forgetting the measurement lets a shared starting point come back.
+    const projector = get().models.find((m) => m.path === modelPath)?.projectorPath ?? null
+    let shared: SharedProfileOffer | null = null
+    try {
+      shared = await window.llama.profiles.shared(modelPath)
+    } catch {
+      shared = null
+    }
+    if (get().draft.modelPath !== modelPath) return
+    const launch = draftFromOffer(shared, modelPath, projector)
+    set((s) => ({
+      profile: null,
+      profileApplied: false,
+      shared,
+      sharedApplied: Boolean(launch),
+      sharedCheck: null,
+      projectorChoice: launch ? null : s.projectorChoice,
+      draft: launch ?? s.draft
+    }))
+    if (launch) {
+      void get().refreshPlan()
+      void get().refreshFit()
     }
   },
 
@@ -347,7 +413,7 @@ export const useServerStore = create<ServerState>((set, get) => ({
     const prevModel = get().draft.modelPath
     // Editing any launch setting means the draft is no longer the remembered
     // configuration, and the badge should stop claiming otherwise.
-    if (Object.keys(patch).some((k) => k !== 'modelPath')) set({ profileApplied: false })
+    if (Object.keys(patch).some((k) => k !== 'modelPath')) set({ profileApplied: false, sharedApplied: false })
     // A placement chosen by hand is not the app's choice any more.
     if ('mmprojOffload' in patch || 'mmprojPath' in patch) set({ projectorChoice: null })
     set((s) => ({ draft: { ...s.draft, ...patch } }))
@@ -557,11 +623,43 @@ export function subscribeToMain(): () => void {
       store.setState({ activeModel: null })
     }
     const nowReady = status.phase === 'ready'
-    if (nowReady && !wasReady && status.config?.modelPath) {
-      void window.llama.profiles
-        .get(status.config.modelPath)
-        .then((profile) => store.setState({ profile, profileApplied: Boolean(profile) }))
-        .catch(() => {})
+    const modelPath = status.config?.modelPath
+    if (nowReady && !wasReady && modelPath && !status.router) {
+      const snap = store.getState()
+      // Only the launch that started from an exact or close shared profile is checked.
+      const said =
+        !status.adopted && snap.sharedApplied && snap.shared?.genTokPerSec != null
+          ? snap.shared.genTokPerSec
+          : null
+      void (async () => {
+        let got: number | null = null
+        if (said != null) {
+          try {
+            got = await window.llama.profiles.confirm()
+          } catch {
+            got = null
+          }
+        }
+        try {
+          // The profile is written after /props returns, so give that write a moment.
+          let profile = await window.llama.profiles.get(modelPath)
+          if (!profile) {
+            await new Promise((resolve) => setTimeout(resolve, 400))
+            if (store.getState().draft.modelPath !== modelPath) return
+            profile = await window.llama.profiles.get(modelPath)
+          }
+          if (store.getState().draft.modelPath !== modelPath) return
+          store.setState({
+            profile,
+            profileApplied: Boolean(profile),
+            sharedApplied: false,
+            shared: profile ? null : store.getState().shared,
+            sharedCheck: said != null && got != null ? { said, got } : null
+          })
+        } catch {
+          // The badge stays as it was until the next launch.
+        }
+      })()
     }
     wasReady = nowReady
   })
